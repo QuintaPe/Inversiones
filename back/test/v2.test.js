@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createClient } from '@libsql/client';
 import { openDb, SCHEMA_VERSION } from '../src/db.js';
-import { parseCsv, buildPortfolio, buildCash } from '../src/engine.js';
+import { parseCsv, buildPortfolio, buildCash, buildIncome } from '../src/engine.js';
 import { createAlertWatcher } from '../src/alerts.js';
 import { createPush } from '../src/push.js';
 import { createApp } from '../src/app.js';
@@ -246,4 +246,19 @@ test('fondo no cotizado: se toma su valor liquidativo y su histórico', async ()
   assert.equal(snaps, 2); // uno al resolver y otro al cotizar; después se reutiliza varias horas
   const h = await q.history('NAV:308:55', '2025-09-01');
   assert.deepEqual(h, { currency: 'EUR', rows: [['2025-11-30', 104.4925], ['2025-12-31', 105.6164]], divs: [], splits: [] });
+});
+
+test('efectivo: los abonos sueltos suman y la serie va por fecha valor', () => {
+  const row = (o) => ({ category: 'CASH', amount: '', fee: '', tax: '', name: '', symbol: '', description: '', ...o });
+  const rows = [
+    row({ transaction_id: 'a', type: 'CUSTOMER_INBOUND', datetime: '2025-10-01T10:00:00Z', date: '2025-10-01', amount: '100.000000' }),
+    // Ajuste de impuestos ejecutado semanas después de su fecha valor, con +19 en la columna tax.
+    row({ transaction_id: 'b', type: 'MANUAL', datetime: '2025-11-27T11:30:00Z', date: '2025-10-22', amount: '0.000000', tax: '19.00', description: 'Capital Gains Tax' }),
+    row({ transaction_id: 'c', type: 'CARD_TRANSACTION', datetime: '2025-11-01T10:00:00Z', date: '2025-11-01', amount: '-10.000000' }),
+  ];
+  const cash = buildCash(rows);
+  assert.equal(cash.balance, 109);
+  assert.deepEqual(cash.days, [['2025-10-01', 100], ['2025-10-22', 119], ['2025-11-01', 109]]);
+  // Un abono no es una retención: no cuenta en los impuestos del ejercicio.
+  assert.deepEqual(buildIncome(rows), {});
 });

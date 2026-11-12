@@ -249,16 +249,17 @@ export function buildPortfolio(rows, splits = {}) {
 
   const positions = [...map.values()].map((p) => ({ ...p, open: p.sh > EPS }));
 
-  // Cargos de impuestos sueltos (p. ej. sobre el bonus de Private Markets): se enseñan
-  // en el fondo cuya compra coincide en fecha, pero no entran en el coste.
+  // Ajustes de impuestos sueltos (p. ej. por el bonus de Private Markets): se enseñan en el
+  // fondo cuya compra coincide en fecha, pero no entran en el coste. La columna tax trae el
+  // signo del movimiento de efectivo, como en el resto de filas: positivo es un abono.
   for (const r of manualTax) {
     const p = positions.find((x) => x.grp === 'pm' && x.evs.some((e) => e.k === 'B' && e.d === r.date));
     if (!p) continue;
-    const charge = abs(r.tax);
-    const paid = p.evs.filter((e) => e.k === 'B').reduce((t, e) => t + e.net, 0);
-    const bonus = p.evs.filter((e) => e.k === 'B' && e.note?.startsWith('Pagada con el bonus')).reduce((t, e) => t + e.g, 0);
-    p.extra = `Además hubo un cargo de ${fmtEur(charge)} € (${r.description.replace(/\s+/g, ' ').trim()}, ${fmtDate(r.date)}, ID ${shortId(r.transaction_id)}); no está en la entrada. ` +
-      `Efectivo neto salido: ${fmtEur(paid)} € de pre-pagos − ${fmtEur(bonus)} € de bonus + ${fmtEur(charge)} € de cargo = ${fmtEur(paid - bonus + charge)} €.`;
+    const t = num(r.tax);
+    const paid = p.evs.filter((e) => e.k === 'B').reduce((s, e) => s + e.net, 0);
+    const bonus = p.evs.filter((e) => e.k === 'B' && e.note?.startsWith('Pagada con el bonus')).reduce((s, e) => s + e.g, 0);
+    p.extra = `Además hubo ${t > 0 ? 'un abono' : 'un cargo'} de ${fmtEur(Math.abs(t))} € (${r.description.replace(/\s+/g, ' ').trim()}, ${fmtDate(r.date)}, ID ${shortId(r.transaction_id)}); no está en la entrada. ` +
+      `Efectivo neto salido: ${fmtEur(paid)} € de pre-pagos − ${fmtEur(bonus)} € de bonus ${t > 0 ? '−' : '+'} ${fmtEur(Math.abs(t))} € = ${fmtEur(paid - bonus - t)} €.`;
   }
 
   const dates = events.filter((r) => r.type !== 'SPLIT').map((r) => r.date).sort();
@@ -282,13 +283,14 @@ export const CASH_LABEL = {
 
 /** Saldo de efectivo día a día y totales por concepto, a partir de todas las filas. */
 export function buildCash(rows) {
-  const sorted = [...rows].sort(byTime);
+  // Por fecha valor, que es la que se pinta: unas pocas filas se ejecutan días después de
+  // su fecha valor y, ordenadas por hora de ejecución, la gráfica volvía hacia atrás.
+  const sorted = [...rows].sort((a, b) => a.date.localeCompare(b.date) || byTime(a, b));
   const totals = {}, months = {}, days = [];
   let balance = 0, has = false;
   for (const r of sorted) {
-    // Los cargos sueltos de impuestos vienen con el importe en positivo en la columna tax.
-    const tax = r.type === 'MANUAL' ? -abs(r.tax) : num(r.tax);
-    const delta = num(r.amount) + num(r.fee) + tax;
+    // Importe, comisión e impuesto con su signo: es lo que suma el saldo real de la cuenta.
+    const delta = num(r.amount) + num(r.fee) + num(r.tax);
     if (!delta) continue;
     const g = CASH_GROUP[r.type] ?? 'other';
     if (g !== 'invest' && g !== 'dividend' && g !== 'tax') has = true;
@@ -318,8 +320,9 @@ export function buildIncome(rows) {
     } else if (r.type === 'BENEFITS_SAVEBACK' || r.type === 'BONUS') {
       const s = slot(r, 'reward');
       s.g += num(r.amount); s.t += abs(r.tax); s.n++;
-    } else if (r.type === 'MANUAL' && abs(r.tax) > 0) {
-      slot(r, 'reward').t += abs(r.tax); // cargo de impuestos suelto (p. ej. por el bonus)
+    } else if (r.type === 'MANUAL' && num(r.tax) < 0) {
+      // Cargo de impuestos suelto (p. ej. por el bonus). Los positivos son abonos, no retenciones.
+      slot(r, 'reward').t += abs(r.tax);
     } else if (r.type === 'BUY' && abs(r.tax) > 0 && r.amount !== ''
       && savebacks.some((s) => s.symbol === r.symbol && s.date === r.date && Math.abs(abs(s.amount) - abs(r.amount)) < 0.005)) {
       slot(r, 'reward').t += abs(r.tax); // la retención del saveback viene en la compra que financia
