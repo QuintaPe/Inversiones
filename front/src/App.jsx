@@ -1,0 +1,270 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import * as api from './api.js';
+import { analyze, GROUPS } from './lib/calc.js';
+import { time } from './lib/format.js';
+import { useHashRoute, useStored } from './hooks.js';
+import { Icon, Menu, Seg, Skeleton, Toasts, UploadButton } from './components/ui.jsx';
+import Login from './components/Login.jsx';
+import PositionDrawer from './components/PositionDrawer.jsx';
+import Dashboard from './views/Dashboard.jsx';
+import Positions from './views/Positions.jsx';
+import Ledger from './views/Ledger.jsx';
+import Dividends from './views/Dividends.jsx';
+import Tax from './views/Tax.jsx';
+
+const NAV = [
+  ['resumen', 'Resumen'],
+  ['posiciones', 'Posiciones'],
+  ['operaciones', 'Operaciones'],
+  ['dividendos', 'Dividendos'],
+  ['fiscalidad', 'Fiscalidad'],
+];
+const TITLES = Object.fromEntries(NAV);
+const THEMES = [['auto', 'Auto'], ['light', 'Claro'], ['dark', 'Oscuro']];
+let toastId = 0;
+
+export default function App() {
+  const [auth, setAuth] = useState(null); // null = cargando; { user, clientId }
+  const [data, setData] = useState(null);
+  const [toasts, setToasts] = useState([]);
+  const [loginErr, setLoginErr] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [flt, setFlt] = useState('all');
+  const [detail, setDetail] = useState(null); // ISIN de la ficha abierta
+  const [over, setOver] = useState(false);
+  const [route, go] = useHashRoute(NAV.map((n) => n[0]), 'resumen');
+  const [theme, setTheme] = useStored('theme', 'auto');
+  const [hidden, setHidden] = useStored('hide-amounts', false);
+  const user = auth?.user ?? null;
+
+  useEffect(() => {
+    if (theme === 'auto') delete document.documentElement.dataset.theme;
+    else document.documentElement.dataset.theme = theme;
+  }, [theme]);
+  useEffect(() => { document.documentElement.classList.toggle('private', !!hidden); }, [hidden]);
+
+  const notify = useCallback((kind, text) => setToasts((t) => [...t.slice(-3), { id: ++toastId, kind, text }]), []);
+  const closeToast = useCallback((id) => setToasts((t) => t.filter((x) => x.id !== id)), []);
+
+  // Cualquier 401 (sesión caducada) devuelve a la pantalla de acceso.
+  const fail = useCallback((err, prefix = '') => {
+    if (err instanceof api.Unauthorized) {
+      setAuth((a) => ({ ...a, user: null }));
+      setData(null);
+      setLoginErr('Tu sesión ha caducado. Vuelve a iniciar sesión.');
+    } else {
+      notify('err', prefix + err.message);
+    }
+  }, [notify]);
+
+  useEffect(() => {
+    Promise.all([api.getConfig(), api.getMe()])
+      .then(([cfg, me]) => setAuth({ user: me.user, clientId: cfg.googleClientId }))
+      .catch((err) => { setAuth({ user: null, clientId: null }); setLoginErr(err.message); });
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    api.getPortfolio().then(setData).catch(fail);
+  }, [user, fail]);
+
+  const login = async (credential) => {
+    setLoginErr(null);
+    try {
+      const { user: u } = await api.loginGoogle(credential);
+      setAuth((a) => ({ ...a, user: u }));
+    } catch (err) {
+      setLoginErr(err.message);
+    }
+  };
+
+  const logout = async () => {
+    await api.logout().catch(() => {});
+    window.google?.accounts.id.disableAutoSelect();
+    setAuth((a) => ({ ...a, user: null }));
+    setData(null);
+    setToasts([]);
+    setDetail(null);
+  };
+
+  const upload = async (file) => {
+    setBusy(true);
+    try {
+      const res = await api.uploadCsv(file);
+      setData({ positions: res.positions, meta: res.meta });
+      const u = res.upload;
+      notify('ok', `${u.name}: ${u.total} filas leídas, ${u.relevant} de inversión, ${u.added} nuevas.`);
+    } catch (err) {
+      fail(err);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // ---------- cotización en vivo ----------
+  const [live, setLive] = useState({ at: null, failed: [], busy: false, error: null });
+  const liveBusy = useRef(false);
+  const liveOn = !!data?.meta?.liveQuotes && (data?.positions ?? []).some((p) => p.open && p.grp === 'ac');
+  const refreshQuotes = useCallback(async () => {
+    if (liveBusy.current) return;
+    liveBusy.current = true;
+    setLive((l) => ({ ...l, busy: true }));
+    try {
+      const res = await api.refreshQuotes();
+      setData({ positions: res.positions, meta: res.meta });
+      setLive({ at: res.refresh.at, failed: res.refresh.failed, busy: false, error: null });
+    } catch (err) {
+      if (err instanceof api.Unauthorized) fail(err);
+      setLive((l) => ({ ...l, busy: false, error: err.message }));
+    } finally {
+      liveBusy.current = false;
+    }
+  }, [fail]);
+
+  // Al entrar y cada minuto, solo con la pestaña visible.
+  const rowsLoaded = data?.meta?.rows ?? 0;
+  useEffect(() => {
+    if (!liveOn) return undefined;
+    const tick = () => document.visibilityState === 'visible' && refreshQuotes();
+    tick();
+    const id = setInterval(tick, 60_000);
+    document.addEventListener('visibilitychange', tick);
+    return () => { clearInterval(id); document.removeEventListener('visibilitychange', tick); };
+  }, [liveOn, rowsLoaded, refreshQuotes]);
+
+  const onPrice = useCallback(async (isin, price) => {
+    try {
+      const r = await api.setPrice(isin, price);
+      setData((d) => ({
+        ...d,
+        positions: d.positions.map((p) => (p.isin === isin ? { ...p, price: r.price, priceAt: r.at, priceSource: r.source, priceInfo: null } : p)),
+      }));
+      if (price == null) refreshQuotes(); // sin precio manual, vuelve la cotización en vivo
+    } catch (err) {
+      fail(err, 'No se guardó el precio: ');
+    }
+  }, [fail, refreshQuotes]);
+
+  const wipe = async () => {
+    if (!window.confirm('¿Borrar todas tus operaciones y precios guardados? No se puede deshacer.')) return;
+    try {
+      setData(await api.clearData());
+      setDetail(null);
+      notify('ok', 'Datos borrados.');
+    } catch (err) {
+      fail(err);
+    }
+  };
+
+  const positions = data?.positions ?? [];
+  const a = useMemo(() => analyze(positions, flt), [positions, flt]);
+  const closeDetail = useCallback(() => setDetail(null), []);
+  const detailRow = detail && (a.o.find((x) => x.p.isin === detail) ?? a.c.find((x) => x.p.isin === detail));
+
+  if (!auth) return <div className="center"><span className="spinner" aria-label="Cargando" /></div>;
+  if (!user) return <Login clientId={auth.clientId} onCredential={login} error={loginErr} />;
+
+  const empty = data && !positions.length;
+  const groups = GROUPS.filter(([g]) => g === 'all' || positions.some((p) => p.grp === g));
+  const view = { a, meta: data?.meta, onOpen: setDetail, onPrice, go };
+  const nav = (cls) => (
+    <nav className={cls} aria-label="Secciones">
+      {NAV.map(([k, label]) => (
+        <a key={k} href={`#/${k}`} className={route === k ? 'on' : ''} aria-current={route === k ? 'page' : undefined}>
+          <Icon name={k} /><span>{label}</span>
+        </a>
+      ))}
+    </nav>
+  );
+  const liveText = live.busy && !live.at ? 'Cotizando…' : live.error ? 'Sin precios' : live.at ? time(live.at) : 'En vivo';
+
+  const account = (
+    <Menu label="Cuenta" button={user.picture
+      ? <img className="me" src={user.picture} alt="" referrerPolicy="no-referrer" />
+      : <span className="me">{(user.name || user.email)[0].toUpperCase()}</span>}>
+      {(close) => (
+        <>
+          <div className="menu-h"><b>{user.name || 'Mi cuenta'}</b><small>{user.email}</small></div>
+          <div className="menu-s">
+            <span>Tema</span>
+            <Seg label="Tema" options={THEMES} value={theme} onChange={setTheme} />
+          </div>
+          {data?.meta?.lastUpload && (
+            <p className="menu-n">{data.meta.rows} operaciones · último CSV el {data.meta.lastUpload.at.slice(0, 10).split('-').reverse().join('/')}</p>
+          )}
+          <button type="button" role="menuitem" onClick={() => { close(); wipe(); }} className="danger"><Icon name="trash" size={17} />Borrar mis datos</button>
+          <button type="button" role="menuitem" onClick={logout}><Icon name="logout" size={17} />Cerrar sesión</button>
+        </>
+      )}
+    </Menu>
+  );
+
+  return (
+    <div className="shell">
+      <header className="bar">
+        <div className="bar-in">
+          <a className="brand" href="#/resumen">cartera<i aria-hidden="true">.</i></a>
+          {nav('nav')}
+          <div className="bar-a">
+            {liveOn && (
+              <button type="button" className={`live ${live.error ? 'off' : ''} ${live.busy ? 'busy' : ''}`} onClick={refreshQuotes} disabled={live.busy}
+                title={live.error
+                  ? `No se pudo actualizar: ${live.error}`
+                  : live.failed.length ? `Sin cotización: ${live.failed.join(', ')}` : 'Cotización en vivo. Pulsa para actualizar ahora'}>
+                <span className="live-dot" aria-hidden="true" />{liveText}
+              </button>
+            )}
+            <button type="button" className="icon-btn" aria-pressed={!!hidden} onClick={() => setHidden(!hidden)}
+              aria-label={hidden ? 'Mostrar importes' : 'Ocultar importes'} title={hidden ? 'Mostrar importes' : 'Ocultar importes'}>
+              <Icon name={hidden ? 'eyeOff' : 'eye'} />
+            </button>
+            <UploadButton onFile={upload} busy={busy} className="icon-btn" label="Subir CSV"><Icon name="upload" /></UploadButton>
+            {account}
+          </div>
+        </div>
+      </header>
+
+      <main className="main">
+        {data && !empty && (
+          <div className="page-h">
+            {route !== 'resumen' && <h1>{TITLES[route]}</h1>}
+            {groups.length > 2 && <Seg label="Tipo de activo" options={groups} value={flt} onChange={setFlt} />}
+          </div>
+        )}
+
+        {!data ? (
+          <Skeleton />
+        ) : empty ? (
+          <div
+            className={`drop ${over ? 'over' : ''}`}
+            onDragOver={(ev) => { ev.preventDefault(); setOver(true); }}
+            onDragLeave={() => setOver(false)}
+            onDrop={(ev) => { ev.preventDefault(); setOver(false); const f = ev.dataTransfer.files[0]; if (f) upload(f); }}
+          >
+            <span className="drop-i"><Icon name="upload" size={26} /></span>
+            <h2>Sube tus inversiones</h2>
+            <p>Arrastra aquí el CSV de transacciones de Trade Republic o elígelo desde tu equipo.</p>
+            <UploadButton onFile={upload} busy={busy} className="btn pri">{busy ? 'Subiendo…' : 'Elegir archivo CSV'}</UploadButton>
+            <ol className="steps">
+              <li><b>1</b>En Trade Republic: Perfil → Transacciones → Exportar CSV.</li>
+              <li><b>2</b>Súbelo aquí. Solo se guardan compras, ventas y dividendos; tarjeta y transferencias se descartan.</li>
+              <li><b>3</b>Los precios se actualizan solos con la cotización en vivo.</li>
+            </ol>
+          </div>
+        ) : (
+          <div className="view" key={route}>
+            {route === 'resumen' && <Dashboard {...view} />}
+            {route === 'posiciones' && <Positions {...view} />}
+            {route === 'operaciones' && <Ledger {...view} />}
+            {route === 'dividendos' && <Dividends {...view} />}
+            {route === 'fiscalidad' && <Tax {...view} />}
+          </div>
+        )}
+      </main>
+
+      {nav('tabs')}
+      {detailRow && <PositionDrawer x={detailRow} totalVal={a.val} onClose={closeDetail} onPrice={onPrice} liveQuotes={liveOn} />}
+      <Toasts items={toasts} onClose={closeToast} />
+    </div>
+  );
+}

@@ -1,0 +1,12 @@
+{
+  "name": "inversiones",
+  "private": true,
+  "scripts": {
+    "install:all": "npm install --prefix back && npm install --prefix front",
+    "dev:back": "npm run dev --prefix back",
+    "dev:front": "npm run dev --prefix front",
+    "build": "npm run build --prefix front",
+    "start": "npm run start --prefix back",
+    "test": "npm test --prefix back"
+  }
+}

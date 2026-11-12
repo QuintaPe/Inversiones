@@ -1,0 +1,146 @@
+import { useMemo, useState } from 'react';
+import { Asset, Empty, Flash, Pill, PriceInput, Search, Seg, Th, useSort } from '../components/ui.jsx';
+import { sum } from '../lib/calc.js';
+import { eur, eurS, pct, pctS, qty, sign, date } from '../lib/format.js';
+
+const GET = {
+  name: (x) => x.p.name, sh: (x) => x.p.sh, avg: (x) => x.avg, price: (x) => x.p.price, cost: (x) => x.p.cost,
+  v: (x) => x.v, day: (x) => x.dayPct, pl: (x) => x.pl, plp: (x) => x.plp, w: (x) => x.w, div: (x) => x.div, real: (x) => x.real,
+  last: (x) => x.S.at(-1)?.d,
+};
+
+export default function Positions({ a, onOpen, onPrice }) {
+  const [tab, setTab] = useState('open');
+  const [q, setQ] = useState('');
+  const open = useSort('v');
+  const closed = useSort('real');
+  const match = (x) => !q || `${x.p.name} ${x.p.isin}`.toLowerCase().includes(q.trim().toLowerCase());
+  const rows = useMemo(() => open.apply(a.o.filter(match), (x, k) => GET[k](x)), [a.o, q, open.sort]);
+  const crow = useMemo(() => closed.apply(a.c.filter(match), (x, k) => GET[k](x)), [a.c, q, closed.sort]);
+  const s = open, c = closed;
+
+  return (
+    <div className="stack">
+      <div className="toolbar">
+        <Seg label="Estado" value={tab} onChange={setTab}
+          options={[['open', `Abiertas (${a.o.length})`], ['closed', `Cerradas (${a.c.length})`]]} />
+        <Search value={q} onChange={setQ} placeholder="Buscar por nombre o ISIN" label="Buscar posición" />
+      </div>
+
+      {tab === 'open' ? (
+        <div className="card table-card">
+          <table className="tbl">
+            <thead>
+              <tr>
+                <Th id="name" sort={s.sort} onSort={s.onSort} className="l">Activo</Th>
+                <Th id="sh" sort={s.sort} onSort={s.onSort} className="hide-m">Cantidad</Th>
+                <Th id="avg" sort={s.sort} onSort={s.onSort} className="hide-m">Precio medio</Th>
+                <Th id="price" sort={s.sort} onSort={s.onSort} className="hide-s">Precio actual</Th>
+                <Th id="cost" sort={s.sort} onSort={s.onSort} className="hide-m">Coste</Th>
+                <Th id="day" sort={s.sort} onSort={s.onSort} className="hide-m">Día</Th>
+                <Th id="v" sort={s.sort} onSort={s.onSort}>Valor</Th>
+                <Th id="pl" sort={s.sort} onSort={s.onSort} className="hide-s">P&amp;L</Th>
+                <Th id="plp" sort={s.sort} onSort={s.onSort} className="hide-s">P&amp;L %</Th>
+                <Th id="w" sort={s.sort} onSort={s.onSort} className="hide-m">Peso</Th>
+                <Th id="div" sort={s.sort} onSort={s.onSort} className="hide-m hide-l">Dividendos</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((x) => (
+                <tr key={x.p.isin} onClick={() => onOpen(x.p.isin)} tabIndex={0}
+                  onKeyDown={(ev) => ev.key === 'Enter' && ev.target === ev.currentTarget && onOpen(x.p.isin)}>
+                  <td className="l">
+                    <Asset p={x.p}><span className="hide-s">{x.p.isin}</span><span className="only-m hide-s"> · </span><span className="only-m">{qty(x.p.sh)} a {eur(x.avg)}</span></Asset>
+                  </td>
+                  <td className="hide-m">{qty(x.p.sh)}</td>
+                  <td className="hide-m">{eur(x.avg)}</td>
+                  <td className="hide-s"><PriceInput p={x.p} onPrice={onPrice} /></td>
+                  <td className="hide-m">{eur(x.p.cost)}</td>
+                  <td className="hide-m"><Pill n={x.dayPct} plain /></td>
+                  <td>
+                    {x.has ? <Flash value={x.v}>{eur(x.v)}</Flash> : <span className="mu">—</span>}
+                    <small className="only-s">{x.has ? <Pill n={x.plp} plain /> : 'sin precio'}</small>
+                  </td>
+                  <td className={`hide-s ${sign(x.pl)}`}>{x.has ? eurS(x.pl) : <span className="mu">—</span>}</td>
+                  <td className="hide-s"><Pill n={x.has ? x.plp : null} plain /></td>
+                  <td className="hide-m">
+                    {x.w != null
+                      ? <span className="wt"><span className="wt-b"><i style={{ width: `${Math.min(100, x.w * 4)}%` }} /></span>{pct(x.w)}</span>
+                      : <span className="mu">—</span>}
+                  </td>
+                  <td className="hide-m hide-l">{x.div ? eur(x.div) : <span className="mu">—</span>}</td>
+                </tr>
+              ))}
+            </tbody>
+            {rows.length > 1 && (
+              <tfoot>
+                <tr>
+                  <td className="l">Total ({rows.length})</td>
+                  <td className="hide-m" /><td className="hide-m" /><td className="hide-s" />
+                  <td className="hide-m">{eur(sum(rows, (x) => x.p.cost))}</td>
+                  <td className="hide-m" />
+                  <td>{eur(sum(rows, (x) => x.v ?? 0))}</td>
+                  {(() => {
+                    const pr = rows.filter((x) => x.has), pl = sum(pr, (x) => x.pl), cost = sum(pr, (x) => x.p.cost);
+                    return (
+                      <>
+                        <td className={`hide-s ${sign(pl)}`}>{pr.length ? eurS(pl) : '—'}</td>
+                        <td className={`hide-s ${sign(pl)}`}>{pr.length ? pctS((pl / cost) * 100) : '—'}</td>
+                      </>
+                    );
+                  })()}
+                  <td className="hide-m" />
+                  <td className="hide-m hide-l">{eur(sum(rows, (x) => x.div))}</td>
+                </tr>
+              </tfoot>
+            )}
+          </table>
+          {!rows.length && <Empty>{q ? 'Ninguna posición coincide con la búsqueda.' : 'No hay posiciones abiertas en esta vista.'}</Empty>}
+        </div>
+      ) : (
+        <div className="card table-card">
+          <table className="tbl">
+            <thead>
+              <tr>
+                <Th id="name" sort={c.sort} onSort={c.onSort} className="l">Activo</Th>
+                <Th id="last" sort={c.sort} onSort={c.onSort} className="hide-s">Última venta</Th>
+                <th className="hide-m">Compras</th>
+                <th className="hide-m">Ventas (neto)</th>
+                <Th id="real" sort={c.sort} onSort={c.onSort}>Realizado</Th>
+                <th className="hide-s">Rentab.</th>
+                <Th id="div" sort={c.sort} onSort={c.onSort} className="hide-s">Dividendos</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {crow.map((x) => (
+                <tr key={x.p.isin} onClick={() => onOpen(x.p.isin)} tabIndex={0}
+                  onKeyDown={(ev) => ev.key === 'Enter' && onOpen(x.p.isin)}>
+                  <td className="l"><Asset p={x.p}>{x.p.isin}</Asset></td>
+                  <td className="hide-s">{date(x.S.at(-1)?.d)}</td>
+                  <td className="hide-m">{eur(x.bought)}</td>
+                  <td className="hide-m">{eur(sum(x.S, (k) => k.net))}</td>
+                  <td className={sign(x.real)}>{eurS(x.real)}</td>
+                  <td className="hide-s"><Pill n={x.bought ? (x.real / x.bought) * 100 : null} plain /></td>
+                  <td className="hide-s">{x.div ? eur(x.div) : <span className="mu">—</span>}</td>
+                </tr>
+              ))}
+            </tbody>
+            {crow.length > 1 && (
+              <tfoot>
+                <tr>
+                  <td className="l">Total ({crow.length})</td>
+                  <td className="hide-s" /><td className="hide-m">{eur(sum(crow, (x) => x.bought))}</td>
+                  <td className="hide-m">{eur(sum(crow, (x) => sum(x.S, (k) => k.net)))}</td>
+                  <td className={sign(sum(crow, (x) => x.real))}>{eurS(sum(crow, (x) => x.real))}</td>
+                  <td className="hide-s" />
+                  <td className="hide-s">{eur(sum(crow, (x) => x.div))}</td>
+                </tr>
+              </tfoot>
+            )}
+          </table>
+          {!crow.length && <Empty>No hay posiciones cerradas en esta vista.</Empty>}
+        </div>
+      )}
+    </div>
+  );
+}
