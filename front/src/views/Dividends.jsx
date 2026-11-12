@@ -1,11 +1,45 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import * as api from '../api.js';
 import { Asset, Card, Stat, Empty, Th, useSort } from '../components/ui.jsx';
 import { Columns } from '../charts.jsx';
 import { monthlyDividends, sum } from '../lib/calc.js';
 import { eur, pct, month, date, qty, num } from '../lib/format.js';
 
+const ym = (d) => d.slice(0, 7);
+
 export default function Dividends({ a, onOpen }) {
   const months = useMemo(() => monthlyDividends(a.dv), [a.dv]);
+  // Previsión: repite los pagos por acción del último año con las posiciones de hoy.
+  const [fc, setFc] = useState(undefined);
+  const openKey = a.open.map((p) => p.isin + p.sh).join();
+  useEffect(() => {
+    let alive = true;
+    api.getDividendForecast().then((r) => alive && setFc(r.forecast)).catch(() => alive && setFc(null));
+    return () => { alive = false; };
+  }, [openKey]);
+  const forecast = useMemo(() => {
+    if (!fc) return null;
+    const mine = new Set(a.open.map((p) => p.isin));
+    const items = fc.items.filter((i) => mine.has(i.isin));
+    if (!items.length) return null;
+    const gross = sum(items, (i) => i.gross);
+    // Retención esperada: la efectiva que ya has tenido en cada valor, o la media de la cartera.
+    const hist = {};
+    for (const x of a.dv) { const h = (hist[x.p.isin] ??= { g: 0, t: 0 }); h.g += x.g; h.t += x.tax; }
+    const tg = sum(a.dv, (x) => x.g), avg = tg ? sum(a.dv, (x) => x.tax) / tg : 0.19;
+    const rate = (isin) => (hist[isin]?.g ? hist[isin].t / hist[isin].g : avg);
+    const net = sum(items, (i) => i.gross * (1 - rate(i.isin)));
+    const by = {};
+    for (const i of items) (by[ym(i.d)] ??= { key: ym(i.d), v: 0, n: 0 }).v += i.gross, by[ym(i.d)].n++;
+    const now = new Date(), cal = [];
+    for (let k = 0; k < 12; k++) {
+      const d = new Date(now.getFullYear(), now.getMonth() + k, 1);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      cal.push(by[key] ?? { key, v: 0, n: 0 });
+    }
+    const today = now.toISOString().slice(0, 10);
+    return { gross, net, cal, next: items.filter((i) => i.d >= today).slice(0, 8), n: items.length, valued: sum(a.priced, (x) => x.v) };
+  }, [fc, a.open, a.dv, a.priced]);
   const s = useSort('net');
   const byPos = useMemo(() => {
     const m = {};
@@ -18,7 +52,34 @@ export default function Dividends({ a, onOpen }) {
   }, [a.dv]);
   const rows = s.apply(byPos, (r, k) => (k === 'name' ? r.p.name : r[k]));
 
-  if (!a.dv.length) return <div className="card"><Empty>No hay dividendos cobrados en esta vista.</Empty></div>;
+  const forecastCard = forecast && (
+    <Card title="Previsión a 12 meses" sub="Si cada empresa repite los pagos por acción de su último año, con lo que tienes hoy">
+      <div className="perf">
+        <div><span className="stat-l">Bruto estimado</span><b className="stat-v">{eur(forecast.gross)}</b></div>
+        <div><span className="stat-l">Neto estimado</span><b className="stat-v">{eur(forecast.net)}</b></div>
+        <div><span className="stat-l">Rentab. por dividendo</span><b className="stat-v">{forecast.valued ? pct((forecast.gross / forecast.valued) * 100) : '—'}</b></div>
+      </div>
+      <Columns data={forecast.cal.map((m) => ({ ...m, label: month(m.key) }))} height={170} label="Dividendos brutos estimados por mes"
+        tip={(d) => <><small>{d.label}</small><b>{eur(d.v)}</b><small>{d.n} {d.n === 1 ? 'pago estimado' : 'pagos estimados'}</small></>} />
+      <h3 className="sub-h">Próximos pagos estimados</h3>
+      <ul className="rows">
+        {forecast.next.map((i) => (
+          <li key={i.isin + i.d}>
+            <button type="button" onClick={() => onOpen(i.isin)}>
+              <Asset p={i} size="sm">hacia el {date(i.d)} · {num(i.perShare)} {i.currency} por acción</Asset>
+              <span className="row-r"><span className="row-v">{eur(i.gross)}</span><small className="mu">bruto</small></span>
+            </button>
+          </li>
+        ))}
+      </ul>
+      <p className="note">
+        Estimación, no un calendario oficial: las fechas son las de corte del año pasado más un año (el cobro llega después) y
+        los importes pueden cambiar. El neto aplica la retención efectiva que ya has tenido en cada valor.
+      </p>
+    </Card>
+  );
+
+  if (!a.dv.length) return <div className="stack">{forecastCard ?? <div className="card"><Empty>No hay dividendos cobrados en esta vista.</Empty></div>}</div>;
 
   const g = sum(a.dv, (x) => x.g), tax = sum(a.dv, (x) => x.tax);
   const cut = new Date(); cut.setFullYear(cut.getFullYear() - 1);
@@ -38,7 +99,9 @@ export default function Dividends({ a, onOpen }) {
         <Stat label="Rentab. s/ coste" value={a.cost ? pct((net12open / a.cost) * 100) : '—'} hint="neto 12 meses ÷ capital invertido" />
       </div>
 
-      <Card title="Dividendos netos por mes">
+      {forecastCard}
+
+      <Card title="Dividendos netos por mes" sub="Lo ya cobrado">
         <Columns data={months.map((m) => ({ ...m, label: month(m.key) }))} label="Dividendos netos por mes"
           tip={(d) => <><small>{d.label}</small><b>{eur(d.v)}</b><small>{d.n} {d.n === 1 ? 'cobro' : 'cobros'}</small></>} />
       </Card>

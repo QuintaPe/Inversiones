@@ -149,15 +149,61 @@ export function monthlyDividends(dv) {
   return out;
 }
 
+const addMonths = (d, n) => { const x = new Date(`${d}T00:00:00Z`); x.setUTCMonth(x.getUTCMonth() + n); return x.toISOString().slice(0, 10); };
+
+/**
+ * Regla de los dos meses: una pérdida no se puede compensar si se compran valores
+ * homogéneos en los dos meses anteriores o posteriores a la venta y siguen en cartera.
+ * Devuelve las compras que la activarían, o [] si no aplica. Es un aviso orientativo.
+ */
+export function washBuys(sale) {
+  if (sale.reF >= 0) return [];
+  const from = addMonths(sale.d, -2), to = addMonths(sale.d, 2);
+  const consumed = new Set((sale.lotsUsed ?? []).map((l) => l.d));
+  return sale.p.evs.filter((e) => e.k === 'B' && e.d >= from && e.d <= to && (
+    e.d > sale.d // recompra posterior
+    || (e.d < sale.d && !consumed.has(e.d) && sale.sa > 0) // compra previa que no es la vendida y sigue en cartera
+  ));
+}
+
+/** Tramos de la base del ahorro (IRPF estatal + autonómico, desde 2025). */
+const SAVINGS = [[6000, 0.19], [50000, 0.21], [200000, 0.23], [300000, 0.27], [Infinity, 0.30]];
+export function savingsTax(base) {
+  let tax = 0, prev = 0;
+  for (const [top, rate] of SAVINGS) {
+    if (base <= prev) break;
+    tax += (Math.min(base, top) - prev) * rate;
+    prev = top;
+  }
+  return tax;
+}
+
+/** Venta simulada de `sh` unidades a `price` consumiendo los lotes por FIFO. */
+export function simulateSale(lots, sh, price, fee = 1) {
+  let left = sh, cost = 0;
+  const used = [];
+  for (const l of lots) {
+    if (left <= 1e-9) break;
+    const take = Math.min(l.sh, left);
+    cost += take * l.unit;
+    used.push({ d: l.d, sh: take, unit: l.unit });
+    left -= take;
+  }
+  const proceeds = sh * price - fee;
+  return { proceeds, cost, gain: proceeds - cost, used };
+}
+
 /** Resumen por ejercicio para la declaración: ventas (FIFO) y dividendos. */
 export function taxYears(sl, dv) {
   const by = {};
-  const y = (k) => (by[k] ??= { year: k, sales: [], divs: [], proceeds: 0, costF: 0, gainF: 0, gainAvg: 0, wins: 0, losses: 0, divG: 0, divT: 0 });
+  const y = (k) => (by[k] ??= { year: k, sales: [], divs: [], proceeds: 0, costF: 0, gainF: 0, gainAvg: 0, wins: 0, losses: 0, divG: 0, divT: 0, wash: [], washLoss: 0 });
   for (const x of sl) {
     const r = y(x.d.slice(0, 4));
     r.sales.push(x);
     r.proceeds += x.net; r.costF += x.csF; r.gainF += x.reF; r.gainAvg += x.re;
     if (x.reF >= 0) r.wins += x.reF; else r.losses += x.reF;
+    const wb = washBuys(x);
+    if (wb.length) { r.wash.push({ sale: x, buys: wb }); r.washLoss += x.reF; }
   }
   for (const x of dv) {
     const r = y(x.d.slice(0, 4));

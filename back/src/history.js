@@ -157,6 +157,39 @@ export function createHistory({ db, quotes, now = () => Date.now() }) {
       running = run;
       return run;
     },
+    /**
+     * Previsión de dividendos: supone que cada valor repite los pagos por acción de sus
+     * últimos 12 meses. Importes brutos en euros al cambio más reciente.
+     */
+    async dividends(positions) {
+      const symbols = await db.getSymbols();
+      const open = positions.filter((p) => p.open && symbols[p.isin]?.symbol);
+      if (!open.length) return { items: [], byPos: [] };
+      const today = iso(now()), yearAgo = iso(now() - 365 * DAY);
+      const meta = await ensure(Object.fromEntries(open.map((p) => [symbols[p.isin].symbol, p.evs[0].d < yearAgo ? p.evs[0].d : yearAgo])));
+      const curs = [...new Set(open.map((p) => meta[symbols[p.isin].symbol]?.currency).filter((c) => c && c !== 'EUR'))];
+      const fx = await db.getHistory(curs.map((c) => `${c}EUR=X`));
+      const rate = (c) => (c === 'EUR' ? 1 : fx[`${c}EUR=X`]?.at(-1)?.[1] ?? null);
+      const divs = await db.getSymbolDivs(open.map((p) => symbols[p.isin].symbol));
+      const items = [], byPos = [];
+      for (const p of open) {
+        const s = symbols[p.isin].symbol, cur = meta[s]?.currency, r = cur && rate(cur);
+        const last = (divs[s] ?? []).filter(([d]) => d > yearAgo && d <= today);
+        if (!r || !last.length) continue;
+        let annual = 0;
+        for (const [d, amount] of last) {
+          const gross = p.sh * amount * r;
+          annual += gross;
+          // La fecha del histórico es la de corte (ex-dividendo); el cobro suele llegar días o semanas después.
+          items.push({ isin: p.isin, name: p.name, d: iso(ms(d) + 365 * DAY), gross, perShare: amount, currency: cur });
+        }
+        byPos.push({ isin: p.isin, name: p.name, annual, payments: last.length });
+      }
+      items.sort((a, b) => a.d.localeCompare(b.d));
+      byPos.sort((a, b) => b.annual - a.annual);
+      return { items, byPos };
+    },
+
     /** Cierres en euros de un ISIN: [[fecha, precio]]. */
     async asset(isin, from) {
       const symbols = await db.getSymbols();

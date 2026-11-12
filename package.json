@@ -7,6 +7,6 @@
     "dev:front": "npm run dev --prefix front",
     "build": "npm run build --prefix front",
     "start": "npm run start --prefix back",
-    "test": "npm test --prefix back"
+    "test": "npm test --prefix back && node --test front/test/*.test.js"
   }
 }

@@ -3,6 +3,7 @@ import * as api from '../api.js';
 import { Avatar, Card, Delta, Empty, Icon, Kind, Pill, PriceInput, Seg, Stat } from '../components/ui.jsx';
 import { Lines } from '../charts.jsx';
 import { country, classLabel, sector } from '../lib/countries.js';
+import { simulateSale, savingsTax } from '../lib/calc.js';
 import { eur, eurS, num, pct, pctS, qty, sign, date, dateLong, time } from '../lib/format.js';
 
 const RANGES = [['1', '1M'], ['3', '3M'], ['6', '6M'], ['ytd', 'YTD'], ['12', '1A'], ['max', 'Máx']];
@@ -53,6 +54,44 @@ function Op({ x }) {
   );
 }
 
+/** Qué pasaría, fiscalmente, si vendieras hoy parte de la posición (FIFO). */
+function Simulator({ p, yearBase }) {
+  const [sh, setSh] = useState(String(+p.sh.toFixed(6)));
+  const [price, setPrice] = useState(p.price > 0 ? String(+p.price.toFixed(4)) : '');
+  const n = Math.min(p.sh, parseFloat(sh.replace(',', '.')) || 0), px = parseFloat(price.replace(',', '.')) || 0;
+  const sim = n > 0 && px > 0 ? simulateSale(p.lots, n, px) : null;
+  // Impuesto marginal: lo que sube la cuota del año al añadir esta ganancia (o lo que baja con una pérdida).
+  const tax = sim ? savingsTax(Math.max(0, yearBase.gains + sim.gain) + yearBase.divs) - savingsTax(Math.max(0, yearBase.gains) + yearBase.divs) : 0;
+  return (
+    <Card title="Simular una venta" sub="Resultado fiscal por FIFO si vendieras ahora">
+      <div className="sim-f">
+        <label><span>Unidades</span>
+          <input type="text" inputMode="decimal" value={sh} onChange={(ev) => setSh(ev.target.value)} aria-label="Unidades a vender" /></label>
+        <label><span>Precio (€)</span>
+          <input type="text" inputMode="decimal" value={price} onChange={(ev) => setPrice(ev.target.value)} aria-label="Precio de venta en euros" /></label>
+      </div>
+      <div className="seg sim-q" role="group" aria-label="Fracción de la posición">
+        {[25, 50, 75, 100].map((f) => <button type="button" key={f} onClick={() => setSh(String(+((p.sh * f) / 100).toFixed(6)))}>{f} %</button>)}
+      </div>
+      {sim ? (
+        <>
+          <div className="calc">
+            <div><span>Cobrarías ({qty(n)} × {num(px)} − 1 € de comisión)</span><b>{eur(sim.proceeds)}</b></div>
+            <div><span>− Coste de adquisición FIFO ({sim.used.length} {sim.used.length === 1 ? 'lote' : 'lotes'})</span><b>−{eur(sim.cost)}</b></div>
+            <div className="t"><span>= Resultado</span><b className={sign(sim.gain)}>{eurS(sim.gain)}</b></div>
+            <div><span>{tax >= 0 ? 'Impuesto estimado' : 'Ahorro fiscal estimado'}</span><b>{eur(Math.abs(tax))}</b></div>
+            <div className="t"><span>Te quedaría tras impuestos</span><b>{eur(sim.proceeds - tax)}</b></div>
+          </div>
+          <p className="note">
+            Lotes que se consumirían: {sim.used.map((l) => `${date(l.d)} (${qty(l.sh)} a ${num(l.unit)})`).join(', ')}. El impuesto es
+            el efecto sobre tu base del ahorro de este año ({eur(Math.max(0, yearBase.gains) + yearBase.divs)} hasta ahora); orientativo.
+          </p>
+        </>
+      ) : <Empty>Indica unidades y precio.</Empty>}
+    </Card>
+  );
+}
+
 /** Valoraciones con fecha de un activo que no cotiza. */
 function Valuations({ p, onPrice, onChange }) {
   const [rows, setRows] = useState(null);
@@ -100,7 +139,7 @@ function Valuations({ p, onPrice, onChange }) {
   );
 }
 
-export default function Asset({ x, totalVal, onBack, onPrice, liveQuotes, onHistoryChange }) {
+export default function Asset({ x, totalVal, yearBase, onBack, onPrice, liveQuotes, onHistoryChange }) {
   const { p } = x;
   const [range, setRange] = useState('max');
   const [hist, setHist] = useState(undefined); // undefined = cargando; null = sin cotización
@@ -274,6 +313,7 @@ export default function Asset({ x, totalVal, onBack, onPrice, liveQuotes, onHist
             </Card>
           )}
           {p.open && hist === null && <Valuations p={p} onPrice={onPrice} onChange={onHistoryChange} />}
+          {p.open && p.lots?.length > 0 && <Simulator key={p.isin} p={p} yearBase={yearBase} />}
           <Card title={`Operaciones (${x.ops.length})`}>
             <ul className="ops">{[...x.ops].reverse().map((e) => <Op key={e.id + e.k} x={e} />)}</ul>
           </Card>

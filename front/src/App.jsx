@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as api from './api.js';
-import { analyze, GROUPS } from './lib/calc.js';
+import { analyze, taxYears, GROUPS } from './lib/calc.js';
 import { time } from './lib/format.js';
 import { useHashRoute, useStored } from './hooks.js';
 import { Icon, Menu, Seg, Skeleton, Toasts, UploadButton } from './components/ui.jsx';
@@ -184,6 +184,10 @@ export default function App() {
   // La ficha busca el activo en toda la cartera, sin el filtro de tipo.
   const whole = useMemo(() => (flt === 'all' ? a : analyze(positions, 'all')), [a, flt, positions]);
   const assetRow = route === 'activo' ? (whole.o.find((x) => x.p.isin === arg) ?? whole.c.find((x) => x.p.isin === arg)) : null;
+  const yearBase = useMemo(() => {
+    const y = taxYears(whole.sl, whole.dv).find((r) => r.year === String(new Date().getFullYear()));
+    return { gains: y?.gainF ?? 0, divs: y?.divG ?? 0 };
+  }, [whole.sl, whole.dv]);
   const back = useCallback(() => (window.history.length > 1 ? window.history.back() : go('posiciones')), [go]);
 
   if (!auth) return <div className="center"><span className="spinner" aria-label="Cargando" /></div>;
@@ -283,7 +287,7 @@ export default function App() {
         ) : (
           <div className="view" key={path}>
             {route === 'activo' && (assetRow
-              ? <Asset x={assetRow} totalVal={whole.val} onBack={back} onPrice={onPrice} liveQuotes={liveOn} onHistoryChange={reloadHistory} />
+              ? <Asset x={assetRow} totalVal={whole.val} yearBase={yearBase} onBack={back} onPrice={onPrice} liveQuotes={liveOn} onHistoryChange={reloadHistory} />
               : <div className="card"><p className="empty">No tienes ninguna posición con el ISIN {arg}.</p></div>)}
             {route === 'resumen' && <Dashboard {...view} />}
             {route === 'posiciones' && <Positions {...view} />}

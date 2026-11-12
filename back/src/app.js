@@ -129,6 +129,13 @@ export function createApp({ db, verifyGoogle, googleClientId, sessionSecret, quo
     res.json({ history: await history.build({ positions: buildPortfolio(rows).positions, prices, valuations }) });
   });
 
+  // Previsión de dividendos de los próximos 12 meses.
+  api.get('/dividends/forecast', async (req, res) => {
+    if (!history) return res.status(503).json({ error: 'El histórico está desactivado.' });
+    const rows = await db.getRows(req.userId);
+    res.json({ forecast: await history.dividends(buildPortfolio(rows).positions) });
+  });
+
   // Cierres en euros de un valor desde una fecha, para la ficha.
   api.get('/assets/:isin/history', async (req, res) => {
     if (!history) return res.status(503).json({ error: 'El histórico está desactivado.' });
