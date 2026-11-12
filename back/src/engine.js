@@ -302,7 +302,46 @@ export function buildCash(rows) {
     else days.push([r.date, +balance.toFixed(2)]);
   }
   // Sin ingresos ni tarjeta en los datos, el saldo no es reconstruible (CSV subido antes de guardar el efectivo).
-  return has ? { balance: +balance.toFixed(2), totals, months, days } : null;
+  if (!has) return null;
+  const ledger = +balance.toFixed(2);
+  // El redondeo de los pagos con tarjeta se reserva al pagar, pero solo aparece en el CSV
+  // cuando se invierte (una vez por semana): lo pendiente ya no está disponible.
+  const roundUps = pendingRoundUps(sorted);
+  const pending = roundUps?.amount ?? 0;
+  if (pending) days.at(-1)[1] = +(days.at(-1)[1] - pending).toFixed(2);
+  return { balance: +(ledger - pending).toFixed(2), ledger, roundUps, totals, months, days };
+}
+
+/** Céntimos que redondea un pago con tarjeta: hasta el euro siguiente, o 1 € si ya es redondo. */
+const roundUpCents = (amount) => {
+  const cents = Math.round(abs(amount) * 100);
+  return (100 - (cents % 100)) % 100 || 100;
+};
+const ms = (r) => Date.parse(r.datetime);
+
+/**
+ * Redondeos de la tarjeta pendientes de invertir. La cuenta los usa si sus compras del
+ * plan de ahorro coinciden (al céntimo) con los redondeos de los pagos hechos desde la
+ * compra anterior; lo pendiente son los redondeos de los pagos posteriores a la última.
+ * Devuelve { amount, n, since } o null si no usa el redondeo o no hay nada pendiente.
+ */
+export function pendingRoundUps(rows) {
+  const sorted = [...rows].sort(byTime);
+  const cards = sorted.filter((r) => r.type?.startsWith('CARD_TRANSACTION') && num(r.amount) < 0);
+  if (!cards.length) return null;
+  let prev = -Infinity, last = null, matches = 0;
+  for (const r of sorted) {
+    if (r.type !== 'BUY' || !/savings plan/i.test(r.description ?? '') || r.amount === '') continue;
+    const t = ms(r);
+    const win = cards.reduce((s, c) => (ms(c) > prev && ms(c) <= t ? s + roundUpCents(c.amount) : s), 0);
+    if (!win) continue; // otra compra del plan el mismo día: no es la de los redondeos
+    if (win === Math.round(abs(r.amount) * 100)) { matches++; last = t; }
+    prev = t;
+  }
+  if (matches < 3 || last == null) return null; // sin un patrón claro, mejor no restar nada
+  const pend = cards.filter((c) => ms(c) > last);
+  const cents = pend.reduce((s, c) => s + roundUpCents(c.amount), 0);
+  return cents ? { amount: cents / 100, n: pend.length, since: new Date(last).toISOString().slice(0, 10) } : null;
 }
 
 /**

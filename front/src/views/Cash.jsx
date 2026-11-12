@@ -38,6 +38,12 @@ export default function Cash({ cash, labels, portfolioValue }) {
             <div className="hero-v">{eur(cash.balance)}</div>
             <div className="hero-d">
               <span className="chg"><em>Reconstruido sumando todos los movimientos del CSV hasta el {dateLong(series.t.at(-1))}</em></span>
+              {cash.roundUps && (
+                <span className="chg"><em>
+                  {eur(cash.ledger)} en movimientos − {eur(cash.roundUps.amount)} de redondeos de {cash.roundUps.n === 1 ? '1 pago' : `${cash.roundUps.n} pagos`} con
+                  tarjeta reservados para la próxima inversión semanal
+                </em></span>
+              )}
             </div>
           </section>
           <section className="chart-block">

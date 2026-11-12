@@ -262,3 +262,28 @@ test('efectivo: los abonos sueltos suman y la serie va por fecha valor', () => {
   // Un abono no es una retención: no cuenta en los impuestos del ejercicio.
   assert.deepEqual(buildIncome(rows), {});
 });
+
+test('efectivo: descuenta los redondeos de la tarjeta pendientes de invertir', () => {
+  const card = (id, dt, amount) => ({ transaction_id: id, category: 'CASH', type: 'CARD_TRANSACTION', datetime: dt, date: dt.slice(0, 10), amount, fee: '', tax: '', name: '', symbol: '', description: '' });
+  const plan = (id, dt, amount) => ({ transaction_id: id, category: 'TRADING', type: 'BUY', asset_class: 'FUND', name: 'ETF', symbol: 'IE00B3WJKG14', datetime: dt, date: dt.slice(0, 10), shares: '0.01', price: '40', amount, fee: '', tax: '', description: 'Savings plan execution IE00B3WJKG14' });
+  const rows = [
+    { transaction_id: 'in', category: 'CASH', type: 'CUSTOMER_INBOUND', datetime: '2026-01-01T09:00:00Z', date: '2026-01-01', amount: '100.00', fee: '', tax: '', name: '', symbol: '', description: '' },
+    // Tres semanas: cada compra es el redondeo de los pagos desde la anterior (4,00 € redondea 1 €).
+    card('c1', '2026-01-03T10:00:00Z', '-2.30'), card('c2', '2026-01-04T10:00:00Z', '-4.00'), plan('p1', '2026-01-05T14:00:00Z', '-1.70'),
+    plan('p60', '2026-01-05T14:05:00Z', '-60.00'), // aportación fija del mismo día: no cuenta
+    card('c3', '2026-01-10T10:00:00Z', '-9.95'), plan('p2', '2026-01-12T14:00:00Z', '-0.05'),
+    card('c4', '2026-01-15T10:00:00Z', '-0.65'), plan('p3', '2026-01-19T14:00:00Z', '-0.35'),
+    // Pendientes: 0,35 + 0,01.
+    card('c5', '2026-01-20T10:10:00Z', '-0.65'), card('c6', '2026-01-20T10:15:00Z', '-2.99'),
+  ];
+  const cash = buildCash(rows);
+  const ledger = 100 - 2.3 - 4 - 1.7 - 60 - 9.95 - 0.05 - 0.65 - 0.35 - 0.65 - 2.99;
+  assert.equal(cash.ledger, +ledger.toFixed(2));
+  assert.deepEqual(cash.roundUps, { amount: 0.36, n: 2, since: '2026-01-19' });
+  assert.equal(cash.balance, +(ledger - 0.36).toFixed(2));
+  assert.equal(cash.days.at(-1)[1], cash.balance);
+  // Sin el patrón (menos de tres semanas que casen) no se resta nada.
+  const loose = buildCash(rows.filter((r) => !['p2', 'p3'].includes(r.transaction_id)));
+  assert.equal(loose.roundUps, null);
+  assert.equal(loose.balance, loose.ledger);
+});
