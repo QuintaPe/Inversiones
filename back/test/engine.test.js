@@ -19,7 +19,9 @@ test('coste medio ponderado, venta parcial y dividendos', () => {
     row({ datetime: '2025-04-01T10:00:00Z', category: 'CASH', type: 'DIVIDEND', shares: '15', amount: '3.00', tax: '-0.57', transaction_id: 'aaaaaaaa-0004' }),
     row({ datetime: '2025-04-02T10:00:00Z', category: 'CASH', type: 'CARD_TRANSACTION', name: 'Bar', symbol: '', amount: '-5', transaction_id: 'aaaaaaaa-0005' }),
   ));
-  assert.equal(rows.length, 4, 'las filas de tarjeta no se guardan');
+  assert.equal(rows.length, 5);
+  const card = rows.find((r) => r.type === 'CARD_TRANSACTION');
+  assert.deepEqual([card.name, card.description, card.amount], ['', '', '-5'], 'de la tarjeta solo se guarda fecha, tipo e importe');
   const { positions } = buildPortfolio(rows);
   assert.equal(positions.length, 1);
   const p = positions[0];

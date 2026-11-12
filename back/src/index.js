@@ -3,6 +3,7 @@ import { createApp } from './app.js';
 import { openDb } from './db.js';
 import { googleVerifier } from './auth.js';
 import { createQuotes } from './quotes.js';
+import { createLogos } from './logos.js';
 
 const PORT = Number(process.env.PORT) || 3001;
 const HOST = process.env.HOST || '127.0.0.1';
@@ -28,5 +29,6 @@ createApp({
   verifyGoogle: GOOGLE_CLIENT_ID ? googleVerifier(GOOGLE_CLIENT_ID) : null,
   sessionSecret,
   quotes: process.env.LIVE_QUOTES === '0' ? null : createQuotes(),
+  logos: process.env.LOGOS === '0' ? null : createLogos({ db }),
   trustProxy: process.env.TRUST_PROXY === '1',
 }).listen(PORT, HOST, () => console.log(`API en http://${HOST}:${PORT}`));

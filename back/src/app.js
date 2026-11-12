@@ -4,9 +4,11 @@ import cookieParser from 'cookie-parser';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseCsv, buildPortfolio, CsvError } from './engine.js';
+import crypto from 'node:crypto';
+import { parseCsv, buildPortfolio, buildCash, manualRow, isInvestRow, CASH_LABEL, CsvError } from './engine.js';
 import { sessions, AuthError } from './auth.js';
 import { createHistory } from './history.js';
+import { createLogos } from './logos.js';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 
@@ -20,7 +22,7 @@ const parsePrice = (v) => {
  * @param verifyGoogle  (credential) => perfil; null si no hay GOOGLE_CLIENT_ID
  * @param quotes        servicio de quotes.js (o null para desactivar las cotizaciones en vivo)
  */
-export function createApp({ db, verifyGoogle, googleClientId, sessionSecret, quotes = null, trustProxy = false }) {
+export function createApp({ db, verifyGoogle, googleClientId, sessionSecret, quotes = null, logos = null, trustProxy = false }) {
   const app = express();
   const session = sessions(sessionSecret);
   const history = quotes?.history ? createHistory({ db, quotes }) : null;
@@ -43,7 +45,7 @@ export function createApp({ db, verifyGoogle, googleClientId, sessionSecret, quo
       p.sector = symbols[p.isin]?.sector ?? null;
       p.industry = symbols[p.isin]?.industry ?? null;
     }
-    return { positions, meta: { lastDate, firstDate, rows: rows.length, lastUpload, liveQuotes: !!quotes, history: !!history } };
+    return { positions, meta: { lastDate, firstDate, rows: rows.filter(isInvestRow).length, lastUpload, liveQuotes: !!quotes, history: !!history } };
   }
 
   // ---------- sesión ----------
@@ -85,12 +87,80 @@ export function createApp({ db, verifyGoogle, googleClientId, sessionSecret, quo
   // (subir dos veces el mismo archivo no duplica nada); ?replace=1 sustituye todo.
   api.post('/upload', upload.single('file'), async (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'No se ha recibido ningún archivo.' });
-    const { rows, total } = parseCsv(req.file.buffer.toString('utf8'));
+    const { rows, total, invest } = parseCsv(req.file.buffer.toString('utf8'));
     const info = await db.saveUpload(req.userId, {
       name: Buffer.from(req.file.originalname, 'latin1').toString('utf8'),
-      total, rows, replace: req.query.replace === '1',
+      total, rows, relevant: invest, replace: req.query.replace === '1',
     });
     res.json({ upload: info, ...(await portfolio(req.userId)) });
+  });
+
+  // Logotipo de un valor. 404 si no hay: el front enseña las iniciales.
+  api.get('/logos/:isin', async (req, res) => {
+    const logo = logos ? await logos.get(req.params.isin.toUpperCase()).catch(() => null) : null;
+    if (!logo) return res.status(404).set('Cache-Control', 'private, max-age=86400').end();
+    res.set({ 'Content-Type': logo.type, 'Cache-Control': 'private, max-age=604800' }).send(logo.data);
+  });
+
+  // ---------- operaciones a mano ----------
+  const TYPES = new Set(['BUY', 'SELL', 'DIVIDEND']);
+  const posNum = (v) => { const n = typeof v === 'number' ? v : parseFloat(String(v ?? '').replace(',', '.')); return Number.isFinite(n) && n >= 0 ? n : NaN; };
+  function readOp(body) {
+    const op = {
+      type: body?.type, isin: String(body?.isin ?? '').trim().toUpperCase(), name: String(body?.name ?? '').trim(),
+      date: body?.date, asset_class: body?.asset_class,
+      shares: posNum(body?.shares), price: posNum(body?.price), fee: posNum(body?.fee || 0), tax: posNum(body?.tax || 0), amount: posNum(body?.amount || 0),
+    };
+    if (!TYPES.has(op.type)) return 'Tipo de operación no válido.';
+    if (!op.isin || op.isin.length > 20 || !op.name || op.name.length > 80) return 'Indica el nombre y el ISIN del activo.';
+    if (!isDate(op.date) || op.date > new Date().toISOString().slice(0, 10)) return 'La fecha no es válida.';
+    if ([op.fee, op.tax].some(Number.isNaN)) return 'Comisión o impuesto no válidos.';
+    if (op.type === 'DIVIDEND') return op.amount > 0 ? op : 'Indica el importe bruto del dividendo.';
+    return op.shares > 0 && op.price > 0 ? op : 'Indica cantidad y precio.';
+  }
+  // Una operación no puede dejar una posición en negativo (vender más de lo que hay).
+  const oversold = (rows) => buildPortfolio(rows).positions.find((p) => p.sh < -1e-6 || p.evs.some((e) => e.sa < -1e-6));
+
+  api.post('/transactions', async (req, res) => {
+    const op = readOp(req.body);
+    if (typeof op === 'string') return res.status(400).json({ error: op });
+    const row = manualRow(op, `manual-${crypto.randomUUID()}`);
+    const bad = oversold([...(await db.getRows(req.userId)), row]);
+    if (bad) return res.status(400).json({ error: `Con esta operación venderías más ${bad.name} de lo que tenías en esa fecha.` });
+    await db.putRow(req.userId, row);
+    res.json(await portfolio(req.userId));
+  });
+
+  api.put('/transactions/:tid', async (req, res) => {
+    if (!req.params.tid.startsWith('manual-')) return res.status(400).json({ error: 'Solo se pueden editar las operaciones añadidas a mano.' });
+    if (!(await db.getRow(req.userId, req.params.tid))) return res.status(404).json({ error: 'Operación no encontrada.' });
+    const op = readOp(req.body);
+    if (typeof op === 'string') return res.status(400).json({ error: op });
+    const row = manualRow(op, req.params.tid);
+    const bad = oversold([...(await db.getRows(req.userId)).filter((r) => r.transaction_id !== row.transaction_id), row]);
+    if (bad) return res.status(400).json({ error: `Con este cambio venderías más ${bad.name} de lo que tenías en esa fecha.` });
+    await db.putRow(req.userId, row);
+    res.json(await portfolio(req.userId));
+  });
+
+  api.delete('/transactions/:tid', async (req, res) => {
+    const row = await db.getRow(req.userId, req.params.tid);
+    if (!row) return res.status(404).json({ error: 'Operación no encontrada.' });
+    const bad = oversold((await db.getRows(req.userId)).filter((r) => r.transaction_id !== row.transaction_id));
+    if (bad) return res.status(400).json({ error: `No se puede quitar: dejaría ventas de ${bad.name} sin las compras que las cubren.` });
+    await db.removeRow(req.userId, row, !row.transaction_id.startsWith('manual-'));
+    res.json(await portfolio(req.userId));
+  });
+
+  api.get('/transactions/removed', async (req, res) => res.json({ removed: await db.getRemoved(req.userId) }));
+  api.post('/transactions/:tid/restore', async (req, res) => {
+    if (!(await db.restoreRow(req.userId, req.params.tid))) return res.status(404).json({ error: 'Operación no encontrada.' });
+    res.json(await portfolio(req.userId));
+  });
+
+  // Saldo de efectivo reconstruido desde el CSV (null si el CSV se subió antes de guardar el efectivo).
+  api.get('/cash', async (req, res) => {
+    res.json({ cash: buildCash(await db.getRows(req.userId)), labels: CASH_LABEL });
   });
 
   // Fija (o borra, con price vacío) el precio actual de una posición.

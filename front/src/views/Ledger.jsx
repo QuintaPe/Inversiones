@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import * as api from '../api.js';
 import { Asset, Empty, Icon, Kind, Search, Seg, Stat } from '../components/ui.jsx';
 import { sum } from '../lib/calc.js';
 import { eur, eurS, num, qty, sign, date } from '../lib/format.js';
@@ -21,7 +22,9 @@ function download(rows) {
   URL.revokeObjectURL(el.href);
 }
 
-export default function Ledger({ a, onOpen }) {
+export default function Ledger({ a, meta, onOpen, onAddOp, onRestoreOp }) {
+  const [removed, setRemoved] = useState([]);
+  useEffect(() => { api.getRemoved().then((r) => setRemoved(r.removed)).catch(() => {}); }, [meta?.rows]);
   const [kind, setKind] = useState('all');
   const [year, setYear] = useState('all');
   const [q, setQ] = useState('');
@@ -45,6 +48,7 @@ export default function Ledger({ a, onOpen }) {
         </select>
         <Search value={q} onChange={(v) => { setQ(v); setLimit(PAGE); }} placeholder="Buscar activo, ISIN o ID" label="Buscar operación" />
         <button type="button" className="btn" disabled={!rows.length} onClick={() => download(rows)}><Icon name="download" size={16} />Exportar CSV</button>
+        <button type="button" className="btn pri" onClick={() => onAddOp({})}><Icon name="plus" size={16} />Añadir operación</button>
       </div>
 
       <div className="card stats five">
@@ -90,6 +94,20 @@ export default function Ledger({ a, onOpen }) {
             Mostrar más ({rows.length - limit} restantes)</button></div>
         )}
       </div>
+      {removed.length > 0 && (
+        <div className="card">
+          <header className="card-h"><div><h2>Operaciones quitadas ({removed.length})</h2><p>No cuentan en ningún cálculo ni vuelven al resubir el CSV</p></div></header>
+          <ul className="vals">
+            {removed.map((r) => (
+              <li key={r.transaction_id}>
+                <span>{date(r.date)} · {r.name} · {{ BUY: 'compra', SELL: 'venta', DIVIDEND: 'dividendo' }[r.type] ?? r.type.toLowerCase()}</span>
+                <b>{r.amount ? eur(Math.abs(parseFloat(r.amount))) : ''}</b>
+                <button type="button" className="btn" onClick={() => onRestoreOp(r.transaction_id)}><Icon name="undo" size={15} />Restaurar</button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       <p className="note">
         Neto: lo que sale (−) o entra (+) de tu cuenta, comisiones e impuestos incluidos. El resultado de cada venta usa el
         coste medio ponderado; el criterio FIFO está en Fiscalidad. Las ejecuciones parciales de una misma orden (mismo

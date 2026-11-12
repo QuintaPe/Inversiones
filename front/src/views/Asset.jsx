@@ -11,7 +11,8 @@ const today = () => new Date().toISOString().slice(0, 10);
 const shift = (d, days) => new Date(Date.parse(`${d}T00:00:00Z`) + days * 86400000).toISOString().slice(0, 10);
 
 /** Una operación con su cuenta paso a paso y el estado de la posición después. */
-function Op({ x }) {
+function Op({ x, onEdit, onRemove }) {
+  const manual = !x.parts && x.tid?.startsWith('manual-');
   return (
     <li className="op">
       <div className="op-h">
@@ -48,7 +49,11 @@ function Op({ x }) {
             Orden en {x.parts.length} ejecuciones: {x.parts.map((f) => `${qty(f.sh)} × ${num(f.px)}`).join(' + ')}
           </span>
         )}
-        <span className="op-id" title="Últimos 8 caracteres del transaction_id del CSV">ID {(x.ids ?? [x.id]).join(' · ')}</span>
+        <span className="op-f">
+          <span className="op-id" title="Últimos 8 caracteres del transaction_id del CSV">{manual ? 'Añadida a mano' : `ID ${(x.ids ?? [x.id]).join(' · ')}`}</span>
+          {manual && <button type="button" className="link" onClick={() => onEdit(x)}>Editar</button>}
+          <button type="button" className="link" onClick={() => onRemove(x)}>Quitar</button>
+        </span>
       </div>
     </li>
   );
@@ -139,7 +144,7 @@ function Valuations({ p, onPrice, onChange }) {
   );
 }
 
-export default function Asset({ x, totalVal, yearBase, onBack, onPrice, liveQuotes, onHistoryChange }) {
+export default function Asset({ x, totalVal, yearBase, onBack, onPrice, liveQuotes, onHistoryChange, onAddOp, onRemoveOp }) {
   const { p } = x;
   const [range, setRange] = useState('max');
   const [hist, setHist] = useState(undefined); // undefined = cargando; null = sin cotización
@@ -314,8 +319,17 @@ export default function Asset({ x, totalVal, yearBase, onBack, onPrice, liveQuot
           )}
           {p.open && hist === null && <Valuations p={p} onPrice={onPrice} onChange={onHistoryChange} />}
           {p.open && p.lots?.length > 0 && <Simulator key={p.isin} p={p} yearBase={yearBase} />}
-          <Card title={`Operaciones (${x.ops.length})`}>
-            <ul className="ops">{[...x.ops].reverse().map((e) => <Op key={e.id + e.k} x={e} />)}</ul>
+          <Card title={`Operaciones (${x.ops.length})`}
+            right={<button type="button" className="btn" onClick={() => onAddOp({ isin: p.isin, name: p.name, asset_class: p.cls })}><Icon name="plus" size={15} />Añadir</button>}>
+            <ul className="ops">
+              {[...x.ops].reverse().map((e) => (
+                <Op key={e.id + e.k} x={e} onRemove={onRemoveOp}
+                  onEdit={(o) => onAddOp({
+                    tid: o.tid, type: { B: 'BUY', S: 'SELL', D: 'DIVIDEND' }[o.k], isin: p.isin, name: p.name, asset_class: p.cls, date: o.d,
+                    shares: o.sh, price: o.px, fee: o.fee, tax: o.tax, amount: o.g,
+                  })} />
+              ))}
+            </ul>
           </Card>
         </aside>
       </div>

@@ -7,6 +7,8 @@ import { Icon, Menu, Seg, Skeleton, Toasts, UploadButton } from './components/ui
 import Login from './components/Login.jsx';
 import Palette from './components/Palette.jsx';
 import Asset from './views/Asset.jsx';
+import Cash from './views/Cash.jsx';
+import OpForm from './components/OpForm.jsx';
 import Dashboard from './views/Dashboard.jsx';
 import Positions from './views/Positions.jsx';
 import Ledger from './views/Ledger.jsx';
@@ -19,6 +21,7 @@ const NAV = [
   ['operaciones', 'Operaciones'],
   ['dividendos', 'Dividendos'],
   ['fiscalidad', 'Fiscalidad'],
+  ['efectivo', 'Efectivo'],
 ];
 const TITLES = Object.fromEntries(NAV);
 const THEMES = [['auto', 'Auto'], ['light', 'Claro'], ['dark', 'Oscuro']];
@@ -179,6 +182,35 @@ export default function App() {
     }
   };
 
+  // ---------- operaciones a mano y efectivo ----------
+  const [opForm, setOpForm] = useState(null); // null | datos iniciales del formulario
+  const [cash, setCash] = useState(undefined);
+  const txRows = data?.meta?.rows;
+  useEffect(() => {
+    if (txRows == null) return undefined;
+    let alive = true;
+    api.getCash().then((r) => alive && setCash(r)).catch(() => alive && setCash({ cash: null, labels: {} }));
+    return () => { alive = false; };
+  }, [txRows, data?.meta?.lastUpload?.at]);
+  const apply = useCallback((res) => setData({ positions: res.positions, meta: res.meta }), []);
+  const saveOp = useCallback(async (op, tid) => {
+    apply(await (tid ? api.editTx(tid, op) : api.addTx(op)));
+    notify('ok', tid ? 'Operación actualizada.' : 'Operación añadida.');
+  }, [apply, notify]);
+  const removeOp = useCallback(async (x) => {
+    const tids = (x.parts ?? [x]).map((e) => e.tid);
+    if (!window.confirm(`¿Quitar esta operación${tids.length > 1 ? ` (${tids.length} ejecuciones)` : ''}? Podrás restaurarla desde Operaciones.`)) return;
+    try {
+      let res;
+      for (const tid of tids) res = await api.deleteTx(tid);
+      apply(res);
+      notify('ok', 'Operación quitada.');
+    } catch (err) { fail(err); }
+  }, [apply, notify, fail]);
+  const restoreOp = useCallback(async (tid) => {
+    try { apply(await api.restoreTx(tid)); notify('ok', 'Operación restaurada.'); } catch (err) { fail(err); }
+  }, [apply, notify, fail]);
+
   const positions = data?.positions ?? [];
   const a = useMemo(() => analyze(positions, flt), [positions, flt]);
   // La ficha busca el activo en toda la cartera, sin el filtro de tipo.
@@ -195,11 +227,11 @@ export default function App() {
 
   const empty = data && !positions.length;
   const groups = GROUPS.filter(([g]) => g === 'all' || positions.some((p) => p.grp === g));
-  const view = { a, hist, flt, meta: data?.meta, onOpen: openAsset, onPrice, go };
+  const view = { a, hist, flt, meta: data?.meta, onOpen: openAsset, onPrice, go, cash: cash?.cash, onAddOp: setOpForm, onRestoreOp: restoreOp };
   const section = route === 'activo' ? 'posiciones' : route;
-  const nav = (cls) => (
+  const nav = (cls, max = NAV.length) => (
     <nav className={cls} aria-label="Secciones">
-      {NAV.map(([k, label]) => (
+      {NAV.slice(0, max).map(([k, label]) => (
         <a key={k} href={`#/${k}`} className={section === k ? 'on' : ''} aria-current={section === k ? 'page' : undefined}>
           <Icon name={k} /><span>{label}</span>
         </a>
@@ -261,7 +293,7 @@ export default function App() {
         {data && !empty && route !== 'activo' && (
           <div className="page-h">
             {route !== 'resumen' && <h1>{TITLES[route]}</h1>}
-            {groups.length > 2 && <Seg label="Tipo de activo" options={groups} value={flt} onChange={setFlt} />}
+            {groups.length > 2 && route !== 'efectivo' && <Seg label="Tipo de activo" options={groups} value={flt} onChange={setFlt} />}
           </div>
         )}
 
@@ -280,25 +312,28 @@ export default function App() {
             <UploadButton onFile={upload} busy={busy} className="btn pri">{busy ? 'Subiendo…' : 'Elegir archivo CSV'}</UploadButton>
             <ol className="steps">
               <li><b>1</b>En Trade Republic: Perfil → Transacciones → Exportar CSV.</li>
-              <li><b>2</b>Súbelo aquí. Solo se guardan compras, ventas y dividendos; tarjeta y transferencias se descartan.</li>
+              <li><b>2</b>Súbelo aquí. De los pagos con tarjeta y las transferencias solo se guarda fecha e importe, para calcular tu efectivo.</li>
               <li><b>3</b>Los precios se actualizan solos con la cotización en vivo.</li>
             </ol>
           </div>
         ) : (
           <div className="view" key={path}>
             {route === 'activo' && (assetRow
-              ? <Asset x={assetRow} totalVal={whole.val} yearBase={yearBase} onBack={back} onPrice={onPrice} liveQuotes={liveOn} onHistoryChange={reloadHistory} />
+              ? <Asset x={assetRow} totalVal={whole.val} yearBase={yearBase} onBack={back} onPrice={onPrice} liveQuotes={liveOn} onHistoryChange={reloadHistory}
+                  onAddOp={setOpForm} onRemoveOp={removeOp} />
               : <div className="card"><p className="empty">No tienes ninguna posición con el ISIN {arg}.</p></div>)}
             {route === 'resumen' && <Dashboard {...view} />}
             {route === 'posiciones' && <Positions {...view} />}
             {route === 'operaciones' && <Ledger {...view} />}
             {route === 'dividendos' && <Dividends {...view} />}
             {route === 'fiscalidad' && <Tax {...view} />}
+            {route === 'efectivo' && <Cash cash={cash?.cash} labels={cash?.labels ?? {}} portfolioValue={whole.val} />}
           </div>
         )}
       </main>
 
-      {nav('tabs')}
+      {nav('tabs', 5)}
+      {opForm && <OpForm initial={opForm} positions={positions} onSubmit={saveOp} onClose={() => setOpForm(null)} />}
       {palette && data && (
         <Palette sections={NAV} positions={positions} onClose={() => setPalette(false)}
           onGo={(to) => { setPalette(false); go(to); }} />

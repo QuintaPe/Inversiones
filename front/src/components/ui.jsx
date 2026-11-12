@@ -19,6 +19,10 @@ const PATHS = {
   check: <path d="M5 12.5l4.5 4.5L19 7.5" />,
   alert: <path d="M12 4l9 16H3zM12 10v4M12 17v.5" />,
   chevron: <path d="M9 6l6 6-6 6" />,
+  efectivo: <><path d="M3 7h16a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM3 7V6a2 2 0 0 1 2-2h11" /><circle cx="16.5" cy="13" r="1.2" /></>,
+  plus: <path d="M12 5v14M5 12h14" />,
+  edit: <path d="M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4" />,
+  undo: <path d="M9 7H5V3M5 7a8 8 0 1 1-1.5 8" />,
   back: <path d="M19 12H5M11 6l-6 6 6 6" />,
   bars: <path d="M4 7h10M4 12h16M4 17h6" />,
   grid: <path d="M4 4h9v9H4zM15 4h5v5h-5zM15 11h5v9h-5zM4 15h9v5H4z" />,
@@ -38,10 +42,21 @@ const initials = (name) => {
   const w = name.replace(/[^\p{L}\p{N} ]/gu, ' ').split(/\s+/).filter(Boolean);
   return ((w[0]?.[0] ?? '?') + (w[1]?.[0] ?? w[0]?.[1] ?? '')).toUpperCase();
 };
-/** Círculo con iniciales; el tono sale del ISIN, así un activo siempre tiene el mismo. */
-export const Avatar = ({ p, size = '' }) => (
-  <span className={`av ${size}`} style={{ '--h': hue(p.isin) }} aria-hidden="true">{initials(p.name)}</span>
-);
+const noLogo = new Set(); // ISIN sin logotipo: no se vuelve a pedir en esta sesión
+/** Logotipo del valor; mientras carga, o si no existe, se ven sus iniciales. */
+export function Avatar({ p, size = '' }) {
+  const [state, setState] = useState(noLogo.has(p.isin) ? 'none' : 'loading');
+  useEffect(() => setState(noLogo.has(p.isin) ? 'none' : 'loading'), [p.isin]);
+  return (
+    <span className={`av ${size} ${state === 'ok' ? 'has-logo' : ''}`} style={{ '--h': hue(p.isin) }} aria-hidden="true">
+      {state !== 'ok' && initials(p.name)}
+      {state !== 'none' && (
+        <img src={`/api/logos/${encodeURIComponent(p.isin)}`} alt="" loading="lazy" decoding="async"
+          onLoad={() => setState('ok')} onError={() => { noLogo.add(p.isin); setState('none'); }} />
+      )}
+    </span>
+  );
+}
 /** Avatar + nombre + línea secundaria. */
 export const Asset = ({ p, children, size }) => (
   <span className="asset">

@@ -67,7 +67,8 @@ test('login, subida, precios y aislamiento entre usuarios', async () => {
 
   const up = await ana('/api/upload', form());
   assert.equal(up.status, 200);
-  assert.deepEqual([up.body.upload.total, up.body.upload.relevant, up.body.upload.added], [2, 1, 1]);
+  assert.deepEqual([up.body.upload.total, up.body.upload.relevant, up.body.upload.added], [2, 1, 2]);
+  assert.equal(up.body.meta.rows, 1, 'solo cuentan las operaciones de inversión');
   assert.equal(up.body.positions[0].cost, 101);
   assert.equal((await ana('/api/upload', form())).body.upload.added, 0, 'resubir no duplica');
 
@@ -115,5 +116,50 @@ test('cotización en vivo: rellena precios y no pisa los manuales', async () => 
   await ana('/api/prices/XX0000000001', json('PUT', { price: '' }));
   r = await ana('/api/quotes/refresh', { method: 'POST' });
   assert.deepEqual([r.body.positions[0].price, r.body.positions[0].priceSource], [20, 'live'], 'al borrarlo vuelve el vivo');
+  stop();
+});
+
+test('operaciones a mano: añadir, validar, borrar y restaurar', async () => {
+  const { client, json, stop } = await start();
+  const ana = client();
+  await ana('/api/auth/google', json('POST', { credential: 'ok:ana' }));
+  await ana('/api/upload', form());
+  const op = { type: 'BUY', isin: 'yy0000000002', name: 'Beta', date: '2025-02-01', shares: '5', price: '20,5', fee: 1 };
+
+  let r = await ana('/api/transactions', json('POST', op));
+  assert.equal(r.status, 200);
+  const beta = r.body.positions.find((p) => p.isin === 'YY0000000002');
+  assert.deepEqual([beta.sh, beta.cost], [5, 103.5]);
+  const tid = beta.evs[0].tid;
+  assert.match(tid, /^manual-/);
+
+  r = await ana('/api/transactions', json('POST', { ...op, type: 'SELL', shares: 9 }));
+  assert.equal(r.status, 400, 'no se puede vender más de lo que hay');
+  r = await ana('/api/transactions', json('POST', { ...op, date: '2999-01-01' }));
+  assert.equal(r.status, 400, 'fecha futura');
+
+  r = await ana(`/api/transactions/${tid}`, json('PUT', { ...op, shares: 6 }));
+  assert.equal(r.body.positions.find((p) => p.isin === 'YY0000000002').sh, 6);
+  r = await ana(`/api/transactions/${tid}`, { method: 'DELETE' });
+  assert.equal(r.body.positions.some((p) => p.isin === 'YY0000000002'), false);
+
+  // Una operación del CSV quitada no vuelve al resubir, pero se puede restaurar.
+  r = await ana('/api/transactions/t-1', { method: 'DELETE' });
+  assert.equal(r.body.positions.length, 0);
+  assert.equal((await ana('/api/upload', form())).body.positions.length, 0);
+  assert.equal((await ana('/api/transactions/removed')).body.removed.length, 1);
+  r = await ana('/api/transactions/t-1/restore', { method: 'POST' });
+  assert.equal(r.body.positions[0].cost, 101);
+  stop();
+});
+
+test('efectivo: saldo reconstruido con todas las filas', async () => {
+  const { client, json, stop } = await start();
+  const ana = client();
+  await ana('/api/auth/google', json('POST', { credential: 'ok:ana' }));
+  await ana('/api/upload', form());
+  const { cash } = (await ana('/api/cash')).body;
+  assert.equal(cash.balance, -106); // −100 − 1 de la compra y −5 de tarjeta
+  assert.equal(cash.totals.card, -5);
   stop();
 });

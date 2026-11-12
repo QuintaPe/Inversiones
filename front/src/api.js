@@ -42,4 +42,11 @@ export const getValuations = () => call('/api/valuations');
 export const setValuation = (isin, d, price) => call(`/api/valuations/${encodeURIComponent(isin)}/${d}`, json('PUT', { price }));
 export const deleteValuation = (isin, d) => call(`/api/valuations/${encodeURIComponent(isin)}/${d}`, { method: 'DELETE' });
 
+export const addTx = (op) => call('/api/transactions', json('POST', op));
+export const editTx = (tid, op) => call(`/api/transactions/${encodeURIComponent(tid)}`, json('PUT', op));
+export const deleteTx = (tid) => call(`/api/transactions/${encodeURIComponent(tid)}`, { method: 'DELETE' });
+export const getRemoved = () => call('/api/transactions/removed');
+export const restoreTx = (tid) => call(`/api/transactions/${encodeURIComponent(tid)}/restore`, { method: 'POST' });
+export const getCash = () => call('/api/cash');
+
 export const clearData = () => call('/api/data', { method: 'DELETE' });

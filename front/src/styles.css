@@ -194,6 +194,10 @@ button.kv:hover svg{transform:translateX(3px);color:var(--tx)}
 /* identidad de activo */
 .av{flex:none;display:grid;place-items:center;width:42px;height:42px;border-radius:50%;font-size:13.5px;font-weight:700;letter-spacing:-.01em;background:var(--surface-3);color:var(--tx)}
 .av.sm{width:34px;height:34px;font-size:11.5px}
+.av{position:relative;overflow:hidden}
+.av img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .2s}
+.av.has-logo{background:#fff}
+.av.has-logo img{opacity:1}
 .av.lg{width:52px;height:52px;font-size:17px}
 .asset{display:flex;align-items:center;gap:13px;min-width:0;text-align:left}
 .asset-t{min-width:0;display:flex;flex-direction:column}
@@ -443,3 +447,21 @@ kbd{font:inherit;font-size:11.5px;color:var(--mu);background:var(--surface-3);bo
 .sim-f input{background:var(--surface-2);border:0;border-radius:12px;padding:10px 12px;font-size:15px;font-weight:550;font-variant-numeric:tabular-nums;min-width:0;width:100%}
 .sim-f input:focus{outline:0;box-shadow:0 0 0 2px var(--tx)}
 .sim-q{margin:10px 0 14px}
+
+/* ---------- formularios en hoja ---------- */
+.sheet{width:min(520px,100%);background:var(--surface);border-radius:26px;box-shadow:var(--shadow);padding:22px;display:flex;flex-direction:column;gap:16px;animation:rise .18s ease-out;max-height:84vh;overflow-y:auto}
+.sheet-h{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.sheet-h h2{font-size:22px;font-weight:700;letter-spacing:-.03em}
+.form{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.form label{display:flex;flex-direction:column;gap:5px;color:var(--mu);font-size:12.5px;min-width:0}
+.form label.wide{grid-column:1/-1}
+.form input{background:var(--surface-2);border:0;border-radius:12px;padding:11px 12px;font-size:15px;color:var(--tx);min-width:0;width:100%}
+.form input:focus{outline:0;box-shadow:0 0 0 2px var(--tx)}
+.form input:disabled{opacity:.6}
+.sheet-t{display:flex;justify-content:space-between;align-items:baseline;color:var(--tx-2);border-top:1px solid var(--line);padding-top:14px}
+.sheet-t b{font-size:22px;font-weight:700;letter-spacing:-.03em;color:var(--tx);font-variant-numeric:tabular-nums}
+.sheet-a{display:flex;justify-content:flex-end;gap:8px}
+.op-f{display:flex;align-items:center;gap:12px;margin-top:4px}
+.op-f .op-id{margin:0 auto 0 0}
+.vals .btn{padding:7px 12px;font-size:13px}
+@media(max-width:940px){.nav a[href="#/efectivo"]{display:none}}

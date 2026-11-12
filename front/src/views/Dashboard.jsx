@@ -61,7 +61,7 @@ const Chg = ({ n, p, children }) => (
   </span>
 );
 
-export default function Dashboard({ a, hist, flt, meta, onOpen, go }) {
+export default function Dashboard({ a, hist, flt, cash, meta, onOpen, go }) {
   const [by, setBy] = useState('pos');
   const [map, setMap] = useState(false);
   const [span, setSpan] = useState('day');
@@ -253,6 +253,15 @@ export default function Dashboard({ a, hist, flt, meta, onOpen, go }) {
       </div>
 
       <aside className="dash-side">
+        {cash && flt === 'all' && !none && (
+          <Card title="Patrimonio">
+            <div className="kvs">
+              <Line label="Cartera" value={eur(a.val)} />
+              <Line label="Efectivo en la cuenta" value={eur(cash.balance)} onClick={() => go('efectivo')} />
+              <Line label="Total" value={eur(a.val + cash.balance)} />
+            </div>
+          </Card>
+        )}
         <Card title="Inversiones" sub={`${a.open.length} posiciones${nLive ? ` · ${nLive} en vivo` : ''}`}
           right={hasDay && <Seg options={[['day', 'Día'], ['total', 'Total']]} value={span} onChange={setSpan} label="Variación mostrada" />}>
           <ul className="rows">

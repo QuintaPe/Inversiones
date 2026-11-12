@@ -38,6 +38,13 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS valuations (
      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
      isin TEXT NOT NULL, d TEXT NOT NULL, price REAL NOT NULL, PRIMARY KEY (user_id, isin, d))`,
+  // Logotipos por ISIN (data NULL = no hay; se reintenta pasado un mes).
+  `CREATE TABLE IF NOT EXISTS logos (isin TEXT PRIMARY KEY, type TEXT, data BLOB, fetched_at TEXT NOT NULL)`,
+  // Operaciones del CSV que el usuario ha quitado: no vuelven al resubir el archivo.
+  `CREATE TABLE IF NOT EXISTS removed (
+     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+     transaction_id TEXT NOT NULL, row TEXT NOT NULL, removed_at TEXT NOT NULL,
+     PRIMARY KEY (user_id, transaction_id))`,
   `CREATE TABLE IF NOT EXISTS uploads (
      id INTEGER PRIMARY KEY AUTOINCREMENT,
      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -105,13 +112,16 @@ function makeRepo(client, url) {
     },
 
     /** Inserta/actualiza filas del CSV en una sola transacción. Devuelve cuántas eran nuevas. */
-    async saveUpload(userId, { name, total, rows, replace }) {
+    async saveUpload(userId, { name, total, rows, replace, relevant }) {
+      const gone = new Set((await client.execute({ sql: 'SELECT transaction_id FROM removed WHERE user_id = ?', args: [userId] }))
+        .rows.map((x) => x.transaction_id));
+      rows = rows.filter((r) => !gone.has(r.transaction_id));
       const existing = replace
         ? new Set()
         : new Set((await client.execute({ sql: 'SELECT transaction_id FROM transactions WHERE user_id = ?', args: [userId] }))
             .rows.map((x) => x.transaction_id));
       const added = rows.filter((r) => !existing.has(r.transaction_id)).length;
-      const info = { name, at: now(), total, relevant: rows.length, added };
+      const info = { name, at: now(), total, relevant: relevant ?? rows.length, added };
       const sql = `INSERT OR REPLACE INTO transactions (user_id, ${ROW_COLS.join(', ')})
                    VALUES (?, ${ROW_COLS.map(() => '?').join(', ')})`;
       await client.batch(
@@ -120,12 +130,47 @@ function makeRepo(client, url) {
           ...rows.map((r) => ({ sql, args: [userId, ...ROW_COLS.map((c) => r[c] ?? '')] })),
           {
             sql: 'INSERT INTO uploads (user_id, name, uploaded_at, total, relevant, added) VALUES (?, ?, ?, ?, ?, ?)',
-            args: [userId, info.name, info.at, total, rows.length, added],
+            args: [userId, info.name, info.at, total, info.relevant, added],
           },
         ],
         'write',
       );
       return info;
+    },
+
+    async getRow(userId, tid) {
+      const r = await client.execute({ sql: `SELECT ${ROW_COLS.join(', ')} FROM transactions WHERE user_id = ? AND transaction_id = ?`, args: [userId, tid] });
+      return r.rows[0] ? { ...r.rows[0] } : null;
+    },
+    async putRow(userId, row) {
+      await client.execute({
+        sql: `INSERT OR REPLACE INTO transactions (user_id, ${ROW_COLS.join(', ')}) VALUES (?, ${ROW_COLS.map(() => '?').join(', ')})`,
+        args: [userId, ...ROW_COLS.map((c) => row[c] ?? '')],
+      });
+    },
+    /** Quita una operación. Las del CSV se recuerdan para no reaparecer al resubirlo. */
+    async removeRow(userId, row, remember) {
+      await client.batch([
+        { sql: 'DELETE FROM transactions WHERE user_id = ? AND transaction_id = ?', args: [userId, row.transaction_id] },
+        ...(remember ? [{
+          sql: 'INSERT OR REPLACE INTO removed (user_id, transaction_id, row, removed_at) VALUES (?, ?, ?, ?)',
+          args: [userId, row.transaction_id, JSON.stringify(row), now()],
+        }] : []),
+      ], 'write');
+    },
+    async getRemoved(userId) {
+      const r = await client.execute({ sql: 'SELECT row, removed_at FROM removed WHERE user_id = ? ORDER BY removed_at DESC', args: [userId] });
+      return r.rows.map((x) => ({ ...JSON.parse(x.row), removed_at: x.removed_at }));
+    },
+    async restoreRow(userId, tid) {
+      const r = await client.execute({ sql: 'SELECT row FROM removed WHERE user_id = ? AND transaction_id = ?', args: [userId, tid] });
+      if (!r.rows[0]) return false;
+      const row = JSON.parse(r.rows[0].row);
+      await client.batch([
+        { sql: `INSERT OR REPLACE INTO transactions (user_id, ${ROW_COLS.join(', ')}) VALUES (?, ${ROW_COLS.map(() => '?').join(', ')})`, args: [userId, ...ROW_COLS.map((c) => row[c] ?? '')] },
+        { sql: 'DELETE FROM removed WHERE user_id = ? AND transaction_id = ?', args: [userId, tid] },
+      ], 'write');
+      return true;
     },
 
     async lastUpload(userId) {
@@ -195,6 +240,22 @@ function makeRepo(client, url) {
       if (stmts.length) await client.batch(stmts, 'write');
     },
 
+    // ---------- logotipos ----------
+    /** undefined = nunca buscado; null = no existe; { type, data } = guardado. */
+    async getLogo(isin) {
+      const r = await client.execute({ sql: 'SELECT type, data, fetched_at FROM logos WHERE isin = ?', args: [isin] });
+      const x = r.rows[0];
+      if (!x) return undefined;
+      if (!x.data) return Date.now() - Date.parse(x.fetched_at) < 30 * 86400000 ? null : undefined;
+      return { type: x.type, data: Buffer.from(x.data) };
+    },
+    async saveLogo(isin, logo) {
+      await client.execute({
+        sql: 'INSERT OR REPLACE INTO logos (isin, type, data, fetched_at) VALUES (?, ?, ?, ?)',
+        args: [isin, logo?.type ?? null, logo?.data ?? null, now()],
+      });
+    },
+
     // ---------- histórico ----------
     async getHistoryMeta() {
       const r = await client.execute('SELECT symbol, currency, from_d, last_d, fetched_at FROM history_meta');
@@ -261,7 +322,7 @@ function makeRepo(client, url) {
 
     async clearUserData(userId) {
       await client.batch(
-        ['transactions', 'prices', 'uploads', 'valuations'].map((t) => ({ sql: `DELETE FROM ${t} WHERE user_id = ?`, args: [userId] })),
+        ['transactions', 'prices', 'uploads', 'valuations', 'removed'].map((t) => ({ sql: `DELETE FROM ${t} WHERE user_id = ?`, args: [userId] })),
         'write',
       );
     },

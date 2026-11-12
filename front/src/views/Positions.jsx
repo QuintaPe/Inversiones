@@ -33,8 +33,6 @@ export default function Positions({ a, onOpen, onPrice }) {
             <thead>
               <tr>
                 <Th id="name" sort={s.sort} onSort={s.onSort} className="l">Activo</Th>
-                <Th id="sh" sort={s.sort} onSort={s.onSort} className="hide-m">Cantidad</Th>
-                <Th id="avg" sort={s.sort} onSort={s.onSort} className="hide-m">Precio medio</Th>
                 <Th id="price" sort={s.sort} onSort={s.onSort} className="hide-s">Precio actual</Th>
                 <Th id="cost" sort={s.sort} onSort={s.onSort} className="hide-m">Coste</Th>
                 <Th id="day" sort={s.sort} onSort={s.onSort} className="hide-m">Día</Th>
@@ -50,10 +48,8 @@ export default function Positions({ a, onOpen, onPrice }) {
                 <tr key={x.p.isin} onClick={() => onOpen(x.p.isin)} tabIndex={0}
                   onKeyDown={(ev) => ev.key === 'Enter' && ev.target === ev.currentTarget && onOpen(x.p.isin)}>
                   <td className="l">
-                    <Asset p={x.p}><span className="hide-s">{x.p.isin}</span><span className="only-m hide-s"> · </span><span className="only-m">{qty(x.p.sh)} a {eur(x.avg)}</span></Asset>
+                    <Asset p={x.p}>{qty(x.p.sh)} uds. a {eur(x.avg)}</Asset>
                   </td>
-                  <td className="hide-m">{qty(x.p.sh)}</td>
-                  <td className="hide-m">{eur(x.avg)}</td>
                   <td className="hide-s"><PriceInput p={x.p} onPrice={onPrice} /></td>
                   <td className="hide-m">{eur(x.p.cost)}</td>
                   <td className="hide-m"><Pill n={x.dayPct} plain /></td>
@@ -76,7 +72,7 @@ export default function Positions({ a, onOpen, onPrice }) {
               <tfoot>
                 <tr>
                   <td className="l">Total ({rows.length})</td>
-                  <td className="hide-m" /><td className="hide-m" /><td className="hide-s" />
+                  <td className="hide-s" />
                   <td className="hide-m">{eur(sum(rows, (x) => x.p.cost))}</td>
                   <td className="hide-m" />
                   <td>{eur(sum(rows, (x) => x.v ?? 0))}</td>

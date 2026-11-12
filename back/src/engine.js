@@ -9,12 +9,15 @@ export const REQUIRED_COLUMNS = [
   'shares', 'price', 'amount', 'fee', 'tax', 'description', 'transaction_id',
 ];
 
-// Solo estas filas afectan a la cartera; el resto (tarjeta, transferencias,
-// intereses…) no se guarda.
-const RELEVANT_TYPES = new Set([
+// Filas de inversión: se guardan completas. El resto (tarjeta, transferencias,
+// intereses…) solo se guarda como fecha, tipo e importe, sin comercio ni concepto,
+// para poder reconstruir el saldo de efectivo.
+const INVEST_TYPES = new Set([
   'BUY', 'SELL', 'DIVIDEND', 'PRIVATE_MARKET_BUY', 'IPO_SUBSCRIPTION',
   'BONUS', 'MANUAL', 'BENEFITS_SAVEBACK',
 ]);
+const SKIP_TYPES = new Set(['MIGRATION']); // traspasos internos: ni mueven efectivo ni cambian la posición
+export const isInvestRow = (r) => INVEST_TYPES.has(r.type);
 
 const EPS = 1e-9;
 const num = (v) => {
@@ -45,14 +48,15 @@ export function parseCsv(text) {
     );
   }
   const rows = records
-    .filter((r) => r.transaction_id && RELEVANT_TYPES.has(r.type))
+    .filter((r) => r.transaction_id && r.type && !SKIP_TYPES.has(r.type))
     .map((r) => {
       const row = {};
       for (const c of REQUIRED_COLUMNS) row[c] = r[c] ?? '';
       for (const c of ['original_amount', 'original_currency', 'fx_rate']) row[c] = r[c] ?? '';
+      if (!INVEST_TYPES.has(r.type)) { row.name = ''; row.description = ''; row.symbol = ''; }
       return row;
     });
-  return { total: records.length, rows };
+  return { total: records.length, rows, invest: rows.filter(isInvestRow).length };
 }
 
 const byTime = (a, b) => {
@@ -194,4 +198,60 @@ export function buildPortfolio(rows) {
 
   const dates = events.map((r) => r.date).sort();
   return { positions, lastDate: dates.at(-1) ?? null, firstDate: dates[0] ?? null };
+}
+
+// ---------- efectivo ----------
+const CASH_GROUP = {
+  CUSTOMER_INBOUND: 'deposit', TRANSFER_INBOUND: 'deposit', TRANSFER_INSTANT_INBOUND: 'deposit',
+  TRANSFER_INSTANT_OUTBOUND: 'withdrawal', TRANSFER_OUTBOUND: 'withdrawal', TRANSFER_DIRECT_DEBIT_INBOUND: 'withdrawal',
+  CARD_TRANSACTION: 'card', CARD_TRANSACTION_INTERNATIONAL: 'card',
+  INTEREST_PAYMENT: 'interest', BENEFITS_SAVEBACK: 'reward', BONUS: 'reward',
+  BUY: 'invest', SELL: 'invest', PRIVATE_MARKET_BUY: 'invest', IPO_SUBSCRIPTION: 'invest',
+  DIVIDEND: 'dividend', MANUAL: 'tax',
+};
+export const CASH_LABEL = {
+  deposit: 'Ingresos', withdrawal: 'Retiradas y recibos', card: 'Tarjeta', interest: 'Intereses',
+  reward: 'Saveback y bonus', invest: 'Compras y ventas', dividend: 'Dividendos', tax: 'Impuestos', other: 'Otros',
+};
+
+/** Saldo de efectivo día a día y totales por concepto, a partir de todas las filas. */
+export function buildCash(rows) {
+  const sorted = [...rows].sort(byTime);
+  const totals = {}, months = {}, days = [];
+  let balance = 0, has = false;
+  for (const r of sorted) {
+    // Los cargos sueltos de impuestos vienen con el importe en positivo en la columna tax.
+    const tax = r.type === 'MANUAL' ? -abs(r.tax) : num(r.tax);
+    const delta = num(r.amount) + num(r.fee) + tax;
+    if (!delta) continue;
+    const g = CASH_GROUP[r.type] ?? 'other';
+    if (g !== 'invest' && g !== 'dividend' && g !== 'tax') has = true;
+    balance += delta;
+    totals[g] = (totals[g] ?? 0) + delta;
+    const m = (months[r.date.slice(0, 7)] ??= {});
+    m[g] = (m[g] ?? 0) + delta;
+    if (days.length && days.at(-1)[0] === r.date) days.at(-1)[1] = +balance.toFixed(2);
+    else days.push([r.date, +balance.toFixed(2)]);
+  }
+  // Sin ingresos ni tarjeta en los datos, el saldo no es reconstruible (CSV subido antes de guardar el efectivo).
+  return has ? { balance: +balance.toFixed(2), totals, months, days } : null;
+}
+
+/** Fila de transacción a partir de una operación introducida a mano. */
+export function manualRow(op, id) {
+  const sh = Math.abs(op.shares) || 0, px = Math.abs(op.price) || 0;
+  const fee = Math.abs(op.fee) || 0, tax = Math.abs(op.tax) || 0;
+  const base = {
+    transaction_id: id, datetime: `${op.date}T12:00:00.000Z`, date: op.date,
+    asset_class: op.asset_class || 'STOCK', name: op.name, symbol: op.isin,
+    fee: fee ? (-fee).toFixed(2) : '', tax: tax ? (-tax).toFixed(2) : '',
+    description: 'Operación manual', original_amount: '', original_currency: '', fx_rate: '',
+  };
+  if (op.type === 'DIVIDEND') {
+    return { ...base, category: 'CASH', type: 'DIVIDEND', shares: sh ? String(sh) : '', price: '', amount: Math.abs(op.amount).toFixed(2) };
+  }
+  const gross = (sh * px).toFixed(2);
+  return op.type === 'BUY'
+    ? { ...base, category: 'TRADING', type: 'BUY', shares: String(sh), price: String(px), amount: `-${gross}` }
+    : { ...base, category: 'TRADING', type: 'SELL', shares: String(-sh), price: String(px), amount: gross, tax: '' };
 }
