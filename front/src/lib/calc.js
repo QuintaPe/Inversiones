@@ -69,7 +69,8 @@ export function analyze(positions, flt) {
     return {
       p, has, v, avg: p.cost / p.sh, dayPct, day,
       pl: has ? v - p.cost : null,
-      plp: has ? ((v - p.cost) / p.cost) * 100 : null,
+      // Sin coste (acciones recibidas en una escisión) no hay porcentaje que calcular.
+      plp: has && p.cost > 0 ? ((v - p.cost) / p.cost) * 100 : null,
       ...stats(p),
     };
   });

@@ -25,6 +25,7 @@ const PATHS = {
   undo: <path d="M9 7H5V3M5 7a8 8 0 1 1-1.5 8" />,
   back: <path d="M19 12H5M11 6l-6 6 6 6" />,
   bars: <path d="M4 7h10M4 12h16M4 17h6" />,
+  bell: <path d="M6 16V11a6 6 0 1 1 12 0v5l1.5 2h-15zM10 20a2 2 0 0 0 4 0" />,
   grid: <path d="M4 4h9v9H4zM15 4h5v5h-5zM15 11h5v9h-5zM4 15h9v5H4z" />,
 };
 export const Icon = ({ name, size = 20 }) => (
@@ -45,14 +46,18 @@ const initials = (name) => {
 const noLogo = new Set(); // ISIN sin logotipo: no se vuelve a pedir en esta sesión
 /** Logotipo del valor; mientras carga, o si no existe, se ven sus iniciales. */
 export function Avatar({ p, size = '' }) {
-  const [state, setState] = useState(noLogo.has(p.isin) ? 'none' : 'loading');
-  useEffect(() => setState(noLogo.has(p.isin) ? 'none' : 'loading'), [p.isin]);
+  // El estado va ligado al ISIN: al cambiar de valor vuelve a «cargando» sin un efecto que
+  // pueda pisar un logotipo que ya había llegado (pasaba con las imágenes en caché).
+  const [st, setSt] = useState({ isin: p.isin, s: 'loading' });
+  const state = noLogo.has(p.isin) ? 'none' : st.isin === p.isin ? st.s : 'loading';
+  const set = (s) => setSt({ isin: p.isin, s });
   return (
     <span className={`av ${size} ${state === 'ok' ? 'has-logo' : ''}`} style={{ '--h': hue(p.isin) }} aria-hidden="true">
       {state !== 'ok' && initials(p.name)}
       {state !== 'none' && (
         <img src={`/api/logos/${encodeURIComponent(p.isin)}`} alt="" loading="lazy" decoding="async"
-          onLoad={() => setState('ok')} onError={() => { noLogo.add(p.isin); setState('none'); }} />
+          ref={(el) => { if (el?.complete && el.naturalWidth > 0 && state !== 'ok') set('ok'); }}
+          onLoad={() => set('ok')} onError={() => { noLogo.add(p.isin); set('none'); }} />
       )}
     </span>
   );

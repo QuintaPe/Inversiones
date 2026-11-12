@@ -14,8 +14,10 @@ export const REQUIRED_COLUMNS = [
 // para poder reconstruir el saldo de efectivo.
 const INVEST_TYPES = new Set([
   'BUY', 'SELL', 'DIVIDEND', 'PRIVATE_MARKET_BUY', 'IPO_SUBSCRIPTION',
-  'BONUS', 'MANUAL', 'BENEFITS_SAVEBACK',
+  'BONUS', 'MANUAL', 'BENEFITS_SAVEBACK', 'SPIN_OFF',
 ]);
+// Columnas que se guardan si el CSV las trae (las exportaciones antiguas no las tienen).
+const OPTIONAL_COLUMNS = ['original_amount', 'original_currency', 'fx_rate', 'account_type', 'currency'];
 const SKIP_TYPES = new Set(['MIGRATION']); // traspasos internos: ni mueven efectivo ni cambian la posición
 export const isInvestRow = (r) => INVEST_TYPES.has(r.type);
 
@@ -52,11 +54,24 @@ export function parseCsv(text) {
     .map((r) => {
       const row = {};
       for (const c of REQUIRED_COLUMNS) row[c] = r[c] ?? '';
-      for (const c of ['original_amount', 'original_currency', 'fx_rate']) row[c] = r[c] ?? '';
+      for (const c of OPTIONAL_COLUMNS) row[c] = r[c] ?? '';
       if (!INVEST_TYPES.has(r.type)) { row.name = ''; row.description = ''; row.symbol = ''; }
       return row;
     });
-  return { total: records.length, rows, invest: rows.filter(isInvestRow).length };
+  return { total: records.length, rows, invest: rows.filter(isInvestRow).length, unknown: unknownTypes(rows) };
+}
+
+/**
+ * Tipos de fila que el motor todavía no sabe interpretar: { tipo: nº de filas }.
+ * Se avisa de ellos en vez de ignorarlos en silencio.
+ */
+export function unknownTypes(rows) {
+  const out = {};
+  for (const r of rows) {
+    if (INVEST_TYPES.has(r.type) || CASH_GROUP[r.type]) continue;
+    out[r.type] = (out[r.type] ?? 0) + 1;
+  }
+  return out;
 }
 
 const byTime = (a, b) => {
@@ -90,6 +105,8 @@ export function buildPortfolio(rows, splits = {}) {
   const sorted = [...rows].sort(byTime);
   const trades = sorted.filter((r) => r.category === 'TRADING' && (r.type === 'BUY' || r.type === 'SELL'));
   const dividends = sorted.filter((r) => r.type === 'DIVIDEND');
+  // Escisiones: acciones de una empresa nueva recibidas sin pagar nada.
+  const spinoffs = sorted.filter((r) => r.type === 'SPIN_OFF' && r.symbol && num(r.shares) > 0);
 
   // Private Markets: pre-pagos pendientes de casar con su compra, y cuáles se pagaron con bonus.
   const prepays = sorted
@@ -123,13 +140,13 @@ export function buildPortfolio(rows, splits = {}) {
   };
 
   // Los splits entran como eventos al empezar su día: las operaciones de esa fecha ya van en acciones nuevas.
-  const held = new Set(trades.map((r) => r.symbol));
+  const held = new Set([...trades, ...spinoffs].map((r) => r.symbol));
   const splitRows = Object.entries(splits).filter(([isin]) => held.has(isin)).flatMap(([isin, list]) =>
     list.filter(([, ratio]) => isShareSplit(ratio)).map(([d, ratio]) => ({
       type: 'SPLIT', symbol: isin, date: d, datetime: `${d}T00:00:00.000Z`, ratio, transaction_id: `split-${isin}-${d}`,
     })));
 
-  const events = [...trades, ...dividends, ...splitRows].sort(byTime);
+  const events = [...trades, ...dividends, ...spinoffs, ...splitRows].sort(byTime);
   for (const r of events) {
     if (!r.symbol) continue;
     if (r.type === 'SPLIT') {
@@ -160,7 +177,16 @@ export function buildPortfolio(rows, splits = {}) {
     }
 
     const sh = abs(r.shares), px = num(r.price);
-    if (r.type === 'BUY') {
+    if (r.type === 'SPIN_OFF') {
+      // Entran a coste cero: el CSV no dice de qué empresa salen ni qué parte de su coste
+      // les corresponde, así que al venderlas todo el importe cuenta como ganancia.
+      p.sh += sh;
+      p.lots.push({ sh, unit: 0, d: r.date });
+      Object.assign(ev, {
+        k: 'B', spin: true, px: 0, sh, g: 0, fee: 0, tax: 0, net: 0, sa: p.sh, ca: p.cost, av: p.cost / p.sh,
+        note: 'Acciones recibidas por una escisión (spin-off), sin desembolso: entran a coste cero.',
+      });
+    } else if (r.type === 'BUY') {
       let g = abs(r.amount), fee = abs(r.fee), tax = abs(r.tax), note;
       if (r.amount === '') {
         // Compra sin importe en el CSV: el dinero salió antes como pre-pago.
@@ -243,10 +269,11 @@ export function buildPortfolio(rows, splits = {}) {
 const CASH_GROUP = {
   CUSTOMER_INBOUND: 'deposit', TRANSFER_INBOUND: 'deposit', TRANSFER_INSTANT_INBOUND: 'deposit',
   TRANSFER_INSTANT_OUTBOUND: 'withdrawal', TRANSFER_OUTBOUND: 'withdrawal', TRANSFER_DIRECT_DEBIT_INBOUND: 'withdrawal',
-  CARD_TRANSACTION: 'card', CARD_TRANSACTION_INTERNATIONAL: 'card',
+  CARD_TRANSACTION: 'card', CARD_TRANSACTION_INTERNATIONAL: 'card', CARD_ORDERING_FEE: 'card',
   INTEREST_PAYMENT: 'interest', BENEFITS_SAVEBACK: 'reward', BONUS: 'reward',
   BUY: 'invest', SELL: 'invest', PRIVATE_MARKET_BUY: 'invest', IPO_SUBSCRIPTION: 'invest',
   DIVIDEND: 'dividend', MANUAL: 'tax',
+  SPIN_OFF: 'invest', // no mueve efectivo; aquí solo para que conste como tipo conocido
 };
 export const CASH_LABEL = {
   deposit: 'Ingresos', withdrawal: 'Retiradas y recibos', card: 'Tarjeta', interest: 'Intereses',
@@ -310,6 +337,7 @@ export function manualRow(op, id) {
     asset_class: op.asset_class || 'STOCK', name: op.name, symbol: op.isin,
     fee: fee ? (-fee).toFixed(2) : '', tax: tax ? (-tax).toFixed(2) : '',
     description: 'Operación manual', original_amount: '', original_currency: '', fx_rate: '',
+    account_type: '', currency: 'EUR',
   };
   if (op.type === 'DIVIDEND') {
     return { ...base, category: 'CASH', type: 'DIVIDEND', shares: sh ? String(sh) : '', price: '', amount: Math.abs(op.amount).toFixed(2) };

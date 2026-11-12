@@ -90,3 +90,21 @@ self.addEventListener('fetch', (ev) => {
     })),
   );
 });
+
+// Avisos (alertas de precio) enviados por el servidor, también con la app cerrada.
+self.addEventListener('push', (ev) => {
+  let d = {};
+  try { d = ev.data?.json() ?? {}; } catch { /* aviso sin contenido legible */ }
+  ev.waitUntil(self.registration.showNotification(d.title || 'Cartera', {
+    body: d.body || '', icon: '/icon-192.png', badge: '/icon-192.png', tag: d.tag, data: { url: d.url || '/' },
+  }));
+});
+self.addEventListener('notificationclick', (ev) => {
+  ev.notification.close();
+  const url = ev.notification.data?.url || '/';
+  ev.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+    const open = list.find((c) => new URL(c.url).origin === self.location.origin);
+    if (!open) return self.clients.openWindow(url);
+    return open.navigate(url).then((c) => (c ?? open).focus());
+  }));
+});

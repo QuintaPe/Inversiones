@@ -105,6 +105,12 @@ export default function Dashboard({ a, hist, flt, cash, meta, onOpen, go }) {
   const list = [...a.o].sort((x, y) => (y.v ?? -1) - (x.v ?? -1));
   const top5 = [...a.priced].sort((x, y) => y.v - x.v).slice(0, 5).reduce((t, x) => t + x.w, 0);
   const nLive = a.priced.filter((x) => x.p.priceSource === 'live').length;
+  // Lo que cada valor ha sumado o restado en total: los tres mejores y los tres peores.
+  const contrib = useMemo(() => {
+    const all = [...a.o.map((x) => ({ p: x.p, t: (x.pl ?? 0) + x.real + x.div })), ...a.c.map((x) => ({ p: x.p, t: x.real + x.div }))]
+      .filter((x) => Math.abs(x.t) >= 0.005).sort((x, y) => y.t - x.t);
+    return all.length <= 6 ? all : [...all.slice(0, 3), ...all.slice(-3)];
+  }, [a.o, a.c]);
 
   // --- gráfica con histórico ---
   let chart = null, legend = null;
@@ -211,6 +217,9 @@ export default function Dashboard({ a, hist, flt, cash, meta, onOpen, go }) {
                   hint={`habrías ganado ${eurS(b.gain)}: ${st.gain >= b.gain ? 'lo bates por' : 'te bate por'} ${eur(Math.abs(st.gain - b.gain))}`}
                   value={pctS(b.mwr)} tone={sign(b.mwr)} />
               ))}
+              {st.vol != null && <Line label="Volatilidad anualizada" hint="cuánto se mueve tu cartera de un día a otro" value={pct(st.vol)} />}
+              {st.ratio != null && <Line label="Rentabilidad por unidad de riesgo" hint="rentabilidad anualizada ÷ volatilidad; por encima de 1 es buena" value={st.ratio.toLocaleString('es-ES', { maximumFractionDigits: 2 })} tone={sign(st.ratio)} />}
+              {st.best && <Line label="Mejor y peor día" hint={`${date(st.best.d)} y ${date(st.worst.d)}`} value={`${pctS(st.best.r)} / ${pctS(st.worst.r)}`} />}
               <Line label="Rentabilidad ponderada por tiempo" hint="cada día pesa igual, hubiera 100 € o 100.000 €" value={pctS(st.twr)} tone={sign(st.twr)} />
               {st.bench.map((b) => b.r != null && (
                 <Line key={`${b.key}-t`} label={`${b.name} ponderada por tiempo`} value={pctS(b.r)} />
@@ -290,6 +299,21 @@ export default function Dashboard({ a, hist, flt, cash, meta, onOpen, go }) {
           </ul>
           <button type="button" className="btn wide soft" onClick={() => go('posiciones')}>{list.length > 10 ? `Ver las ${list.length} posiciones` : 'Ver detalle de posiciones'}</button>
         </Card>
+
+        {contrib.length > 1 && (
+          <Card title="Qué ha aportado cada valor" sub="Latente + realizado + dividendos, desde el inicio">
+            <ul className="rows">
+              {contrib.map((x) => (
+                <li key={x.p.isin}>
+                  <button type="button" onClick={() => onOpen(x.p.isin)}>
+                    <Asset p={x.p}>{x.p.open ? 'En cartera' : 'Cerrada'}</Asset>
+                    <span className="row-r"><span className={`row-v ${sign(x.t)}`}>{eurS(x.t)}</span></span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </Card>
+        )}
 
         <Card title="Últimos movimientos" right={<button type="button" className="link" onClick={() => go('operaciones')}>Ver todos</button>}>
           <ul className="rows">

@@ -7,6 +7,8 @@ import { Icon, Menu, Seg, Skeleton, Toasts, UploadButton } from './components/ui
 import Login from './components/Login.jsx';
 import ErrorBoundary from './components/ErrorBoundary.jsx';
 import Palette from './components/Palette.jsx';
+import { Confirm, ImportPreview } from './components/Dialogs.jsx';
+import { pushSupported, pushEnabled, enablePush, disablePush } from './lib/push.js';
 import Asset from './views/Asset.jsx';
 import Cash from './views/Cash.jsx';
 import OpForm from './components/OpForm.jsx';
@@ -75,7 +77,7 @@ export default function App() {
 
   useEffect(() => {
     Promise.all([api.getConfig(), api.getMe()])
-      .then(([cfg, me]) => setAuth({ user: me.user, clientId: cfg.googleClientId }))
+      .then(([cfg, me]) => setAuth({ user: me.user, clientId: cfg.googleClientId, pushKey: cfg.pushKey ?? null }))
       .catch((err) => { setAuth({ user: null, clientId: null }); setLoginErr(err.message); });
   }, []);
 
@@ -112,7 +114,24 @@ export default function App() {
     }
   };
 
+  // Pregunta de confirmación: `await confirm({ title, text, action, danger })` → true | false.
+  const [question, setQuestion] = useState(null);
+  const confirm = useCallback((q) => new Promise((resolve) => setQuestion({ ...q, resolve })), []);
+  const answer = useCallback((ok) => setQuestion((q) => { q?.resolve(ok); return null; }), []);
+
+  // Avisos en este dispositivo cuando salta una alerta de precio.
+  const [pushOn, setPushOn] = useState(false);
+  useEffect(() => { if (user) pushEnabled().then(setPushOn).catch(() => {}); }, [user]);
+  const togglePush = async () => {
+    try {
+      if (pushOn) { await disablePush(); setPushOn(false); notify('ok', 'Avisos desactivados en este dispositivo.'); }
+      else { await enablePush(auth.pushKey); setPushOn(true); notify('ok', 'Avisos activados: te llegarán las alertas de precio aunque la app esté cerrada.'); }
+    } catch (err) { notify('err', err.message); }
+  };
+
   const logout = async () => {
+    await disablePush().catch(() => {}); // los avisos de esta cuenta no deben llegar a quien use después el dispositivo
+    setPushOn(false);
     await api.logout().catch(() => {});
     navigator.serviceWorker?.controller?.postMessage('clear-data');
     window.google?.accounts.id.disableAutoSelect();
@@ -121,17 +140,28 @@ export default function App() {
     setToasts([]);
   };
 
+  // Subir un CSV: primero se enseña qué va a cambiar; solo se guarda al confirmar.
+  const [imp, setImp] = useState(null); // { file, preview }
   const upload = async (file) => {
     setBusy(true);
     try {
-      const res = await api.uploadCsv(file);
-      setData({ positions: res.positions, meta: res.meta, alerts: res.alerts, targets: res.targets });
-      const u = res.upload;
-      notify('ok', `${u.name}: ${u.total} filas leídas, ${u.relevant} de inversión, ${u.added} nuevas.`);
+      setImp({ file, preview: (await api.previewCsv(file)).preview });
     } catch (err) {
       fail(err);
     } finally {
       setBusy(false);
+    }
+  };
+  const runImport = async (replace) => {
+    try {
+      const res = await api.uploadCsv(imp.file, replace);
+      setData({ positions: res.positions, meta: res.meta, alerts: res.alerts, targets: res.targets });
+      const u = res.upload;
+      notify('ok', `${u.name}: ${u.added} ${u.added === 1 ? 'operación nueva' : 'operaciones nuevas'} de ${u.total} filas.`);
+    } catch (err) {
+      fail(err);
+    } finally {
+      setImp(null);
     }
   };
 
@@ -185,7 +215,7 @@ export default function App() {
   }, [fail, refreshQuotes]);
 
   const wipe = async () => {
-    if (!window.confirm('¿Borrar todas tus operaciones y precios guardados? No se puede deshacer.')) return;
+    if (!(await confirm({ title: '¿Borrar todos tus datos?', text: 'Se eliminan tus operaciones, precios, valoraciones, alertas y objetivos. No se puede deshacer: descarga antes una copia si quieres conservarlos.', action: 'Borrar todo', danger: true }))) return;
     try {
       setData(await api.clearData());
       go('resumen');
@@ -222,14 +252,14 @@ export default function App() {
   }, [apply, notify]);
   const removeOp = useCallback(async (x) => {
     const tids = (x.parts ?? [x]).map((e) => e.tid);
-    if (!window.confirm(`¿Quitar esta operación${tids.length > 1 ? ` (${tids.length} ejecuciones)` : ''}? Podrás restaurarla desde Operaciones.`)) return;
+    if (!(await confirm({ title: `¿Quitar esta operación${tids.length > 1 ? ` (${tids.length} ejecuciones)` : ''}?`, text: 'Dejará de contar en tus posiciones. Podrás restaurarla desde Operaciones.', action: 'Quitar', danger: true }))) return;
     try {
       let res;
       for (const tid of tids) res = await api.deleteTx(tid);
       apply(res);
       notify('ok', 'Operación quitada.');
     } catch (err) { fail(err); }
-  }, [apply, notify, fail]);
+  }, [apply, notify, fail, confirm]);
   const restoreOp = useCallback(async (tid) => {
     try { apply(await api.restoreTx(tid)); notify('ok', 'Operación restaurada.'); } catch (err) { fail(err); }
   }, [apply, notify, fail]);
@@ -250,6 +280,7 @@ export default function App() {
   if (!user) return <Login clientId={auth.clientId} onCredential={login} error={loginErr} />;
 
   const empty = data && !positions.length;
+  const unknownRows = Object.values(data?.meta?.unknown ?? {}).reduce((t, n) => t + n, 0);
   const groups = GROUPS.filter(([g]) => g === 'all' || positions.some((p) => p.grp === g));
   const view = { a, hist, flt, meta: data?.meta, onOpen: openAsset, onPrice, go, cash: cash?.cash, income: cash?.income, onAddOp: setOpForm, onRestoreOp: restoreOp, targets: data?.targets ?? {}, alerts: data?.alerts ?? [], patch, fail };
   const section = route === 'activo' ? 'posiciones' : route;
@@ -278,6 +309,12 @@ export default function App() {
           {data?.meta?.lastUpload && (
             <p className="menu-n">{data.meta.rows} operaciones · último CSV el {data.meta.lastUpload.at.slice(0, 10).split('-').reverse().join('/')}</p>
           )}
+          {auth.pushKey && pushSupported() && (
+            <button type="button" role="menuitem" onClick={() => { close(); togglePush(); }}>
+              <Icon name="bell" size={17} />{pushOn ? 'Desactivar avisos aquí' : 'Avisos en este dispositivo'}
+            </button>
+          )}
+          <a role="menuitem" href={api.EXPORT_URL} download onClick={close}><Icon name="download" size={17} />Descargar una copia</a>
           <button type="button" role="menuitem" onClick={() => { close(); wipe(); }} className="danger"><Icon name="trash" size={17} />Borrar mis datos</button>
           <button type="button" role="menuitem" onClick={logout}><Icon name="logout" size={17} />Cerrar sesión</button>
         </>
@@ -320,6 +357,16 @@ export default function App() {
             {route !== 'resumen' && <h1>{TITLES[route]}</h1>}
             {groups.length > 2 && route !== 'efectivo' && <Seg label="Tipo de activo" options={groups} value={flt} onChange={setFlt} />}
           </div>
+        )}
+
+        {unknownRows > 0 && route !== 'activo' && (
+          <p className="banner" role="status">
+            <Icon name="alert" size={16} />
+            <span>
+              {unknownRows === 1 ? 'Hay 1 fila' : `Hay ${unknownRows} filas`} de tu CSV de un tipo que la app todavía no interpreta
+              ({Object.keys(data.meta.unknown).join(', ')}): no {unknownRows === 1 ? 'cuenta' : 'cuentan'} en tus posiciones.
+            </span>
+          </p>
         )}
 
         {!data ? (
@@ -365,6 +412,8 @@ export default function App() {
         <Palette sections={NAV} positions={positions} onClose={() => setPalette(false)}
           onGo={(to) => { setPalette(false); go(to); }} />
       )}
+      {imp && <ImportPreview preview={imp.preview} hasData={!empty} onImport={runImport} onClose={() => setImp(null)} />}
+      {question && <Confirm {...question} onAnswer={answer} />}
       <Toasts items={toasts} onClose={closeToast} />
     </div>
   );

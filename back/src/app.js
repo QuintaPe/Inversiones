@@ -8,7 +8,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import crypto from 'node:crypto';
-import { parseCsv, buildPortfolio, buildCash, buildIncome, manualRow, isInvestRow, CASH_LABEL, CsvError } from './engine.js';
+import { parseCsv, buildPortfolio, buildCash, buildIncome, manualRow, isInvestRow, unknownTypes, CASH_LABEL, CsvError } from './engine.js';
+import { createAlertWatcher } from './alerts.js';
 import { sessions, AuthError } from './auth.js';
 import { createHistory } from './history.js';
 import { createLogos } from './logos.js';
@@ -25,15 +26,41 @@ const parsePrice = (v) => {
  * @param verifyGoogle  (credential) => perfil; null si no hay GOOGLE_CLIENT_ID
  * @param quotes        servicio de quotes.js (o null para desactivar las cotizaciones en vivo)
  */
-export function createApp({ db, verifyGoogle, googleClientId, sessionSecret, quotes = null, logos = null, trustProxy = false }) {
+// Política de contenido: solo código propio y lo que necesita el botón de acceso de Google.
+const CSP = {
+  useDefaults: false,
+  directives: {
+    defaultSrc: ["'self'"],
+    scriptSrc: ["'self'", 'https://accounts.google.com/gsi/client'],
+    styleSrc: ["'self'", "'unsafe-inline'", 'https://accounts.google.com/gsi/style'],
+    frameSrc: ['https://accounts.google.com/gsi/'],
+    connectSrc: ["'self'", 'https://accounts.google.com/gsi/'],
+    imgSrc: ["'self'", 'data:', 'blob:', 'https://*.googleusercontent.com'],
+    fontSrc: ["'self'", 'data:'],
+    workerSrc: ["'self'"],
+    manifestSrc: ["'self'"],
+    objectSrc: ["'none'"],
+    baseUri: ["'self'"],
+    formAction: ["'self'"],
+    frameAncestors: ["'none'"],
+  },
+};
+const HISTORY_TTL = 10 * 60_000;
+
+/**
+ * @param push   servicio de push.js (o null: sin avisos con la app cerrada)
+ * @param csp    false desactiva la política de contenido (CSP=0)
+ */
+export function createApp({ db, verifyGoogle, googleClientId, sessionSecret, quotes = null, logos = null, push = null, trustProxy = false, csp = true }) {
   const app = express();
   const session = sessions(sessionSecret);
   const history = quotes?.history ? createHistory({ db, quotes }) : null;
+  const watcher = createAlertWatcher({ db, quotes, push });
+  app.locals.watcher = watcher;
   const isDate = (d) => /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(d));
   if (trustProxy) app.set('trust proxy', 1);
-  // Cabeceras de seguridad. Sin CSP propia (la página carga el botón de Google) y con
-  // la política de ventanas que necesita su ventana emergente de acceso.
-  app.use(helmet({ contentSecurityPolicy: false, crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' } }));
+  // Cabeceras de seguridad, con la política de ventanas que necesita la ventana emergente de Google.
+  app.use(helmet({ contentSecurityPolicy: csp ? CSP : false, crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' } }));
   app.use(compression());
   const limit = (windowMs, max) => rateLimit({
     windowMs, limit: max, standardHeaders: 'draft-7', legacyHeaders: false,
@@ -45,6 +72,8 @@ export function createApp({ db, verifyGoogle, googleClientId, sessionSecret, quo
   app.get('/api/health', (_req, res) => res.json({ ok: true }));
   app.use(express.json({ limit: '1mb' }));
   app.use(cookieParser());
+
+  const historyCache = new Map(); // usuario → { key, at, value }
 
   /** Splits conocidos de cada ISIN ({ ISIN: [[fecha, ratio]] }), para que el motor ajuste las acciones. */
   async function loadSplits(symbols) {
@@ -69,11 +98,11 @@ export function createApp({ db, verifyGoogle, googleClientId, sessionSecret, quo
       p.industry = symbols[p.isin]?.industry ?? null;
     }
     const splits = positions.reduce((n, p) => n + p.evs.filter((e) => e.k === 'X').length, 0);
-    return { positions, alerts, targets, meta: { lastDate, firstDate, rows: rows.filter(isInvestRow).length, lastUpload, liveQuotes: !!quotes, history: !!history, splits } };
+    return { positions, alerts, targets, meta: { lastDate, firstDate, rows: rows.filter(isInvestRow).length, lastUpload, liveQuotes: !!quotes, history: !!history, splits, unknown: unknownTypes(rows) } };
   }
 
   // ---------- sesión ----------
-  app.get('/api/config', (_req, res) => res.json({ googleClientId: googleClientId ?? null }));
+  app.get('/api/config', (_req, res) => res.json({ googleClientId: googleClientId ?? null, pushKey: push?.publicKey ?? null }));
 
   app.post('/api/auth/google', async (req, res) => {
     if (!verifyGoogle) throw new AuthError('El servidor no tiene configurado GOOGLE_CLIENT_ID.');
@@ -111,12 +140,20 @@ export function createApp({ db, verifyGoogle, googleClientId, sessionSecret, quo
   // (subir dos veces el mismo archivo no duplica nada); ?replace=1 sustituye todo.
   api.post('/upload', upload.single('file'), async (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'No se ha recibido ningún archivo.' });
-    const { rows, total, invest } = parseCsv(req.file.buffer.toString('utf8'));
+    const { rows, total, invest, unknown } = parseCsv(req.file.buffer.toString('utf8'));
+    const name = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
+    // ?preview=1: cuenta qué cambiaría, sin guardar nada.
+    if (req.query.preview === '1') {
+      const dates = rows.map((r) => r.date).filter(Boolean).sort();
+      return res.json({
+        preview: { name, total, relevant: invest, unknown, from: dates[0] ?? null, to: dates.at(-1) ?? null, ...(await db.previewUpload(req.userId, rows)) },
+      });
+    }
     const info = await db.saveUpload(req.userId, {
-      name: Buffer.from(req.file.originalname, 'latin1').toString('utf8'),
-      total, rows, relevant: invest, replace: req.query.replace === '1',
+      name, total, rows, relevant: invest, replace: req.query.replace === '1',
+      sha256: crypto.createHash('sha256').update(req.file.buffer).digest('hex'),
     });
-    res.json({ upload: info, ...(await portfolio(req.userId)) });
+    res.json({ upload: { ...info, unknown }, ...(await portfolio(req.userId)) });
   });
 
   // ---------- alertas de precio y cartera objetivo ----------
@@ -227,15 +264,14 @@ export function createApp({ db, verifyGoogle, googleClientId, sessionSecret, quo
     const targets = before.positions.filter((p) => p.open && p.grp === 'ac' && p.priceSource !== 'manual');
     const { quotes: found, resolved, failed } = await quotes.quoteIsins(targets.map((p) => p.isin), await db.getSymbols());
     await db.saveSymbols(resolved);
-    const at = await db.setLivePrices(req.userId, found);
+    const at = await db.setLivePrices(found);
     const names = Object.fromEntries(targets.map((p) => [p.isin, p.name]));
     // Alertas de precio que se cumplen con las cotizaciones nuevas: saltan una sola vez.
-    const fired = before.alerts.filter((al) => !al.triggered_at && found[al.isin]
-      && (al.dir === 'above' ? found[al.isin].price >= al.price : found[al.isin].price <= al.price));
-    await db.triggerAlerts(req.userId, fired.map((al) => al.id));
+    // La app está abierta y las enseña ella; no hace falta el aviso al dispositivo.
+    const fired = await watcher.fire(req.userId, before.alerts, found, names, false);
     res.json({
       ...(await portfolio(req.userId)),
-      fired: fired.map((al) => ({ ...al, name: names[al.isin], current: found[al.isin].price })),
+      fired,
       refresh: {
         at, updated: Object.keys(found).length,
         // Solo cuentan como fallo los que tienen ISIN cotizable (no cripto, etc.).
@@ -249,12 +285,20 @@ export function createApp({ db, verifyGoogle, googleClientId, sessionSecret, quo
   api.get('/history', async (req, res) => {
     if (!history) return res.status(503).json({ error: 'El histórico está desactivado.' });
     const [rows, prices, valuations] = await Promise.all([db.getRows(req.userId), db.getPrices(req.userId), db.getValuations(req.userId)]);
-    res.json({
-      history: await history.build({
-        positions: buildPortfolio(rows, await loadSplits()).positions, prices, valuations,
-        rebuild: async () => buildPortfolio(rows, await loadSplits()).positions,
-      }),
+    // Reconstruirlo lee miles de cierres: se reutiliza unos minutos mientras no cambien las
+    // operaciones, los precios a mano ni las valoraciones.
+    const manual = Object.entries(prices).filter(([, p]) => p.source === 'manual').map(([isin, p]) => [isin, p.price]);
+    const key = crypto.createHash('sha1')
+      .update(JSON.stringify([new Date().toISOString().slice(0, 10), rows, manual, valuations])).digest('hex');
+    const hit = historyCache.get(req.userId);
+    if (hit && hit.key === key && Date.now() - hit.at < HISTORY_TTL) return res.json({ history: hit.value });
+    const value = await history.build({
+      positions: buildPortfolio(rows, await loadSplits()).positions, prices, valuations,
+      rebuild: async () => buildPortfolio(rows, await loadSplits()).positions,
     });
+    historyCache.set(req.userId, { key, at: Date.now(), value });
+    if (historyCache.size > 500) historyCache.delete(historyCache.keys().next().value);
+    res.json({ history: value });
   });
 
   // Previsión de dividendos de los próximos 12 meses.
@@ -291,6 +335,35 @@ export function createApp({ db, verifyGoogle, googleClientId, sessionSecret, quo
     );
     await db.setPrices(req.userId, valid);
     res.json({ updated: Object.keys(valid).length });
+  });
+
+  // ---------- importaciones, copia de los datos y avisos ----------
+  api.get('/imports', async (req, res) => res.json({ imports: await db.getImports(req.userId) }));
+
+  api.get('/export', async (req, res) => {
+    const day = new Date().toISOString().slice(0, 10);
+    res.set('Content-Disposition', `attachment; filename="cartera-${day}.json"`)
+      .json({ app: 'cartera', version: 2, exported_at: new Date().toISOString(), ...(await db.exportUser(req.userId)) });
+  });
+
+  api.post('/push/subscribe', async (req, res) => {
+    if (!push) return res.status(503).json({ error: 'Los avisos están desactivados en el servidor.' });
+    const { endpoint, keys } = req.body ?? {};
+    const ok = typeof endpoint === 'string' && /^https:\/\//.test(endpoint) && endpoint.length < 1000
+      && typeof keys?.p256dh === 'string' && typeof keys?.auth === 'string' && keys.p256dh.length < 200 && keys.auth.length < 100;
+    if (!ok) return res.status(400).json({ error: 'Suscripción no válida.' });
+    if ((await db.getPushSubs(req.userId)).length >= 20) return res.status(400).json({ error: 'Demasiados dispositivos con avisos.' });
+    await db.addPushSub(req.userId, { endpoint, p256dh: keys.p256dh, auth: keys.auth });
+    res.json({ ok: true });
+  });
+  api.post('/push/unsubscribe', async (req, res) => {
+    if (typeof req.body?.endpoint === 'string') await db.deletePushSub(req.body.endpoint, req.userId);
+    res.json({ ok: true });
+  });
+  api.post('/push/test', async (req, res) => {
+    if (!push) return res.status(503).json({ error: 'Los avisos están desactivados en el servidor.' });
+    const sent = await push.notify(req.userId, { title: 'Avisos activados', body: 'Te avisaremos aquí cuando salte una alerta de precio.', url: '/', tag: 'test' });
+    res.json({ sent });
   });
 
   api.delete('/data', async (req, res) => {

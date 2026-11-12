@@ -126,7 +126,7 @@ function Alerts({ p, alerts, patch, fail }) {
   };
   const del = async (id) => { try { patch(await api.deleteAlert(id)); } catch (e) { fail(e); } };
   return (
-    <Card title="Alertas de precio" sub="Te avisa cuando la cotización cruza el nivel, mientras tengas la app abierta">
+    <Card title="Alertas de precio" sub="Te avisa cuando la cotización cruza el nivel. Con los avisos activados en el menú de tu cuenta, también con la app cerrada">
       <form className="val-f" onSubmit={add}>
         <Seg label="Sentido de la alerta" options={[['below', 'Baja de'], ['above', 'Sube de']]} value={dir} onChange={setDir} />
         <input type="text" inputMode="decimal" placeholder={p.price > 0 ? `p. ej. ${num(p.price * (dir === 'below' ? 0.9 : 1.1))}` : 'Precio €'}
@@ -296,16 +296,16 @@ export default function Asset({ x, totalVal, yearBase, onBack, onPrice, liveQuot
               <div className="perf">
                 <div><span className="stat-l">Valor</span><b className="stat-v">{x.has ? eur(x.v) : '—'}</b></div>
                 <div><span className="stat-l">Resultado</span><b className={`stat-v ${x.has ? sign(x.pl) : ''}`}>{x.has ? eurS(x.pl) : '—'}</b></div>
-                <div><span className="stat-l">Rentabilidad</span><b className={`stat-v ${x.has ? sign(x.pl) : ''}`}>{x.has ? pctS(x.plp) : '—'}</b></div>
+                <div><span className="stat-l">Rentabilidad</span><b className={`stat-v ${x.has ? sign(x.pl) : ''}`}>{x.has && x.plp != null ? pctS(x.plp) : '—'}</b></div>
               </div>
               <div className="stats">
                 <Stat label="Cantidad" value={qty(p.sh)} />
                 <Stat label="Precio medio" value={eur(x.avg)} hint="precio de equilibrio" />
                 <Stat label="Coste" value={eur(p.cost)} />
                 <Stat label="Peso" value={x.w != null ? pct(x.w) : '—'} hint="del valor de la vista" />
-                <Stat label="Dividendos netos" value={eur(x.div)} hint={x.D.length ? `${x.D.length} cobros · ${pct((x.div / p.cost) * 100)} s/coste` : 'sin cobros'} />
+                <Stat label="Dividendos netos" value={eur(x.div)} hint={x.D.length ? `${x.D.length} cobros${p.cost > 0 ? ` · ${pct((x.div / p.cost) * 100)} s/coste` : ''}` : 'sin cobros'} />
                 <Stat label="Resultado + dividendos" value={totalRet != null ? eurS(totalRet) : '—'} tone={totalRet != null ? sign(totalRet) : ''}
-                  hint={totalRet != null ? pctS((totalRet / p.cost) * 100) : ''} />
+                  hint={totalRet != null && p.cost > 0 ? pctS((totalRet / p.cost) * 100) : ''} />
               </div>
             </Card>
           ) : (

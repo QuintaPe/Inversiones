@@ -1,10 +1,12 @@
-// Cotizaciones por ISIN desde los endpoints públicos de Yahoo Finance.
+// Cotizaciones por ISIN desde los endpoints públicos de Yahoo Finance (y OpenFIGI
+// como segunda fuente para encontrar el símbolo de un ISIN).
 // No es una API oficial ni garantizada: puede ir con retraso (15 min en algunas
 // bolsas) o dejar de responder; por eso todo se cachea y un fallo nunca rompe
 // la cartera, solo deja el último precio guardado.
 
 const SEARCH = 'https://query2.finance.yahoo.com/v1/finance/search';
 const CHART = 'https://query1.finance.yahoo.com/v8/finance/chart';
+const FIGI = 'https://api.openfigi.com/v3/mapping';
 const QUOTE_TTL = 60_000; // no se pide el mismo símbolo más de una vez por minuto
 const PAUSE = 120; // ms entre peticiones, en serie
 const ISIN_RE = /^[A-Z]{2}[A-Z0-9]{9}\d$/;
@@ -26,16 +28,42 @@ export function createQuotes({ fetchImpl = fetch, now = () => Date.now() } = {})
     return p;
   };
 
-  /** ISIN → { symbol, exchange, sector, industry } o null si Yahoo no lo conoce. */
-  async function resolve(isin) {
-    const j = await get(`${SEARCH}?q=${encodeURIComponent(isin)}&quotesCount=8&newsCount=0`);
-    const hit = (j.quotes ?? []).find((q) => q.symbol && ['EQUITY', 'ETF', 'MUTUALFUND'].includes(q.quoteType));
-    if (!hit) return null;
-    return {
-      symbol: hit.symbol, exchange: hit.exchDisp || hit.exchange || '',
-      // Los ETF y fondos no traen sector.
-      sector: hit.sectorDisp || hit.sector || null, industry: hit.industryDisp || hit.industry || null,
+  const card = (hit) => ({
+    symbol: hit.symbol, exchange: hit.exchDisp || hit.exchange || '',
+    // Los ETF y fondos no traen sector.
+    sector: hit.sectorDisp || hit.sector || null, industry: hit.industryDisp || hit.industry || null,
+  });
+  const search = async (q) => ((await get(`${SEARCH}?q=${encodeURIComponent(q)}&quotesCount=8&newsCount=0`)).quotes ?? [])
+    .filter((x) => x.symbol && ['EQUITY', 'ETF', 'MUTUALFUND'].includes(x.quoteType));
+
+  /**
+   * Segunda fuente: el buscador de Yahoo no conoce algunos ISIN (Alphabet A, varios ADR…).
+   * OpenFIGI da su ticker en EE. UU., que en Yahoo es el mismo símbolo.
+   */
+  async function usTicker(isin) {
+    const run = async () => {
+      const res = await fetchImpl(FIGI, {
+        method: 'POST', signal: AbortSignal.timeout(10_000), headers: { 'content-type': 'application/json' },
+        body: JSON.stringify([{ idType: 'ID_ISIN', idValue: isin, exchCode: 'US' }]),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json();
     };
+    const p = chain.then(run, run);
+    chain = p.then(() => sleep(PAUSE), () => sleep(PAUSE));
+    const ticker = (await p)?.[0]?.data?.find((x) => x.ticker && x.marketSector === 'Equity')?.ticker;
+    return ticker ? ticker.replace('/', '-') : null;
+  }
+
+  /** ISIN → { symbol, exchange, sector, industry } o null si ninguna fuente lo conoce. */
+  async function resolve(isin) {
+    const hit = (await search(isin))[0];
+    if (hit) return card(hit);
+    const ticker = await usTicker(isin).catch(() => null);
+    if (!ticker) return null;
+    // Con el ticker, Yahoo sí da la ficha (bolsa, sector); si no, vale el ticker a secas.
+    const same = (await search(ticker).catch(() => [])).find((x) => x.symbol === ticker);
+    return same ? card(same) : { symbol: ticker, exchange: '', sector: null, industry: null };
   }
 
   /** Último precio de un símbolo: { price, currency, time, exchange }. */

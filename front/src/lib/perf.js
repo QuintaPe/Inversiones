@@ -55,6 +55,27 @@ export function periodStats(h, start) {
     mdd = Math.min(mdd, h.idx[i] / peak - 1);
   }
 
+  // Riesgo: volatilidad anualizada de las variaciones diarias (solo días de mercado) y
+  // rentabilidad anualizada por unidad de riesgo. Con menos de un mes de datos no dicen nada.
+  const rets = [];
+  for (let i = first + 1; i <= i1; i++) {
+    const wd = new Date(`${h.d[i]}T00:00:00Z`).getUTCDay();
+    if (wd === 0 || wd === 6 || !(h.idx[i - 1] > 0)) continue;
+    rets.push({ d: h.d[i], r: h.idx[i] / h.idx[i - 1] - 1 });
+  }
+  let vol = null, ratio = null, best = null, worst = null;
+  if (rets.length >= 20) {
+    const mean = rets.reduce((t, x) => t + x.r, 0) / rets.length;
+    const sd = Math.sqrt(rets.reduce((t, x) => t + (x.r - mean) ** 2, 0) / (rets.length - 1));
+    vol = sd * Math.sqrt(252) * 100;
+    const days = i1 - first;
+    const annual = days >= 90 ? ((1 + twr / 100) ** (365 / days) - 1) * 100 : null;
+    ratio = annual != null && vol > 0 ? annual / vol : null;
+    best = rets.reduce((a, x) => (x.r > a.r ? x : a));
+    worst = rets.reduce((a, x) => (x.r < a.r ? x : a));
+    best = { d: best.d, r: best.r * 100 }; worst = { d: worst.d, r: worst.r * 100 };
+  }
+
   const bench = h.benchmarks.map((b) => {
     let j = first;
     while (j < i1 && b.c[j] == null) j++;
@@ -76,5 +97,5 @@ export function periodStats(h, start) {
     const bGain = g.at(-1);
     return { key: b.key, name: b.name, r: (c1 / c0 - 1) * 100, gain: bGain, mwr: weighted > 0 ? (bGain / weighted) * 100 : null, from: j, g };
   });
-  return { i0, i1, first, v0, v1, bought, sold, divs, contrib: bought - sold, gain, mwr, twr, mdd: mdd * 100, bench, avg: weighted };
+  return { i0, i1, first, v0, v1, bought, sold, divs, contrib: bought - sold, gain, mwr, twr, mdd: mdd * 100, vol, ratio, best, worst, bench, avg: weighted };
 }

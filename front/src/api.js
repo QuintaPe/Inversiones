@@ -28,11 +28,15 @@ export const logout = () => call('/api/auth/logout', { method: 'POST' });
 
 export const getPortfolio = () => call('/api/portfolio');
 
-export const uploadCsv = (file, replace = false) => {
-  const fd = new FormData();
-  fd.append('file', file);
-  return call(`/api/upload${replace ? '?replace=1' : ''}`, { method: 'POST', body: fd });
-};
+const csvForm = (file) => { const fd = new FormData(); fd.append('file', file); return { method: 'POST', body: fd }; };
+export const uploadCsv = (file, replace = false) => call(`/api/upload${replace ? '?replace=1' : ''}`, csvForm(file));
+/** Qué cambiaría al importar el archivo, sin guardar nada. */
+export const previewCsv = (file) => call('/api/upload?preview=1', csvForm(file));
+export const EXPORT_URL = '/api/export';
+
+export const pushSubscribe = (sub) => call('/api/push/subscribe', json('POST', sub));
+export const pushUnsubscribe = (endpoint) => call('/api/push/unsubscribe', json('POST', { endpoint }));
+export const pushTest = () => call('/api/push/test', { method: 'POST' });
 
 export const setPrice = (isin, price) => call(`/api/prices/${encodeURIComponent(isin)}`, json('PUT', { price }));
 
