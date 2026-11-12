@@ -195,6 +195,27 @@ export function simulateSale(lots, sh, price, fee = 1) {
   return { proceeds, cost, gain: proceeds - cost, used };
 }
 
+const ES_RATE = 0.19; // retención española sobre rendimientos del capital mobiliario
+export const TREATY_RATE = 0.15; // tipo máximo sobre dividendos en la mayoría de convenios de doble imposición
+
+/**
+ * El CSV da una sola cifra de retención por dividendo. En los valores extranjeros mezcla
+ * la del país de origen y la española, que el bróker aplica sobre lo que queda:
+ *   retención = origen + 19 % × (bruto − origen)
+ * De ahí se despeja cada parte. Con importes pequeños el redondeo al céntimo no deja
+ * afinar más, así que se admite esa holgura. Devuelve { es, foreign } en euros.
+ */
+export function splitWithholding(gross, tax, isin = '') {
+  if (!(gross > 0) || !(tax > 0)) return { es: 0, foreign: 0 };
+  if (isin.startsWith('ES')) return { es: tax, foreign: 0 };
+  const tol = 0.015 + gross * 0.003;
+  const esOnly = gross * ES_RATE;
+  if (Math.abs(tax - esOnly) <= tol) return { es: tax, foreign: 0 }; // solo la española
+  if (tax < esOnly) return { es: 0, foreign: tax }; // menos del 19 %: solo se retuvo en origen
+  const foreign = Math.min(tax, (tax - esOnly) / (1 - ES_RATE));
+  return { es: tax - foreign, foreign };
+}
+
 const CARRY_YEARS = 4; // las pérdidas pendientes se compensan en los cuatro ejercicios siguientes
 
 /**
@@ -211,7 +232,7 @@ export function taxYears(sl, dv, income = {}) {
   const by = {};
   const y = (k) => (by[k] ??= {
     year: k, sales: [], divs: [], proceeds: 0, costF: 0, gainF: 0, gainAvg: 0, wins: 0, losses: 0, divG: 0, divT: 0,
-    wash: [], washLoss: 0, deferred: 0, released: 0,
+    wash: [], washLoss: 0, deferred: 0, released: 0, divEs: 0, divFor: 0, forDed: 0, forGross: 0, countries: {},
   });
   // Pérdidas diferidas por valor: [{ d: fecha del lote recomprado, sh: acciones, per: pérdida por acción }]
   const pending = {};
@@ -250,6 +271,15 @@ export function taxYears(sl, dv, income = {}) {
     const r = y(x.d.slice(0, 4));
     r.divs.push(x);
     r.divG += x.g; r.divT += x.tax;
+    // Retención española (a cuenta del IRPF) y de origen (deducible por doble imposición
+    // solo hasta el tipo del convenio; el exceso se reclama al país de origen).
+    const w = splitWithholding(x.g, x.tax, x.p?.isin);
+    const ded = Math.min(w.foreign, x.g * TREATY_RATE);
+    r.divEs += w.es; r.divFor += w.foreign; r.forDed += ded;
+    if (w.foreign > 0) r.forGross += x.g;
+    const code = /^[A-Z]{2}/.test(x.p?.isin ?? '') ? x.p.isin.slice(0, 2) : '??';
+    const c = (r.countries[code] ??= { code, isin: x.p?.isin ?? '', n: 0, g: 0, t: 0, es: 0, foreign: 0, ded: 0 });
+    c.n++; c.g += x.g; c.t += x.tax; c.es += w.es; c.foreign += w.foreign; c.ded += ded;
   }
   for (const k of Object.keys(income)) y(k);
 
@@ -260,7 +290,7 @@ export function taxYears(sl, dv, income = {}) {
     r.intG = inc.interest?.g ?? 0; r.intT = inc.interest?.t ?? 0; r.intN = inc.interest?.n ?? 0;
     r.rewG = inc.reward?.g ?? 0; r.rewT = inc.reward?.t ?? 0; r.rewN = inc.reward?.n ?? 0;
     r.rcm = r.divG + r.intG + r.rewG; // rendimientos del capital mobiliario
-    r.withheld = r.divT + r.intT + r.rewT;
+    r.withheld = r.divEs + r.intT + r.rewT; // solo lo retenido en España va a cuenta de la cuota
     r.gainTax = r.gainF - r.deferred + r.released; // resultado que cuenta este año
 
     carry = carry.filter((c) => Number(r.year) - Number(c.year) <= CARRY_YEARS);
@@ -283,6 +313,20 @@ export function taxYears(sl, dv, income = {}) {
     carry = carry.filter((c) => c.amt > 0.005);
     r.carryOut = sum(carry, (c) => c.amt);
     r.base = Math.max(0, net) + r.rcm - r.offsetRcm;
+    // Cuota y deducción por doble imposición internacional (art. 80 LIRPF): lo menor entre el
+    // impuesto pagado fuera (hasta el convenio) y el tipo medio efectivo sobre esa renta.
+    r.quota = savingsTax(r.base);
+    r.avgRate = r.base > 0 ? r.quota / r.base : 0;
+    r.dii = Math.min(r.forDed, r.avgRate * r.forGross);
+    r.forExcess = r.divFor - r.forDed; // retenido en origen por encima del convenio
+    r.due = r.quota - r.dii - r.withheld;
+    // Ventas agrupadas por entidad emisora, como las pide Renta Web.
+    const by = {};
+    for (const x of r.sales) {
+      const e = (by[x.p.isin] ??= { p: x.p, n: 0, proceeds: 0, cost: 0, gain: 0 });
+      e.n++; e.proceeds += x.net; e.cost += x.csF; e.gain += x.reF;
+    }
+    r.issuers = Object.values(by).sort((a, b) => a.p.name.localeCompare(b.p.name));
   }
   return Object.values(by).sort((a, b) => b.year.localeCompare(a.year));
 }

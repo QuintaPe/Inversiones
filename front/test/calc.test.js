@@ -116,3 +116,44 @@ test('periodStats: la serie diaria del índice acaba en su resultado y empieza e
   const part = periodStats(h, '2025-01-03'), [b2] = part.bench;
   assert.deepEqual([b2.g.length, b2.g[0]], [part.i1 - part.first + 1, 0]);
 });
+
+test('splitWithholding: separa la retención de origen de la española', async () => {
+  const { splitWithholding } = await import('../src/lib/calc.js');
+  const near = (a, b) => assert.ok(Math.abs(a - b) < 0.011, `${a} ≈ ${b}`);
+  // EE. UU.: 15 % en origen y 19 % sobre el resto (1,73 → 0,26 + 0,28).
+  let w = splitWithholding(1.73, 0.54, 'US9252831030');
+  near(w.foreign, 0.26); near(w.es, 0.28);
+  // Alemania: 26,375 % en origen.
+  w = splitWithholding(14, 5.65, 'DE0007164600');
+  near(w.foreign, 3.69); near(w.es, 1.96);
+  // Solo la española (19 %), con el redondeo de un importe pequeño.
+  assert.deepEqual(splitWithholding(2.36, 0.45, 'CA21037X1006'), { es: 0.45, foreign: 0 });
+  // Menos del 19 %: solo se retuvo en origen.
+  assert.deepEqual(splitWithholding(10, 1.5, 'US0378331005'), { es: 0, foreign: 1.5 });
+  // Valor español: todo es retención española.
+  assert.deepEqual(splitWithholding(10, 1.9, 'ES0177542018'), { es: 1.9, foreign: 0 });
+  assert.deepEqual(splitWithholding(10, 0, 'US0378331005'), { es: 0, foreign: 0 });
+});
+
+test('taxYears: doble imposición, cuota y ventas por entidad emisora', () => {
+  const us = { isin: 'US0378331005', name: 'Apple', evs: [] }, de = { isin: 'DE0007164600', name: 'SAP', evs: [] };
+  const sale = (p, d, net, csF) => ({ p, k: 'S', d, sh: 1, net, csF, cs: csF, re: net - csF, reF: net - csF, lotsUsed: [], sa: 0 });
+  const [y] = taxYears(
+    [sale(us, '2025-03-01', 1500, 1000), sale(us, '2025-04-01', 700, 600), sale(de, '2025-05-01', 400, 500)],
+    [
+      { p: us, k: 'D', d: '2025-06-01', g: 100, tax: 15 + 0.19 * 85 }, // 15 % origen + 19 % del resto
+      { p: de, k: 'D', d: '2025-06-02', g: 100, tax: 26.375 + 0.19 * 73.625 },
+    ],
+  );
+  const near = (a, b) => assert.ok(Math.abs(a - b) < 1e-6, `${a} ≈ ${b}`);
+  near(y.divFor, 15 + 26.375);
+  near(y.forDed, 30); // 15 % de convenio por país
+  near(y.forExcess, 11.375); // lo que Alemania retiene de más se reclama allí
+  near(y.withheld, 0.19 * 85 + 0.19 * 73.625);
+  near(y.base, 500 + 200); // +500 de ventas netas y 200 de dividendos
+  near(y.quota, 700 * 0.19);
+  near(y.dii, 30); // 15 % < tipo medio del 19 %
+  near(y.due, y.quota - 30 - y.withheld);
+  assert.deepEqual(y.issuers.map((e) => [e.p.name, e.n, e.proceeds, e.cost, e.gain]), [['Apple', 2, 2200, 1600, 600], ['SAP', 1, 400, 500, -100]]);
+  assert.deepEqual(Object.keys(y.countries).sort(), ['DE', 'US']);
+});
