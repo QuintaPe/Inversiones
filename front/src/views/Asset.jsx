@@ -97,6 +97,43 @@ function Simulator({ p, yearBase }) {
   );
 }
 
+/** Alertas de precio: avisan (con la app abierta) cuando la cotización cruza el nivel. */
+function Alerts({ p, alerts, patch, fail }) {
+  const [dir, setDir] = useState('below');
+  const [price, setPrice] = useState('');
+  const add = async (ev) => {
+    ev.preventDefault();
+    const n = parseFloat(price.replace(',', '.'));
+    if (!(n > 0)) return;
+    try {
+      patch(await api.addAlert({ isin: p.isin, dir, price: n }));
+      setPrice('');
+      if (window.Notification?.permission === 'default') Notification.requestPermission();
+    } catch (e) { fail(e); }
+  };
+  const del = async (id) => { try { patch(await api.deleteAlert(id)); } catch (e) { fail(e); } };
+  return (
+    <Card title="Alertas de precio" sub="Te avisa cuando la cotización cruza el nivel, mientras tengas la app abierta">
+      <form className="val-f" onSubmit={add}>
+        <Seg label="Sentido de la alerta" options={[['below', 'Baja de'], ['above', 'Sube de']]} value={dir} onChange={setDir} />
+        <input type="text" inputMode="decimal" placeholder={p.price > 0 ? `p. ej. ${num(p.price * (dir === 'below' ? 0.9 : 1.1))}` : 'Precio €'}
+          value={price} onChange={(ev) => setPrice(ev.target.value)} aria-label="Precio de la alerta en euros" required />
+        <button type="submit" className="btn pri">Crear</button>
+      </form>
+      {alerts.length > 0 && (
+        <ul className="vals">
+          {alerts.map((al) => (
+            <li key={al.id}>
+              <span>{al.dir === 'above' ? 'Si sube de' : 'Si baja de'} <b>{eur(al.price)}</b>{al.triggered_at && <em className="fired"> · saltó el {date(al.triggered_at)}</em>}</span>
+              <button type="button" className="icon" aria-label="Borrar alerta" onClick={() => del(al.id)}><Icon name="trash" size={16} /></button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
 /** Valoraciones con fecha de un activo que no cotiza. */
 function Valuations({ p, onPrice, onChange }) {
   const [rows, setRows] = useState(null);
@@ -144,7 +181,7 @@ function Valuations({ p, onPrice, onChange }) {
   );
 }
 
-export default function Asset({ x, totalVal, yearBase, onBack, onPrice, liveQuotes, onHistoryChange, onAddOp, onRemoveOp }) {
+export default function Asset({ x, totalVal, yearBase, onBack, onPrice, liveQuotes, onHistoryChange, onAddOp, onRemoveOp, alerts = [], patch, fail }) {
   const { p } = x;
   const [range, setRange] = useState('max');
   const [hist, setHist] = useState(undefined); // undefined = cargando; null = sin cotización
@@ -319,6 +356,7 @@ export default function Asset({ x, totalVal, yearBase, onBack, onPrice, liveQuot
           )}
           {p.open && hist === null && <Valuations p={p} onPrice={onPrice} onChange={onHistoryChange} />}
           {p.open && p.lots?.length > 0 && <Simulator key={p.isin} p={p} yearBase={yearBase} />}
+          {p.open && p.priceSource === 'live' && <Alerts p={p} alerts={alerts} patch={patch} fail={fail} />}
           <Card title={`Operaciones (${x.ops.length})`}
             right={<button type="button" className="btn" onClick={() => onAddOp({ isin: p.isin, name: p.name, asset_class: p.cls })}><Icon name="plus" size={15} />Añadir</button>}>
             <ul className="ops">

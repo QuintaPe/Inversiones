@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Asset, Empty, Flash, Pill, PriceInput, Search, Seg, Th, useSort } from '../components/ui.jsx';
 import { sum } from '../lib/calc.js';
+import Targets from './Targets.jsx';
 import { eur, eurS, pct, pctS, qty, sign, date } from '../lib/format.js';
 
 const GET = {
@@ -9,7 +10,7 @@ const GET = {
   last: (x) => x.S.at(-1)?.d,
 };
 
-export default function Positions({ a, onOpen, onPrice }) {
+export default function Positions({ a, onOpen, onPrice, targets, patch, fail }) {
   const [tab, setTab] = useState('open');
   const [q, setQ] = useState('');
   const open = useSort('v');
@@ -23,11 +24,11 @@ export default function Positions({ a, onOpen, onPrice }) {
     <div className="stack">
       <div className="toolbar">
         <Seg label="Estado" value={tab} onChange={setTab}
-          options={[['open', `Abiertas (${a.o.length})`], ['closed', `Cerradas (${a.c.length})`]]} />
+          options={[['open', `Abiertas (${a.o.length})`], ['closed', `Cerradas (${a.c.length})`], ['target', 'Objetivo']]} />
         <Search value={q} onChange={setQ} placeholder="Buscar por nombre o ISIN" label="Buscar posición" />
       </div>
 
-      {tab === 'open' ? (
+      {tab === 'target' ? <Targets a={a} targets={targets} patch={patch} fail={fail} onOpen={onOpen} /> : tab === 'open' ? (
         <div className="card table-card">
           <table className="tbl">
             <thead>

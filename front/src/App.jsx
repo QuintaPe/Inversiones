@@ -107,6 +107,7 @@ export default function App() {
 
   const logout = async () => {
     await api.logout().catch(() => {});
+    navigator.serviceWorker?.controller?.postMessage('clear-data');
     window.google?.accounts.id.disableAutoSelect();
     setAuth((a) => ({ ...a, user: null }));
     setData(null);
@@ -117,7 +118,7 @@ export default function App() {
     setBusy(true);
     try {
       const res = await api.uploadCsv(file);
-      setData({ positions: res.positions, meta: res.meta });
+      setData({ positions: res.positions, meta: res.meta, alerts: res.alerts, targets: res.targets });
       const u = res.upload;
       notify('ok', `${u.name}: ${u.total} filas leídas, ${u.relevant} de inversión, ${u.added} nuevas.`);
     } catch (err) {
@@ -137,8 +138,13 @@ export default function App() {
     setLive((l) => ({ ...l, busy: true }));
     try {
       const res = await api.refreshQuotes();
-      setData({ positions: res.positions, meta: res.meta });
+      setData({ positions: res.positions, meta: res.meta, alerts: res.alerts, targets: res.targets });
       setLive({ at: res.refresh.at, failed: res.refresh.failed, busy: false, error: null });
+      for (const f of res.fired ?? []) {
+        const text = `${f.name} ha ${f.dir === 'above' ? 'subido hasta' : 'bajado hasta'} ${f.current.toLocaleString('es-ES', { maximumFractionDigits: 2 })} € (alerta en ${f.price.toLocaleString('es-ES')} €).`;
+        notify('ok', text);
+        if (window.Notification?.permission === 'granted') new Notification('Alerta de precio', { body: text, icon: '/icon-192.png' });
+      }
     } catch (err) {
       if (err instanceof api.Unauthorized) fail(err);
       setLive((l) => ({ ...l, busy: false, error: err.message }));
@@ -192,7 +198,17 @@ export default function App() {
     api.getCash().then((r) => alive && setCash(r)).catch(() => alive && setCash({ cash: null, labels: {} }));
     return () => { alive = false; };
   }, [txRows, data?.meta?.lastUpload?.at]);
-  const apply = useCallback((res) => setData({ positions: res.positions, meta: res.meta }), []);
+  const apply = useCallback((res) => setData({ positions: res.positions, meta: res.meta, alerts: res.alerts, targets: res.targets }), []);
+  const patch = useCallback((part) => setData((d) => ({ ...d, ...part })), []);
+
+  // Sin conexión, el service worker sirve los últimos datos guardados.
+  const [offline, setOffline] = useState(false);
+  useEffect(() => {
+    const off = () => setOffline(true), on = () => setOffline(false);
+    window.addEventListener('offline-data', off);
+    window.addEventListener('online-data', on);
+    return () => { window.removeEventListener('offline-data', off); window.removeEventListener('online-data', on); };
+  }, []);
   const saveOp = useCallback(async (op, tid) => {
     apply(await (tid ? api.editTx(tid, op) : api.addTx(op)));
     notify('ok', tid ? 'Operación actualizada.' : 'Operación añadida.');
@@ -227,7 +243,7 @@ export default function App() {
 
   const empty = data && !positions.length;
   const groups = GROUPS.filter(([g]) => g === 'all' || positions.some((p) => p.grp === g));
-  const view = { a, hist, flt, meta: data?.meta, onOpen: openAsset, onPrice, go, cash: cash?.cash, onAddOp: setOpForm, onRestoreOp: restoreOp };
+  const view = { a, hist, flt, meta: data?.meta, onOpen: openAsset, onPrice, go, cash: cash?.cash, onAddOp: setOpForm, onRestoreOp: restoreOp, targets: data?.targets ?? {}, alerts: data?.alerts ?? [], patch, fail };
   const section = route === 'activo' ? 'posiciones' : route;
   const nav = (cls, max = NAV.length) => (
     <nav className={cls} aria-label="Secciones">
@@ -268,7 +284,8 @@ export default function App() {
           <a className="brand" href="#/resumen">cartera<i aria-hidden="true">.</i></a>
           {nav('nav')}
           <div className="bar-a">
-            {liveOn && (
+            {offline && <span className="live off" title="Sin conexión: ves los últimos datos guardados"><span className="live-dot" aria-hidden="true" />Sin conexión</span>}
+            {liveOn && !offline && (
               <button type="button" className={`live ${live.error ? 'off' : ''} ${live.busy ? 'busy' : ''}`} onClick={refreshQuotes} disabled={live.busy}
                 title={live.error
                   ? `No se pudo actualizar: ${live.error}`
@@ -320,7 +337,7 @@ export default function App() {
           <div className="view" key={path}>
             {route === 'activo' && (assetRow
               ? <Asset x={assetRow} totalVal={whole.val} yearBase={yearBase} onBack={back} onPrice={onPrice} liveQuotes={liveOn} onHistoryChange={reloadHistory}
-                  onAddOp={setOpForm} onRemoveOp={removeOp} />
+                  onAddOp={setOpForm} onRemoveOp={removeOp} alerts={(data.alerts ?? []).filter((al) => al.isin === arg)} patch={patch} fail={fail} />
               : <div className="card"><p className="empty">No tienes ninguna posición con el ISIN {arg}.</p></div>)}
             {route === 'resumen' && <Dashboard {...view} />}
             {route === 'posiciones' && <Positions {...view} />}

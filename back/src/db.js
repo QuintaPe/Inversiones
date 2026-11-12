@@ -38,6 +38,14 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS valuations (
      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
      isin TEXT NOT NULL, d TEXT NOT NULL, price REAL NOT NULL, PRIMARY KEY (user_id, isin, d))`,
+  // Alertas de precio y pesos objetivo de la cartera.
+  `CREATE TABLE IF NOT EXISTS alerts (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+     isin TEXT NOT NULL, dir TEXT NOT NULL, price REAL NOT NULL, created_at TEXT NOT NULL, triggered_at TEXT)`,
+  `CREATE TABLE IF NOT EXISTS targets (
+     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+     isin TEXT NOT NULL, weight REAL NOT NULL, PRIMARY KEY (user_id, isin))`,
   // Logotipos por ISIN (data NULL = no hay; se reintenta pasado un mes).
   `CREATE TABLE IF NOT EXISTS logos (isin TEXT PRIMARY KEY, type TEXT, data BLOB, fetched_at TEXT NOT NULL)`,
   // Operaciones del CSV que el usuario ha quitado: no vuelven al resubir el archivo.
@@ -240,6 +248,34 @@ function makeRepo(client, url) {
       if (stmts.length) await client.batch(stmts, 'write');
     },
 
+    // ---------- alertas y objetivos ----------
+    async getAlerts(userId) {
+      const r = await client.execute({ sql: 'SELECT id, isin, dir, price, created_at, triggered_at FROM alerts WHERE user_id = ? ORDER BY id DESC', args: [userId] });
+      return r.rows.map((x) => ({ ...x, id: Number(x.id) }));
+    },
+    async addAlert(userId, { isin, dir, price }) {
+      await client.execute({ sql: 'INSERT INTO alerts (user_id, isin, dir, price, created_at) VALUES (?, ?, ?, ?, ?)', args: [userId, isin, dir, price, now()] });
+    },
+    async deleteAlert(userId, id) {
+      await client.execute({ sql: 'DELETE FROM alerts WHERE user_id = ? AND id = ?', args: [userId, id] });
+    },
+    async triggerAlerts(userId, ids) {
+      if (!ids.length) return;
+      const at = now();
+      await client.batch(ids.map((id) => ({ sql: 'UPDATE alerts SET triggered_at = ? WHERE user_id = ? AND id = ?', args: [at, userId, id] })), 'write');
+    },
+    async getTargets(userId) {
+      const r = await client.execute({ sql: 'SELECT isin, weight FROM targets WHERE user_id = ?', args: [userId] });
+      return Object.fromEntries(r.rows.map((x) => [x.isin, x.weight]));
+    },
+    /** targets: { ISIN: peso % | null }; null lo quita. */
+    async setTargets(userId, targets) {
+      const stmts = Object.entries(targets).map(([isin, w]) => (w > 0
+        ? { sql: 'INSERT INTO targets (user_id, isin, weight) VALUES (?, ?, ?) ON CONFLICT(user_id, isin) DO UPDATE SET weight = excluded.weight', args: [userId, isin, w] }
+        : { sql: 'DELETE FROM targets WHERE user_id = ? AND isin = ?', args: [userId, isin] }));
+      if (stmts.length) await client.batch(stmts, 'write');
+    },
+
     // ---------- logotipos ----------
     /** undefined = nunca buscado; null = no existe; { type, data } = guardado. */
     async getLogo(isin) {
@@ -322,7 +358,7 @@ function makeRepo(client, url) {
 
     async clearUserData(userId) {
       await client.batch(
-        ['transactions', 'prices', 'uploads', 'valuations', 'removed'].map((t) => ({ sql: `DELETE FROM ${t} WHERE user_id = ?`, args: [userId] })),
+        ['transactions', 'prices', 'uploads', 'valuations', 'removed', 'alerts', 'targets'].map((t) => ({ sql: `DELETE FROM ${t} WHERE user_id = ?`, args: [userId] })),
         'write',
       );
     },

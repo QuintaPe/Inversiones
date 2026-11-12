@@ -163,3 +163,27 @@ test('efectivo: saldo reconstruido con todas las filas', async () => {
   assert.equal(cash.totals.card, -5);
   stop();
 });
+
+test('alertas de precio y pesos objetivo', async () => {
+  const { client, json, stop } = await start();
+  const ana = client();
+  await ana('/api/auth/google', json('POST', { credential: 'ok:ana' }));
+  await ana('/api/upload', form());
+  await ana('/api/alerts', json('POST', { isin: 'XX0000000001', dir: 'above', price: 15 }));
+  await ana('/api/alerts', json('POST', { isin: 'XX0000000001', dir: 'below', price: 5 }));
+  assert.equal((await ana('/api/alerts', json('POST', { isin: 'XX0000000001', dir: 'sideways', price: 5 }))).status, 400);
+
+  let r = await ana('/api/quotes/refresh', { method: 'POST' }); // cotiza a 20 €
+  assert.deepEqual(r.body.fired.map((f) => [f.dir, f.price, f.current]), [['above', 15, 20]]);
+  assert.equal(r.body.alerts.filter((al) => al.triggered_at).length, 1);
+  r = await ana('/api/quotes/refresh', { method: 'POST' });
+  assert.equal(r.body.fired.length, 0, 'una alerta salta una sola vez');
+
+  r = await ana('/api/targets', json('PUT', { targets: { XX0000000001: 60, YY0000000002: 40 } }));
+  assert.deepEqual(r.body.targets, { XX0000000001: 60, YY0000000002: 40 });
+  r = await ana('/api/targets', json('PUT', { targets: { YY0000000002: null } }));
+  assert.deepEqual(r.body.targets, { XX0000000001: 60 });
+  assert.equal((await ana('/api/targets', json('PUT', { targets: { XX0000000001: 140 } }))).status, 400);
+  assert.equal((await ana('/api/health')).body.ok, true);
+  stop();
+});

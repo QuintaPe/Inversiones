@@ -7,6 +7,9 @@ async function call(url, opts) {
   } catch {
     throw new Error('No se pudo conectar con el servidor.');
   }
+  // El service worker marca las respuestas que salen de su copia guardada.
+  if (res.headers.get('X-Offline-Cache')) window.dispatchEvent(new Event('offline-data'));
+  else if (res.ok && opts?.method === undefined) window.dispatchEvent(new Event('online-data'));
   const body = await res.json().catch(() => null);
   if (res.status === 401) throw new Unauthorized(body?.error || 'Inicia sesión para continuar.');
   if (!res.ok) throw new Error(body?.error || `Error ${res.status}`);
@@ -48,5 +51,9 @@ export const deleteTx = (tid) => call(`/api/transactions/${encodeURIComponent(ti
 export const getRemoved = () => call('/api/transactions/removed');
 export const restoreTx = (tid) => call(`/api/transactions/${encodeURIComponent(tid)}/restore`, { method: 'POST' });
 export const getCash = () => call('/api/cash');
+
+export const addAlert = (alert) => call('/api/alerts', json('POST', alert));
+export const deleteAlert = (id) => call(`/api/alerts/${id}`, { method: 'DELETE' });
+export const setTargets = (targets) => call('/api/targets', json('PUT', { targets }));
 
 export const clearData = () => call('/api/data', { method: 'DELETE' });

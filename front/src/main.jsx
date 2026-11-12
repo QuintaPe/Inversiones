@@ -9,3 +9,8 @@ createRoot(document.getElementById('root')).render(
     <App />
   </StrictMode>,
 );
+
+// La app instalable y el modo sin conexión solo se activan en la versión compilada.
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+}

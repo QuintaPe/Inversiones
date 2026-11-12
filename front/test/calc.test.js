@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mergeFills, washBuys, savingsTax, simulateSale } from '../src/lib/calc.js';
+import { mergeFills, washBuys, savingsTax, simulateSale, rebalance } from '../src/lib/calc.js';
 import { prepare, periodStats } from '../src/lib/perf.js';
 
 test('mergeFills junta ejecuciones del mismo día con una sola comisión', () => {
@@ -46,4 +46,13 @@ test('periodStats: resultado y rentabilidad de un periodo', () => {
   const last = periodStats(h, '2025-01-03');
   assert.equal(last.v0, 110);
   assert.equal(last.gain, 5);
+});
+
+test('rebalance: ajuste completo y reparto de una aportación', () => {
+  const items = [{ isin: 'A', v: 700 }, { isin: 'B', v: 300 }];
+  const full = rebalance(items, { A: 50, B: 50 });
+  assert.deepEqual([full.rows.A.delta, full.rows.B.delta, full.net], [-200, 200, 0]);
+  // Con 200 € nuevos el total es 1.200: A ya supera su mitad (600), todo va a B.
+  const add = rebalance(items, { A: 50, B: 50 }, 200);
+  assert.deepEqual([add.rows.A.delta, add.rows.B.delta, add.net], [0, 200, 200]);
 });

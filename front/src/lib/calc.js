@@ -227,3 +227,28 @@ export function allocation(priced, keyOf, top = 8, labelOf = keyOf) {
   const rest = rows.slice(top);
   return [...rows.slice(0, top), { key: '__otros', label: `Otros (${rest.length})`, v: sum(rest, (r) => r.v), w: sum(rest, (r) => r.w), n: sum(rest, (r) => r.n), other: true }];
 }
+
+/**
+ * Ajuste hacia unos pesos objetivo.
+ * items: [{ isin, v, price }]; weights: { isin: % }; extra: aportación nueva en euros.
+ * Sin aportación: compra y vende hasta el objetivo. Con aportación: solo compras, repartidas
+ * entre lo que queda por debajo de su objetivo, en proporción a lo que le falta.
+ */
+export function rebalance(items, weights, extra = 0) {
+  const total = items.reduce((t, i) => t + i.v, 0) + extra;
+  const rows = {};
+  let lacking = 0;
+  for (const i of items) {
+    const w = weights[i.isin] ?? 0;
+    const gap = (w / 100) * total - i.v;
+    rows[i.isin] = { w, gap, delta: 0 };
+    if (gap > 0) lacking += gap;
+  }
+  let net = 0;
+  for (const r of Object.values(rows)) {
+    if (!r.w && extra <= 0) continue; // sin objetivo no se propone nada
+    r.delta = extra > 0 ? (r.gap > 0 && lacking > 0 ? (r.gap / lacking) * Math.min(extra, lacking) : 0) : r.gap;
+    net += r.delta;
+  }
+  return { rows, net };
+}

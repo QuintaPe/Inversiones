@@ -1,4 +1,7 @@
 import express from 'express';
+import helmet from 'helmet';
+import compression from 'compression';
+import { rateLimit } from 'express-rate-limit';
 import multer from 'multer';
 import cookieParser from 'cookie-parser';
 import fs from 'node:fs';
@@ -28,12 +31,24 @@ export function createApp({ db, verifyGoogle, googleClientId, sessionSecret, quo
   const history = quotes?.history ? createHistory({ db, quotes }) : null;
   const isDate = (d) => /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(d));
   if (trustProxy) app.set('trust proxy', 1);
+  // Cabeceras de seguridad. Sin CSP propia (la página carga el botón de Google) y con
+  // la política de ventanas que necesita su ventana emergente de acceso.
+  app.use(helmet({ contentSecurityPolicy: false, crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' } }));
+  app.use(compression());
+  const limit = (windowMs, max) => rateLimit({
+    windowMs, limit: max, standardHeaders: 'draft-7', legacyHeaders: false,
+    message: { error: 'Demasiadas peticiones. Espera un momento y vuelve a intentarlo.' },
+  });
+  app.use('/api', limit(60_000, 600));
+  app.use('/api/auth', limit(15 * 60_000, 30));
+  app.use('/api/upload', limit(60 * 60_000, 40));
+  app.get('/api/health', (_req, res) => res.json({ ok: true }));
   app.use(express.json({ limit: '1mb' }));
   app.use(cookieParser());
 
   async function portfolio(userId) {
-    const [rows, prices, lastUpload, symbols] = await Promise.all([
-      db.getRows(userId), db.getPrices(userId), db.lastUpload(userId), db.getSymbols(),
+    const [rows, prices, lastUpload, symbols, alerts, targets] = await Promise.all([
+      db.getRows(userId), db.getPrices(userId), db.lastUpload(userId), db.getSymbols(), db.getAlerts(userId), db.getTargets(userId),
     ]);
     const { positions, lastDate, firstDate } = buildPortfolio(rows);
     for (const p of positions) {
@@ -45,7 +60,7 @@ export function createApp({ db, verifyGoogle, googleClientId, sessionSecret, quo
       p.sector = symbols[p.isin]?.sector ?? null;
       p.industry = symbols[p.isin]?.industry ?? null;
     }
-    return { positions, meta: { lastDate, firstDate, rows: rows.filter(isInvestRow).length, lastUpload, liveQuotes: !!quotes, history: !!history } };
+    return { positions, alerts, targets, meta: { lastDate, firstDate, rows: rows.filter(isInvestRow).length, lastUpload, liveQuotes: !!quotes, history: !!history } };
   }
 
   // ---------- sesión ----------
@@ -93,6 +108,29 @@ export function createApp({ db, verifyGoogle, googleClientId, sessionSecret, quo
       total, rows, relevant: invest, replace: req.query.replace === '1',
     });
     res.json({ upload: info, ...(await portfolio(req.userId)) });
+  });
+
+  // ---------- alertas de precio y cartera objetivo ----------
+  api.post('/alerts', async (req, res) => {
+    const price = parsePrice(req.body?.price), dir = req.body?.dir, isin = String(req.body?.isin ?? '');
+    if (!price || !['above', 'below'].includes(dir) || !isin) return res.status(400).json({ error: 'Alerta no válida.' });
+    if ((await db.getAlerts(req.userId)).length >= 200) return res.status(400).json({ error: 'Has llegado al máximo de alertas.' });
+    await db.addAlert(req.userId, { isin, dir, price });
+    res.json({ alerts: await db.getAlerts(req.userId) });
+  });
+  api.delete('/alerts/:id', async (req, res) => {
+    await db.deleteAlert(req.userId, Number(req.params.id));
+    res.json({ alerts: await db.getAlerts(req.userId) });
+  });
+  api.put('/targets', async (req, res) => {
+    const clean = {};
+    for (const [isin, w] of Object.entries(req.body?.targets ?? {})) {
+      const n = w == null || w === '' ? null : Number(w);
+      if (n != null && !(n >= 0 && n <= 100)) return res.status(400).json({ error: 'Los pesos van de 0 a 100.' });
+      clean[isin] = n;
+    }
+    await db.setTargets(req.userId, clean);
+    res.json({ targets: await db.getTargets(req.userId) });
   });
 
   // Logotipo de un valor. 404 si no hay: el front enseña las iniciales.
@@ -181,8 +219,13 @@ export function createApp({ db, verifyGoogle, googleClientId, sessionSecret, quo
     await db.saveSymbols(resolved);
     const at = await db.setLivePrices(req.userId, found);
     const names = Object.fromEntries(targets.map((p) => [p.isin, p.name]));
+    // Alertas de precio que se cumplen con las cotizaciones nuevas: saltan una sola vez.
+    const fired = before.alerts.filter((al) => !al.triggered_at && found[al.isin]
+      && (al.dir === 'above' ? found[al.isin].price >= al.price : found[al.isin].price <= al.price));
+    await db.triggerAlerts(req.userId, fired.map((al) => al.id));
     res.json({
       ...(await portfolio(req.userId)),
+      fired: fired.map((al) => ({ ...al, name: names[al.isin], current: found[al.isin].price })),
       refresh: {
         at, updated: Object.keys(found).length,
         // Solo cuentan como fallo los que tienen ISIN cotizable (no cripto, etc.).
