@@ -35,6 +35,9 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS symbol_divs (
      symbol TEXT NOT NULL, d TEXT NOT NULL, amount REAL NOT NULL, PRIMARY KEY (symbol, d)) WITHOUT ROWID`,
   // Valoraciones con fecha que anota el usuario para lo que no cotiza (Private Markets…).
+  // Splits por símbolo: ratio = acciones nuevas por cada acción antigua.
+  `CREATE TABLE IF NOT EXISTS symbol_splits (
+     symbol TEXT NOT NULL, d TEXT NOT NULL, ratio REAL NOT NULL, PRIMARY KEY (symbol, d)) WITHOUT ROWID`,
   `CREATE TABLE IF NOT EXISTS valuations (
      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
      isin TEXT NOT NULL, d TEXT NOT NULL, price REAL NOT NULL, PRIMARY KEY (user_id, isin, d))`,
@@ -68,7 +71,10 @@ const MIGRATIONS = [
   'ALTER TABLE symbols ADD COLUMN industry TEXT',
   // Versión de la ficha: las anteriores a SYMBOL_V se vuelven a buscar una vez.
   'ALTER TABLE symbols ADD COLUMN v INTEGER NOT NULL DEFAULT 1',
+  // Versión del histórico: los anteriores a HISTORY_V se descargan enteros otra vez.
+  'ALTER TABLE history_meta ADD COLUMN v INTEGER NOT NULL DEFAULT 1',
 ];
+export const HISTORY_V = 2; // 2 = incluye los splits
 const SYMBOL_V = 2; // 2 = incluye sector e industria
 const RETRY_UNKNOWN_MS = 7 * 86400000; // un ISIN sin símbolo se reintenta a la semana
 
@@ -294,22 +300,23 @@ function makeRepo(client, url) {
 
     // ---------- histórico ----------
     async getHistoryMeta() {
-      const r = await client.execute('SELECT symbol, currency, from_d, last_d, fetched_at FROM history_meta');
+      const r = await client.execute('SELECT symbol, currency, from_d, last_d, fetched_at, v FROM history_meta');
       return Object.fromEntries(r.rows.map((x) => [x.symbol, { ...x }]));
     },
 
-    /** Guarda cierres y dividendos de un símbolo (por lotes) y actualiza su estado. */
-    async saveHistory(symbol, { currency, from, rows, divs = [] }) {
+    /** Guarda cierres, dividendos y splits de un símbolo (por lotes) y actualiza su estado. */
+    async saveHistory(symbol, { currency, from, rows, divs = [], splits = [] }) {
       const stmts = [
         ...rows.map(([d, c]) => ({ sql: 'INSERT OR REPLACE INTO price_history (symbol, d, c) VALUES (?, ?, ?)', args: [symbol, d, c] })),
         ...divs.map(([d, a]) => ({ sql: 'INSERT OR REPLACE INTO symbol_divs (symbol, d, amount) VALUES (?, ?, ?)', args: [symbol, d, a] })),
+        ...splits.map(([d, r]) => ({ sql: 'INSERT OR REPLACE INTO symbol_splits (symbol, d, ratio) VALUES (?, ?, ?)', args: [symbol, d, r] })),
       ];
       for (let i = 0; i < stmts.length; i += 400) await client.batch(stmts.slice(i, i + 400), 'write');
       await client.execute({
-        sql: `INSERT INTO history_meta (symbol, currency, from_d, last_d, fetched_at) VALUES (?, ?, ?, ?, ?)
+        sql: `INSERT INTO history_meta (symbol, currency, from_d, last_d, fetched_at, v) VALUES (?, ?, ?, ?, ?, ?)
               ON CONFLICT(symbol) DO UPDATE SET currency = excluded.currency, from_d = min(history_meta.from_d, excluded.from_d),
-                last_d = max(coalesce(history_meta.last_d, ''), coalesce(excluded.last_d, '')), fetched_at = excluded.fetched_at`,
-        args: [symbol, currency, from, rows.at(-1)?.[0] ?? null, now()],
+                last_d = max(coalesce(history_meta.last_d, ''), coalesce(excluded.last_d, '')), fetched_at = excluded.fetched_at, v = excluded.v`,
+        args: [symbol, currency, from, rows.at(-1)?.[0] ?? null, now(), HISTORY_V],
       });
     },
 
@@ -324,6 +331,14 @@ function makeRepo(client, url) {
         });
         for (const x of r.rows) out[x.symbol].push([x.d, x.c]);
       }
+      return out;
+    },
+
+    /** Todos los splits conocidos: { símbolo: [[fecha, ratio], …] } ordenado por fecha. */
+    async getSplits() {
+      const r = await client.execute('SELECT symbol, d, ratio FROM symbol_splits ORDER BY symbol, d');
+      const out = {};
+      for (const x of r.rows) (out[x.symbol] ??= []).push([x.d, x.ratio]);
       return out;
     },
 

@@ -22,15 +22,16 @@ function exportYear(y) {
   URL.revokeObjectURL(el.href);
 }
 
-export default function Tax({ a, onOpen }) {
-  const years = useMemo(() => taxYears(a.sl, a.dv), [a.sl, a.dv]);
+export default function Tax({ a, income, onOpen }) {
+  const years = useMemo(() => taxYears(a.sl, a.dv, income), [a.sl, a.dv, income]);
   const [sel, setSel] = useState(null);
-  if (!years.length) return <div className="card"><Empty>Todavía no hay ventas ni dividendos que declarar.</Empty></div>;
+  if (!years.length) return <div className="card"><Empty>Todavía no hay ventas, dividendos ni intereses que declarar.</Empty></div>;
   const y = years.find((r) => r.year === sel) ?? years[0];
   const diff = y.gainF - y.gainAvg;
-  // Base del ahorro orientativa: ganancias netas (si son positivas) más dividendos íntegros.
-  const base = Math.max(0, y.gainF) + y.divG;
-  const quota = savingsTax(base), due = quota - y.divT;
+  // Base del ahorro orientativa: ganancias netas más rendimientos, con la compensación de pérdidas ya aplicada.
+  const base = y.base;
+  const quota = savingsTax(base), due = quota - y.withheld;
+  const lost = y.gainTax - y.usedPrev < 0; // el año cierra con pérdidas patrimoniales
   const byCountry = Object.values(y.divs.reduce((m, x) => {
     const c = country(x.p.isin);
     const r = (m[c] ??= { c, n: 0, g: 0, t: 0 });
@@ -45,34 +46,53 @@ export default function Tax({ a, onOpen }) {
         <button type="button" className="btn" onClick={() => exportYear(y)}><Icon name="download" size={16} />Exportar {y.year}</button>
       </div>
 
-      <Card title={`Estimación del ejercicio ${y.year}`} sub="Base del ahorro: ganancias patrimoniales netas más dividendos">
+      <Card title={`Estimación del ejercicio ${y.year}`} sub="Base del ahorro: ganancias patrimoniales netas más rendimientos del capital">
         <div className="perf">
           <div><span className="stat-l">Base del ahorro</span><b className="stat-v">{eur(base)}</b></div>
           <div><span className="stat-l">Cuota estimada</span><b className="stat-v">{eur(quota)}</b></div>
           <div><span className="stat-l">{due >= 0 ? 'A pagar tras retenciones' : 'A devolver'}</span><b className="stat-v">{eur(Math.abs(due))}</b></div>
         </div>
+        <div className="calc">
+          <div><span>Ganancias y pérdidas de las ventas (FIFO)</span><b className={sign(y.gainF)}>{eurS(y.gainF)}</b></div>
+          {Math.abs(y.deferred) >= 0.005 && <div><span>+ Pérdidas diferidas por la regla de los dos meses</span><b>{eurS(-y.deferred)}</b></div>}
+          {Math.abs(y.released) >= 0.005 && <div><span>− Pérdidas diferidas que afloran al vender lo recomprado</span><b>{eurS(y.released)}</b></div>}
+          {y.usedPrev >= 0.005 && <div><span>− Pérdidas de años anteriores</span><b>−{eur(y.usedPrev)}</b></div>}
+          <div className="t"><span>= Ganancias y pérdidas patrimoniales</span><b className={sign(y.gainTax - y.usedPrev)}>{eurS(y.gainTax - y.usedPrev)}</b></div>
+          <div><span>Dividendos íntegros ({y.divs.length} cobros)</span><b>{eur(y.divG)}</b></div>
+          {y.intN > 0 && <div><span>Intereses de la cuenta ({y.intN} abonos)</span><b>{eur(y.intG)}</b></div>}
+          {y.rewN > 0 && <div><span>Saveback y bonus ({y.rewN} abonos)</span><b>{eur(y.rewG)}</b></div>}
+          <div className="t"><span>= Rendimientos del capital mobiliario</span><b>{eur(y.rcm)}</b></div>
+          {y.offsetRcm >= 0.005 && <div><span>− Pérdidas compensadas con rendimientos (máx. 25 %: {eur(0.25 * y.rcm)})</span><b>−{eur(y.offsetRcm)}</b></div>}
+          <div className="t"><span>= Base del ahorro</span><b>{eur(base)}</b></div>
+          <div><span>Retenciones ya practicadas (dividendos{y.intT > 0 ? ', intereses' : ''}{y.rewT > 0 ? ', premios' : ''})</span><b>{eur(y.withheld)}</b></div>
+          {y.carryOut >= 0.005 && <div><span>Pérdidas pendientes para los próximos ejercicios</span><b className="loss">−{eur(y.carryOut)}</b></div>}
+        </div>
         <p className="note">
+          {lost && <>Las pérdidas patrimoniales no restan directamente: compensan como mucho el 25 % de los rendimientos del año y el resto
+            se guarda para los cuatro ejercicios siguientes. </>}
           Tramos del ahorro: 19 % hasta 6.000 €, 21 % hasta 50.000 €, 23 % hasta 200.000 €, 27 % hasta 300.000 € y 30 % en
           adelante. Trata toda la retención como ya ingresada en España, así que si parte es retención extranjera la cifra a
-          pagar real será distinta (se recupera por doble imposición con límites). No incluye intereses ni otras rentas.
+          pagar real será distinta (se recupera por doble imposición con límites). No incluye rentas de fuera de esta cuenta.
         </p>
       </Card>
 
       {y.wash.length > 0 && (
-        <Card title="Posible regla de los dos meses" sub={`${eurS(y.washLoss)} en pérdidas que quizá no puedas compensar todavía`}>
+        <Card title="Posible regla de los dos meses" sub={`${eurS(y.washLoss)} en pérdidas diferidas, descontadas del resultado del año`}>
           <ul className="rows">
-            {y.wash.map(({ sale, buys }) => (
+            {y.wash.map(({ sale, buys, deferred }) => (
               <li key={sale.id}>
                 <button type="button" onClick={() => onOpen(sale.p.isin)}>
                   <Asset p={sale.p} size="sm">Vendiste el {date(sale.d)} y compraste el {buys.map((b) => date(b.d)).join(', ')}</Asset>
-                  <span className="row-r"><span className="row-v loss">{eurS(sale.reF)}</span></span>
+                  <span className="row-r"><span className="row-v loss">{eurS(deferred)}</span>
+                    {Math.abs(deferred - sale.reF) >= 0.005 && <small>de {eurS(sale.reF)}</small>}</span>
                 </button>
               </li>
             ))}
           </ul>
           <p className="note">
             Si compras el mismo valor en los dos meses anteriores o posteriores a venderlo con pérdidas, esa pérdida se
-            difiere hasta que vendas las acciones recompradas. Es un aviso orientativo: revisa cada caso.
+            difiere, en la parte que corresponde a las acciones recompradas, hasta que las vendas. La estimación la
+            descuenta este año y la recupera en el ejercicio en que vendes esas acciones. Es orientativo: revisa cada caso.
           </p>
         </Card>
       )}
@@ -180,9 +200,10 @@ export default function Tax({ a, onOpen }) {
 
       <p className="note">
         <b>Orientativo, no es asesoramiento fiscal.</b> Hacienda exige FIFO por valor homogéneo, que es lo que se calcula
-        aquí a partir de tu CSV. La regla de los dos meses se avisa pero no se descuenta del resultado; el CSV no
-        distingue la retención española de la extranjera (la tabla por país ayuda a repartirla), y no se incluyen
-        intereses, saveback ni bonus. Contrasta siempre con el informe fiscal de tu bróker.
+        aquí a partir de tu CSV. La regla de los dos meses y la compensación de pérdidas se aplican de forma
+        aproximada (por fecha de compra, sin distinguir lotes del mismo día); el CSV no distingue la retención española
+        de la extranjera (la tabla por país ayuda a repartirla). Intereses, saveback y bonus se tratan como rendimientos
+        del capital mobiliario. Contrasta siempre con el informe fiscal de tu bróker.
       </p>
     </div>
   );

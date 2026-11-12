@@ -109,12 +109,13 @@ export function createQuotes({ fetchImpl = fetch, now = () => Date.now() } = {})
 
   /**
    * Cierres diarios de un símbolo desde una fecha (AAAA-MM-DD), en su divisa.
-   * Devuelve { currency, rows: [[fecha, cierre]], divs: [[fecha, importe por acción]] }.
+   * Devuelve { currency, rows: [[fecha, cierre]], divs: [[fecha, importe por acción]], splits: [[fecha, ratio]] }.
+   * Cierres y dividendos vienen ya ajustados por los splits posteriores.
    */
   async function history(symbol, from) {
     const p1 = Math.floor(Date.parse(`${from}T00:00:00Z`) / 1000) - 86400;
     const p2 = Math.floor(now() / 1000) + 86400;
-    const j = await get(`${CHART}/${encodeURIComponent(symbol)}?interval=1d&period1=${p1}&period2=${p2}&events=div`);
+    const j = await get(`${CHART}/${encodeURIComponent(symbol)}?interval=1d&period1=${p1}&period2=${p2}&events=div%2Csplits`);
     const r = j.chart?.result?.[0];
     if (!r?.timestamp) throw new Error('sin histórico');
     let currency = r.meta.currency, k = 1;
@@ -125,7 +126,12 @@ export function createQuotes({ fetchImpl = fetch, now = () => Date.now() } = {})
     const byDay = new Map();
     r.timestamp.forEach((ts, i) => { if (close[i] > 0) byDay.set(day(ts), close[i] * k); });
     const divs = Object.values(r.events?.dividends ?? {}).map((e) => [day(e.date), e.amount * k]);
-    return { currency, rows: [...byDay].sort((a, b) => a[0].localeCompare(b[0])), divs };
+    // Ratio = acciones nuevas por cada acción antigua (4 en un split 4:1; 0,1 en un contrasplit 1:10).
+    const splits = Object.values(r.events?.splits ?? {})
+      .map((e) => [day(e.date), e.numerator / e.denominator])
+      .filter(([, ratio]) => Number.isFinite(ratio) && ratio > 0 && ratio !== 1)
+      .sort((a, b) => a[0].localeCompare(b[0]));
+    return { currency, rows: [...byDay].sort((a, b) => a[0].localeCompare(b[0])), divs, splits };
   }
 
   return { quoteIsins, resolveIsins, history };

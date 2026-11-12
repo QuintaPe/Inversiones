@@ -119,7 +119,7 @@ export const Seg = ({ options, value, onChange, label }) => (
   </div>
 );
 
-const KIND = { B: ['Compra', 'buy'], S: ['Venta', 'sell'], D: ['Dividendo', 'div'] };
+const KIND = { B: ['Compra', 'buy'], S: ['Venta', 'sell'], D: ['Dividendo', 'div'], X: ['Split', 'split'] };
 export const Kind = ({ k }) => <span className={`badge ${KIND[k][1]}`}>{KIND[k][0]}</span>;
 
 export const Empty = ({ children }) => <div className="empty">{children}</div>;

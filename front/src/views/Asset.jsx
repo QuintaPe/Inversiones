@@ -5,6 +5,8 @@ import { Lines } from '../charts.jsx';
 import { country, classLabel, sector } from '../lib/countries.js';
 import { simulateSale, savingsTax } from '../lib/calc.js';
 import { eur, eurS, num, pct, pctS, qty, sign, date, dateLong, time } from '../lib/format.js';
+// Base del ahorro del año si se añade un resultado: las pérdidas compensan hasta el 25 % de los rendimientos.
+const saleBase = (b, gain) => { const g = b.gains + gain; return Math.max(0, g) + b.divs - Math.min(Math.max(0, -g), 0.25 * b.divs); };
 
 const RANGES = [['1', '1M'], ['3', '3M'], ['6', '6M'], ['ytd', 'YTD'], ['12', '1A'], ['max', 'Máx']];
 const today = () => new Date().toISOString().slice(0, 10);
@@ -18,7 +20,7 @@ function Op({ x, onEdit, onRemove }) {
       <div className="op-h">
         <span><Kind k={x.k} /> <span className="op-d">{date(x.d)}</span></span>
         <b className={x.k === 'S' ? sign(x.re) : ''}>
-          {x.k === 'B' ? eur(x.net) : x.k === 'S' ? eurS(x.re) : eur(x.net)}
+          {x.k === 'X' ? `× ${num(x.ratio)}` : x.k === 'B' ? eur(x.net) : x.k === 'S' ? eurS(x.re) : eur(x.net)}
         </b>
       </div>
       <div className="op-b">
@@ -38,6 +40,13 @@ function Op({ x, onEdit, onRemove }) {
             Después: {qty(x.sa)} uds. · coste {eur(x.ca)}
           </>
         )}
+        {x.k === 'X' && (
+          <>
+            {qty(x.from)} uds. × {num(x.ratio)} = <b>{qty(x.sh)} uds.</b><br />
+            Después: {qty(x.sa)} uds. · coste {eur(x.ca)} · medio {eur(x.av)}<br />
+            <i>El coste total no cambia; solo se reparte entre {x.ratio > 1 ? 'más' : 'menos'} acciones.</i>
+          </>
+        )}
         {x.k === 'D' && (
           <>
             {qty(x.sh)} uds. · bruto {num(x.g)} − retención {num(x.tax)} = <b>{eur(x.net)}</b>
@@ -50,9 +59,13 @@ function Op({ x, onEdit, onRemove }) {
           </span>
         )}
         <span className="op-f">
-          <span className="op-id" title="Últimos 8 caracteres del transaction_id del CSV">{manual ? 'Añadida a mano' : `ID ${(x.ids ?? [x.id]).join(' · ')}`}</span>
-          {manual && <button type="button" className="link" onClick={() => onEdit(x)}>Editar</button>}
-          <button type="button" className="link" onClick={() => onRemove(x)}>Quitar</button>
+          {x.k === 'X' ? <span className="op-id">Aplicado automáticamente con el histórico de cotizaciones</span> : (
+            <>
+              <span className="op-id" title="Últimos 8 caracteres del transaction_id del CSV">{manual ? 'Añadida a mano' : `ID ${(x.ids ?? [x.id]).join(' · ')}`}</span>
+              {manual && <button type="button" className="link" onClick={() => onEdit(x)}>Editar</button>}
+              <button type="button" className="link" onClick={() => onRemove(x)}>Quitar</button>
+            </>
+          )}
         </span>
       </div>
     </li>
@@ -66,7 +79,7 @@ function Simulator({ p, yearBase }) {
   const n = Math.min(p.sh, parseFloat(sh.replace(',', '.')) || 0), px = parseFloat(price.replace(',', '.')) || 0;
   const sim = n > 0 && px > 0 ? simulateSale(p.lots, n, px) : null;
   // Impuesto marginal: lo que sube la cuota del año al añadir esta ganancia (o lo que baja con una pérdida).
-  const tax = sim ? savingsTax(Math.max(0, yearBase.gains + sim.gain) + yearBase.divs) - savingsTax(Math.max(0, yearBase.gains) + yearBase.divs) : 0;
+  const tax = sim ? savingsTax(saleBase(yearBase, sim.gain)) - savingsTax(saleBase(yearBase, 0)) : 0;
   return (
     <Card title="Simular una venta" sub="Resultado fiscal por FIFO si vendieras ahora">
       <div className="sim-f">
@@ -89,7 +102,7 @@ function Simulator({ p, yearBase }) {
           </div>
           <p className="note">
             Lotes que se consumirían: {sim.used.map((l) => `${date(l.d)} (${qty(l.sh)} a ${num(l.unit)})`).join(', ')}. El impuesto es
-            el efecto sobre tu base del ahorro de este año ({eur(Math.max(0, yearBase.gains) + yearBase.divs)} hasta ahora); orientativo.
+            el efecto sobre tu base del ahorro de este año ({eur(saleBase(yearBase, 0))} hasta ahora); orientativo.
           </p>
         </>
       ) : <Empty>Indica unidades y precio.</Empty>}
@@ -210,7 +223,7 @@ export default function Asset({ x, totalVal, yearBase, onBack, onPrice, liveQuot
     if (rows.length < 2) return null;
     const dates = rows.map((r) => r[0]);
     const idx = (d) => { const i = dates.findIndex((k) => k >= d); return i < 0 ? dates.length - 1 : i; };
-    const marks = x.ops.filter((o) => o.k !== 'D' && o.d >= dates[0])
+    const marks = x.ops.filter((o) => (o.k === 'B' || o.k === 'S') && o.d >= dates[0])
       .map((o) => ({ key: o.id + o.k, i: idx(o.d), cls: o.k === 'B' ? 'buy' : 'sell', o }));
     return { t: dates.map((d) => Date.parse(`${d}T00:00:00Z`)), dates, c: rows.map((r) => r[1]), marks };
   }, [hist, range, p.open, p.price, x.ops]);

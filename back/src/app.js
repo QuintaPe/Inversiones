@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import crypto from 'node:crypto';
-import { parseCsv, buildPortfolio, buildCash, manualRow, isInvestRow, CASH_LABEL, CsvError } from './engine.js';
+import { parseCsv, buildPortfolio, buildCash, buildIncome, manualRow, isInvestRow, CASH_LABEL, CsvError } from './engine.js';
 import { sessions, AuthError } from './auth.js';
 import { createHistory } from './history.js';
 import { createLogos } from './logos.js';
@@ -46,11 +46,19 @@ export function createApp({ db, verifyGoogle, googleClientId, sessionSecret, quo
   app.use(express.json({ limit: '1mb' }));
   app.use(cookieParser());
 
+  /** Splits conocidos de cada ISIN ({ ISIN: [[fecha, ratio]] }), para que el motor ajuste las acciones. */
+  async function loadSplits(symbols) {
+    const [bySymbol, known] = await Promise.all([db.getSplits(), symbols ?? db.getSymbols()]);
+    const out = {};
+    for (const [isin, s] of Object.entries(known)) if (s?.symbol && bySymbol[s.symbol]) out[isin] = bySymbol[s.symbol];
+    return out;
+  }
+
   async function portfolio(userId) {
     const [rows, prices, lastUpload, symbols, alerts, targets] = await Promise.all([
       db.getRows(userId), db.getPrices(userId), db.lastUpload(userId), db.getSymbols(), db.getAlerts(userId), db.getTargets(userId),
     ]);
-    const { positions, lastDate, firstDate } = buildPortfolio(rows);
+    const { positions, lastDate, firstDate } = buildPortfolio(rows, await loadSplits(symbols));
     for (const p of positions) {
       const px = prices[p.isin];
       p.price = px?.price ?? null;
@@ -60,7 +68,8 @@ export function createApp({ db, verifyGoogle, googleClientId, sessionSecret, quo
       p.sector = symbols[p.isin]?.sector ?? null;
       p.industry = symbols[p.isin]?.industry ?? null;
     }
-    return { positions, alerts, targets, meta: { lastDate, firstDate, rows: rows.filter(isInvestRow).length, lastUpload, liveQuotes: !!quotes, history: !!history } };
+    const splits = positions.reduce((n, p) => n + p.evs.filter((e) => e.k === 'X').length, 0);
+    return { positions, alerts, targets, meta: { lastDate, firstDate, rows: rows.filter(isInvestRow).length, lastUpload, liveQuotes: !!quotes, history: !!history, splits } };
   }
 
   // ---------- sesión ----------
@@ -157,13 +166,13 @@ export function createApp({ db, verifyGoogle, googleClientId, sessionSecret, quo
     return op.shares > 0 && op.price > 0 ? op : 'Indica cantidad y precio.';
   }
   // Una operación no puede dejar una posición en negativo (vender más de lo que hay).
-  const oversold = (rows) => buildPortfolio(rows).positions.find((p) => p.sh < -1e-6 || p.evs.some((e) => e.sa < -1e-6));
+  const oversold = async (rows) => buildPortfolio(rows, await loadSplits()).positions.find((p) => p.sh < -1e-6 || p.evs.some((e) => e.sa < -1e-6));
 
   api.post('/transactions', async (req, res) => {
     const op = readOp(req.body);
     if (typeof op === 'string') return res.status(400).json({ error: op });
     const row = manualRow(op, `manual-${crypto.randomUUID()}`);
-    const bad = oversold([...(await db.getRows(req.userId)), row]);
+    const bad = await oversold([...(await db.getRows(req.userId)), row]);
     if (bad) return res.status(400).json({ error: `Con esta operación venderías más ${bad.name} de lo que tenías en esa fecha.` });
     await db.putRow(req.userId, row);
     res.json(await portfolio(req.userId));
@@ -175,7 +184,7 @@ export function createApp({ db, verifyGoogle, googleClientId, sessionSecret, quo
     const op = readOp(req.body);
     if (typeof op === 'string') return res.status(400).json({ error: op });
     const row = manualRow(op, req.params.tid);
-    const bad = oversold([...(await db.getRows(req.userId)).filter((r) => r.transaction_id !== row.transaction_id), row]);
+    const bad = await oversold([...(await db.getRows(req.userId)).filter((r) => r.transaction_id !== row.transaction_id), row]);
     if (bad) return res.status(400).json({ error: `Con este cambio venderías más ${bad.name} de lo que tenías en esa fecha.` });
     await db.putRow(req.userId, row);
     res.json(await portfolio(req.userId));
@@ -184,7 +193,7 @@ export function createApp({ db, verifyGoogle, googleClientId, sessionSecret, quo
   api.delete('/transactions/:tid', async (req, res) => {
     const row = await db.getRow(req.userId, req.params.tid);
     if (!row) return res.status(404).json({ error: 'Operación no encontrada.' });
-    const bad = oversold((await db.getRows(req.userId)).filter((r) => r.transaction_id !== row.transaction_id));
+    const bad = await oversold((await db.getRows(req.userId)).filter((r) => r.transaction_id !== row.transaction_id));
     if (bad) return res.status(400).json({ error: `No se puede quitar: dejaría ventas de ${bad.name} sin las compras que las cubren.` });
     await db.removeRow(req.userId, row, !row.transaction_id.startsWith('manual-'));
     res.json(await portfolio(req.userId));
@@ -198,7 +207,8 @@ export function createApp({ db, verifyGoogle, googleClientId, sessionSecret, quo
 
   // Saldo de efectivo reconstruido desde el CSV (null si el CSV se subió antes de guardar el efectivo).
   api.get('/cash', async (req, res) => {
-    res.json({ cash: buildCash(await db.getRows(req.userId)), labels: CASH_LABEL });
+    const rows = await db.getRows(req.userId);
+    res.json({ cash: buildCash(rows), labels: CASH_LABEL, income: buildIncome(rows) });
   });
 
   // Fija (o borra, con price vacío) el precio actual de una posición.
@@ -239,14 +249,19 @@ export function createApp({ db, verifyGoogle, googleClientId, sessionSecret, quo
   api.get('/history', async (req, res) => {
     if (!history) return res.status(503).json({ error: 'El histórico está desactivado.' });
     const [rows, prices, valuations] = await Promise.all([db.getRows(req.userId), db.getPrices(req.userId), db.getValuations(req.userId)]);
-    res.json({ history: await history.build({ positions: buildPortfolio(rows).positions, prices, valuations }) });
+    res.json({
+      history: await history.build({
+        positions: buildPortfolio(rows, await loadSplits()).positions, prices, valuations,
+        rebuild: async () => buildPortfolio(rows, await loadSplits()).positions,
+      }),
+    });
   });
 
   // Previsión de dividendos de los próximos 12 meses.
   api.get('/dividends/forecast', async (req, res) => {
     if (!history) return res.status(503).json({ error: 'El histórico está desactivado.' });
     const rows = await db.getRows(req.userId);
-    res.json({ forecast: await history.dividends(buildPortfolio(rows).positions) });
+    res.json({ forecast: await history.dividends(buildPortfolio(rows, await loadSplits()).positions) });
   });
 
   // Cierres en euros de un valor desde una fecha, para la ficha.

@@ -59,7 +59,22 @@ export function periodStats(h, start) {
     let j = first;
     while (j < i1 && b.c[j] == null) j++;
     const c0 = b.c[j], c1 = b.c[i1];
-    return { key: b.key, name: b.name, r: c0 && c1 ? (c1 / c0 - 1) * 100 : null, from: j };
+    if (!c0 || !c1) return { key: b.key, name: b.name, r: null, gain: null, mwr: null, from: j };
+    // El mismo dinero, los mismos días, pero metido en el índice: es la comparación justa con tu
+    // resultado en euros (la ponderada por tiempo da el mismo peso a una época con 100 € que a otra con 100.000 €).
+    let last = (i0 >= 0 && b.c[i0]) || c0;
+    let units = v0 / last, put = 0;
+    const g = i0 >= 0 ? [0] : []; // resultado acumulado en euros, día a día desde `first`
+    for (let i = i0 + 1; i <= i1; i++) {
+      const c = b.c[i] ?? last;
+      units += h.buy[i] / last; // las compras entran al cierre anterior, como en tu cartera
+      units -= (h.sell[i] + h.div[i]) / c; // ventas y dividendos salen al cierre del día
+      put += h.buy[i] - h.sell[i] - h.div[i];
+      g.push(units * c - v0 - put);
+      last = c;
+    }
+    const bGain = g.at(-1);
+    return { key: b.key, name: b.name, r: (c1 / c0 - 1) * 100, gain: bGain, mwr: weighted > 0 ? (bGain / weighted) * 100 : null, from: j, g };
   });
   return { i0, i1, first, v0, v1, bought, sold, divs, contrib: bought - sold, gain, mwr, twr, mdd: mdd * 100, bench, avg: weighted };
 }

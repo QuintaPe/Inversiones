@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mergeFills, washBuys, savingsTax, simulateSale, rebalance } from '../src/lib/calc.js';
+import { mergeFills, washBuys, savingsTax, simulateSale, rebalance, taxYears } from '../src/lib/calc.js';
 import { prepare, periodStats } from '../src/lib/perf.js';
 
 test('mergeFills junta ejecuciones del mismo día con una sola comisión', () => {
@@ -55,4 +55,64 @@ test('rebalance: ajuste completo y reparto de una aportación', () => {
   // Con 200 € nuevos el total es 1.200: A ya supera su mitad (600), todo va a B.
   const add = rebalance(items, { A: 50, B: 50 }, 200);
   assert.deepEqual([add.rows.A.delta, add.rows.B.delta, add.net], [0, 200, 200]);
+});
+
+test('fiscalidad: regla de los dos meses, compensación del 25 % y arrastre de pérdidas', () => {
+  // 2024: se venden 10 con −100 de pérdida y se recompran 4 a los pocos días → se difieren −40.
+  // 2025: se venden las 4 recompradas con +10 → afloran los −40.
+  const p = { isin: 'A', evs: [{ k: 'B', d: '2024-01-10', sh: 10 }, { k: 'B', d: '2024-06-10', sh: 4 }] };
+  const s1 = { p, k: 'S', d: '2024-06-01', sh: 10, net: 900, csF: 1000, reF: -100, re: -100, sa: 0, lotsUsed: [{ d: '2024-01-10', sh: 10 }] };
+  const s2 = { p, k: 'S', d: '2025-03-01', sh: 4, net: 410, csF: 400, reF: 10, re: 10, sa: 0, lotsUsed: [{ d: '2024-06-10', sh: 4 }] };
+  const div = (d, g) => ({ p, k: 'D', d, g, tax: g * 0.19, net: g * 0.81 });
+  const income = { 2025: { interest: { g: 20, t: 3.8, n: 1 }, reward: { g: 0, t: 0, n: 0 } } };
+  const [y25, y24] = taxYears([s2, s1], [div('2025-05-01', 80), div('2024-05-01', 100)], income);
+
+  assert.equal(y24.deferred, -40);
+  assert.equal(y24.gainTax, -60);
+  assert.equal(y24.offsetRcm, 25, 'las pérdidas compensan como mucho el 25 % de 100 € de dividendos');
+  assert.equal(y24.base, 75);
+  assert.equal(y24.carryOut, 35);
+
+  assert.equal(y25.released, -40);
+  assert.equal(y25.gainTax, -30);
+  assert.equal(y25.rcm, 100, 'dividendos más intereses');
+  assert.equal(y25.carryIn, 35);
+  // Límite del 25 % de 100 = 25: lo consume la pérdida del año; lo pendiente sigue arrastrándose.
+  assert.equal(y25.offsetRcm, 25);
+  assert.equal(y25.base, 75);
+  assert.equal(y25.carryOut, 40);
+  assert.ok(Math.abs(y25.withheld - (80 * 0.19 + 3.8)) < 1e-9);
+});
+
+test('fiscalidad: las pérdidas pendientes se restan de ganancias posteriores y caducan a los cuatro años', () => {
+  const p = { isin: 'B', evs: [] };
+  const sale = (d, reF) => ({ p, k: 'S', d, sh: 1, net: 0, csF: 0, reF, re: reF, sa: 0, lotsUsed: [] });
+  const ys = taxYears([sale('2020-01-01', -100), sale('2022-01-01', 30), sale('2025-01-01', 500)], []);
+  const by = Object.fromEntries(ys.map((r) => [r.year, r]));
+  assert.equal(by['2022'].usedPrev, 30);
+  assert.equal(by['2022'].base, 0);
+  assert.equal(by['2022'].carryOut, 70);
+  assert.equal(by['2025'].carryIn, 0, 'en 2025 ya han pasado más de cuatro ejercicios');
+  assert.equal(by['2025'].base, 500);
+});
+
+test('periodStats: el índice con las mismas aportaciones', () => {
+  const flows = { d: ['2025-01-01', '2025-01-02', '2025-01-03'], buy: [100, 0, 100], sell: [0, 0, 0], div: [0, 0, 0] };
+  // Cartera plana (ni gana ni pierde) frente a un índice que sube un 10 % el segundo día y luego no se mueve.
+  const h = prepare({ ...flows, v: [100, 100, 200], cost: [100, 100, 200], idx: [100, 100, 100], benchmarks: [{ key: 'w', name: 'W', c: [50, 55, 55] }] });
+  const [b] = periodStats(h, null).bench;
+  assert.ok(Math.abs(b.r - 10) < 1e-9, 'ponderada por tiempo: +10 %');
+  // Solo los primeros 100 € estaban dentro cuando subió: +10 €, no el 10 % de los 200 €.
+  assert.ok(Math.abs(b.gain - 10) < 1e-9, `${b.gain}`);
+  assert.ok(b.mwr < b.r);
+});
+
+test('periodStats: la serie diaria del índice acaba en su resultado y empieza en cero dentro de un periodo', () => {
+  const h = prepare({ d: ['2025-01-01', '2025-01-02', '2025-01-03'], buy: [100, 0, 100], sell: [0, 0, 0], div: [0, 0, 0],
+    v: [100, 100, 200], cost: [100, 100, 200], idx: [100, 100, 100], benchmarks: [{ key: 'w', name: 'W', c: [50, 55, 55] }] });
+  const all = periodStats(h, null), [b] = all.bench;
+  assert.equal(b.g.length, all.i1 - all.first + 1);
+  assert.ok(Math.abs(b.g[1] - 10) < 1e-9 && b.g.at(-1) === b.gain);
+  const part = periodStats(h, '2025-01-03'), [b2] = part.bench;
+  assert.deepEqual([b2.g.length, b2.g[0]], [part.i1 - part.first + 1, 0]);
 });

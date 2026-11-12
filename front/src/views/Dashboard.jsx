@@ -121,20 +121,21 @@ export default function Dashboard({ a, hist, flt, cash, meta, onOpen, go }) {
       );
       legend = [['up', 'Valor', st.gain >= 0 ? 'up' : 'down'], ['muted', 'Capital invertido', 'muted']];
     } else {
-      const idx0 = st.i0 < 0 ? 100 : h.idx[st.i0];
-      const mine = h.idx.slice(from).map((v) => (v / idx0 - 1) * 100);
-      const bs = h.benchmarks.map((b, k) => {
-        const base = b.c[st.bench[k].from];
-        return { key: b.key, name: b.name, cls: `b${k + 1}`, values: b.c.slice(from).map((c, i) => (c != null && base && i + from >= st.bench[k].from ? (c / base - 1) * 100 : null)) };
-      });
+      // Resultado acumulado sobre el capital medio del periodo, para ti y para cada índice con tus mismas
+      // aportaciones: el último punto de cada línea es la rentabilidad de la tarjeta de abajo.
+      const rel = (g) => (st.avg > 0 ? (g / st.avg) * 100 : 0);
+      const mineG = x.map((_, i) => gainBetween(h, st.i0, i + from));
+      const mine = mineG.map(rel);
+      const bs = st.bench.filter((b) => b.g).map((b, k) => ({ key: b.key, name: b.name, cls: `b${k + 1}`, g: b.g, values: b.g.map(rel) }));
       chart = (
-        <Lines x={x} height={280} base={0} label="Rentabilidad frente a índices" onHover={(i) => setHover(i == null ? null : i + from)}
+        <Lines x={x} height={280} base={0} label="Resultado acumulado frente a los índices con las mismas aportaciones" onHover={(i) => setHover(i == null ? null : i + from)}
           series={[{ key: 'me', values: mine, cls: 'me' }, ...bs]}
           tip={(i) => (
             <>
               <small>{dateLong(x[i])}</small>
               <b>{pctS(mine[i])}</b>
-              {bs.map((b) => b.values[i] != null && <small key={b.key}>{b.name} {pctS(b.values[i])}</small>)}
+              <small>Tu cartera {eurS(mineG[i])}</small>
+              {bs.map((b) => b.values[i] != null && <small key={b.key}>{b.name} {pctS(b.values[i])} · {eurS(b.g[i])}</small>)}
             </>
           )} />
       );
@@ -205,15 +206,22 @@ export default function Dashboard({ a, hist, flt, cash, meta, onOpen, go }) {
               <Line label="Valor al final" value={eur(st.v1)} />
               <Line label="Realizado en ventas" value={eurS(per.real)} tone={sign(per.real)} onClick={() => go('fiscalidad')} />
               <Line label="Comisiones pagadas" value={eur(per.fees)} onClick={() => go('operaciones')} />
-              <Line label="Rentabilidad ponderada por tiempo" hint="la comparable con un índice" value={pctS(st.twr)} tone={sign(st.twr)} />
+              {st.bench.map((b) => b.mwr != null && (
+                <Line key={b.key} label={`${b.name} con tus mismas aportaciones`}
+                  hint={`habrías ganado ${eurS(b.gain)}: ${st.gain >= b.gain ? 'lo bates por' : 'te bate por'} ${eur(Math.abs(st.gain - b.gain))}`}
+                  value={pctS(b.mwr)} tone={sign(b.mwr)} />
+              ))}
+              <Line label="Rentabilidad ponderada por tiempo" hint="cada día pesa igual, hubiera 100 € o 100.000 €" value={pctS(st.twr)} tone={sign(st.twr)} />
               {st.bench.map((b) => b.r != null && (
-                <Line key={b.key} label={`${b.name} en el mismo periodo`}
-                  hint={`${st.twr >= b.r ? 'lo bates por' : 'te bate por'} ${pct(Math.abs(st.twr - b.r))}`} value={pctS(b.r)} />
+                <Line key={`${b.key}-t`} label={`${b.name} ponderada por tiempo`} value={pctS(b.r)} />
               ))}
             </div>
             <p className="note">
               Resultado = valor final − valor inicial − aportaciones + dividendos. La rentabilidad divide ese resultado
-              entre el capital medio que has tenido invertido; la ponderada por tiempo ignora cuándo aportaste.
+              entre el capital medio que has tenido invertido, y la de cada índice se calcula igual: invirtiendo en él el
+              mismo dinero los mismos días; la gráfica de rentabilidad dibuja ese resultado acumulado, tuyo y de los
+              índices, sobre el capital medio del periodo. La ponderada por tiempo ignora cuánto dinero había en cada momento, así que
+              una mala racha con poco capital la hunde aunque apenas te costara euros.
               {hist.unpriced.length > 0 && ` ${hist.unpriced.join(', ')} no cotiza: su valor pasado se estima en línea recta entre la compra y las valoraciones que anotes en su ficha.`}
             </p>
           </Card>

@@ -5,6 +5,7 @@ import { time } from './lib/format.js';
 import { useHashRoute, useStored } from './hooks.js';
 import { Icon, Menu, Seg, Skeleton, Toasts, UploadButton } from './components/ui.jsx';
 import Login from './components/Login.jsx';
+import ErrorBoundary from './components/ErrorBoundary.jsx';
 import Palette from './components/Palette.jsx';
 import Asset from './views/Asset.jsx';
 import Cash from './views/Cash.jsx';
@@ -63,6 +64,7 @@ export default function App() {
   // Cualquier 401 (sesión caducada) devuelve a la pantalla de acceso.
   const fail = useCallback((err, prefix = '') => {
     if (err instanceof api.Unauthorized) {
+      navigator.serviceWorker?.controller?.postMessage('clear-data'); // la copia sin conexión era de esa sesión
       setAuth((a) => ({ ...a, user: null }));
       setData(null);
       setLoginErr('Tu sesión ha caducado. Vuelve a iniciar sesión.');
@@ -90,7 +92,12 @@ export default function App() {
     if (!histKey || !data.meta.history || !data.meta.rows) { setHist(histKey ? null : undefined); return undefined; }
     let alive = true;
     api.getHistory()
-      .then((r) => alive && setHist(r.history))
+      .then((r) => {
+        if (!alive) return;
+        setHist(r.history);
+        // El histórico acaba de descubrir un split: las posiciones se piden otra vez, ya ajustadas.
+        if (r.history && (r.history.splits ?? 0) !== (data.meta.splits ?? 0)) api.getPortfolio().then((d) => alive && setData(d)).catch(() => {});
+      })
       .catch((err) => { if (alive) { setHist(null); if (err instanceof api.Unauthorized) fail(err); } });
     return () => { alive = false; };
   }, [histKey, histTick]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -233,9 +240,10 @@ export default function App() {
   const whole = useMemo(() => (flt === 'all' ? a : analyze(positions, 'all')), [a, flt, positions]);
   const assetRow = route === 'activo' ? (whole.o.find((x) => x.p.isin === arg) ?? whole.c.find((x) => x.p.isin === arg)) : null;
   const yearBase = useMemo(() => {
-    const y = taxYears(whole.sl, whole.dv).find((r) => r.year === String(new Date().getFullYear()));
-    return { gains: y?.gainF ?? 0, divs: y?.divG ?? 0 };
-  }, [whole.sl, whole.dv]);
+    const y = taxYears(whole.sl, whole.dv, cash?.income).find((r) => r.year === String(new Date().getFullYear()));
+    // Resultado del año, menos las pérdidas pendientes de años anteriores, y rendimientos (dividendos, intereses, premios).
+    return { gains: (y?.gainTax ?? 0) - (y?.carryIn ?? 0), divs: y?.rcm ?? 0 };
+  }, [whole.sl, whole.dv, cash?.income]);
   const back = useCallback(() => (window.history.length > 1 ? window.history.back() : go('posiciones')), [go]);
 
   if (!auth) return <div className="center"><span className="spinner" aria-label="Cargando" /></div>;
@@ -243,7 +251,7 @@ export default function App() {
 
   const empty = data && !positions.length;
   const groups = GROUPS.filter(([g]) => g === 'all' || positions.some((p) => p.grp === g));
-  const view = { a, hist, flt, meta: data?.meta, onOpen: openAsset, onPrice, go, cash: cash?.cash, onAddOp: setOpForm, onRestoreOp: restoreOp, targets: data?.targets ?? {}, alerts: data?.alerts ?? [], patch, fail };
+  const view = { a, hist, flt, meta: data?.meta, onOpen: openAsset, onPrice, go, cash: cash?.cash, income: cash?.income, onAddOp: setOpForm, onRestoreOp: restoreOp, targets: data?.targets ?? {}, alerts: data?.alerts ?? [], patch, fail };
   const section = route === 'activo' ? 'posiciones' : route;
   const nav = (cls, max = NAV.length) => (
     <nav className={cls} aria-label="Secciones">
@@ -334,6 +342,7 @@ export default function App() {
             </ol>
           </div>
         ) : (
+          <ErrorBoundary resetKey={path}>
           <div className="view" key={path}>
             {route === 'activo' && (assetRow
               ? <Asset x={assetRow} totalVal={whole.val} yearBase={yearBase} onBack={back} onPrice={onPrice} liveQuotes={liveOn} onHistoryChange={reloadHistory}
@@ -346,6 +355,7 @@ export default function App() {
             {route === 'fiscalidad' && <Tax {...view} />}
             {route === 'efectivo' && <Cash cash={cash?.cash} labels={cash?.labels ?? {}} portfolioValue={whole.val} />}
           </div>
+          </ErrorBoundary>
         )}
       </main>
 

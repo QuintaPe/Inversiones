@@ -13,6 +13,36 @@ self.addEventListener('activate', (ev) => {
       .then(() => self.clients.claim()),
   );
 });
+// Estáticos de compilaciones anteriores: sobran en cuanto llega una página nueva que ya no los usa.
+async function prune(html) {
+  const c = await caches.open(SHELL);
+  for (const req of await c.keys()) {
+    const p = new URL(req.url).pathname;
+    // Solo JS y CSS: las fuentes las referencia el CSS, no la página, y casi nunca cambian.
+    if (p.startsWith('/assets/') && /\.(js|css)$/.test(p) && !html.includes(p)) await c.delete(req);
+  }
+}
+// Guarda la página; si ha cambiado (despliegue nuevo), limpia los estáticos que ya no referencia.
+async function keepPage(res) {
+  const c = await caches.open(SHELL);
+  const [html, old] = await Promise.all([res.clone().text(), c.match('/').then((r) => r?.text())]);
+  await c.put('/', res);
+  if (old !== undefined && old !== html) await prune(html);
+}
+
+// Los datos guardados son de un usuario: si la sesión ya no es la suya, se borran.
+const OWNER = '/__owner';
+async function keepData(req, res) {
+  if (new URL(req.url).pathname === '/api/me') {
+    const id = (await res.clone().json().catch(() => null))?.user?.id ?? null;
+    const owner = await caches.open(DATA).then((c) => c.match(OWNER)).then((r) => r?.text());
+    if (!id || (owner && owner !== id)) await caches.delete(DATA);
+    if (!id) return;
+    await caches.open(DATA).then((c) => c.put(OWNER, new Response(id)));
+  }
+  await caches.open(DATA).then((c) => c.put(req, res));
+}
+
 // Al cerrar sesión se borran los datos guardados.
 self.addEventListener('message', (ev) => {
   if (ev.data === 'clear-data') ev.waitUntil(caches.delete(DATA));
@@ -29,7 +59,8 @@ self.addEventListener('fetch', (ev) => {
     // Primero la red; si falla, la última respuesta guardada, marcada como tal.
     ev.respondWith(
       fetch(req).then((res) => {
-        if (res.ok) { const copy = res.clone(); caches.open(DATA).then((c) => c.put(req, copy)); }
+        if (res.ok) ev.waitUntil(keepData(req, res.clone()).catch(() => {}));
+        else if (res.status === 401) ev.waitUntil(caches.delete(DATA)); // sesión caducada
         return res;
       }).catch(async () => {
         const hit = await caches.match(req);
@@ -44,8 +75,11 @@ self.addEventListener('fetch', (ev) => {
 
   // Navegación: la red y, sin conexión, la página guardada.
   if (req.mode === 'navigate') {
-    ev.respondWith(fetch(req).then((res) => { caches.open(SHELL).then((c) => c.put('/', res.clone())); return res; })
-      .catch(() => caches.match('/')));
+    ev.respondWith(fetch(req).then((res) => {
+      // La copia se saca antes de devolver la respuesta: después su cuerpo ya está en uso.
+      if (res.ok) ev.waitUntil(keepPage(res.clone()).catch(() => {}));
+      return res;
+    }).catch(() => caches.match('/')));
     return;
   }
   // Estáticos (con huella en el nombre): caché primero.

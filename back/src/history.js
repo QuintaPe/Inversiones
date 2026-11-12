@@ -1,6 +1,8 @@
 // Reconstruye el valor de la cartera día a día a partir de las operaciones y de
 // los cierres históricos, y calcula el índice de rentabilidad (TWR).
 
+import { HISTORY_V } from './db.js';
+
 const DAY = 86400000;
 const iso = (ms) => new Date(ms).toISOString().slice(0, 10);
 const ms = (d) => Date.parse(`${d}T00:00:00Z`);
@@ -39,15 +41,21 @@ export function createHistory({ db, quotes, now = () => Date.now() }) {
   /** Descarga lo que falte: needs = { símbolo: fecha desde la que hace falta }. */
   async function ensure(needs) {
     const meta = await db.getHistoryMeta();
+    const known = await db.getSplits();
     for (const [symbol, from] of Object.entries(needs)) {
       const m = meta[symbol];
-      const covered = m && m.from_d <= from;
+      const current = m && (m.v ?? 1) >= HISTORY_V; // guardado con la versión actual (con splits)
+      const covered = current && m.from_d <= from;
       if (covered && now() - Date.parse(m.fetched_at) < STALE_MS) continue;
+      const full = m && m.from_d < from ? m.from_d : from;
       // Si ya hay histórico desde esa fecha, solo se piden los últimos días.
-      const since = covered && m.last_d ? iso(ms(m.last_d) - 5 * DAY) : from;
+      const since = covered && m.last_d ? iso(ms(m.last_d) - 5 * DAY) : full;
       try {
-        const h = await quotes.history(symbol, since);
-        await db.saveHistory(symbol, { ...h, from: covered ? m.from_d : from });
+        let h = await quotes.history(symbol, since);
+        // Un split nuevo reajusta todos los cierres anteriores: hay que traerlos otra vez.
+        const fresh = (h.splits ?? []).some(([d]) => !(known[symbol] ?? []).some(([k]) => k === d));
+        if (fresh && since !== full) h = await quotes.history(symbol, full);
+        await db.saveHistory(symbol, { ...h, from: full });
       } catch { /* sin histórico para este símbolo: se valorará a coste */ }
     }
     return db.getHistoryMeta();
@@ -57,8 +65,9 @@ export function createHistory({ db, quotes, now = () => Date.now() }) {
    * @param positions  posiciones de engine.buildPortfolio
    * @param prices     precios actuales del usuario { isin: { price, at, source } }
    * @param valuations valoraciones manuales { isin: [{ d, price }] }
+   * @param rebuild    opcional: vuelve a calcular las posiciones una vez descargados los splits
    */
-  async function build({ positions, prices, valuations }) {
+  async function build({ positions, prices, valuations, rebuild }) {
     const firstDate = positions.flatMap((p) => p.evs.map((e) => e.d)).sort()[0];
     if (!firstDate) return null;
     const today = iso(now());
@@ -86,6 +95,9 @@ export function createHistory({ db, quotes, now = () => Date.now() }) {
     }
     meta = await ensure(fx);
     const hist = await db.getHistory([...Object.keys(needs), ...Object.keys(fx)]);
+    // Con los splits ya descargados, las posiciones se recalculan para que los apliquen.
+    if (rebuild) positions = await rebuild();
+    const splits = await db.getSplits();
 
     // 3) función precio-en-euros por posición
     const unpriced = [];
@@ -96,10 +108,14 @@ export function createHistory({ db, quotes, now = () => Date.now() }) {
         const cur = meta[s].currency;
         const rate = cur === 'EUR' ? () => 1 : reader(hist[`${cur}EUR=X`] ?? []);
         const live = p.open && prices[p.isin]?.price;
+        // Los cierres vienen ajustados por los splits posteriores; las acciones de cada día no.
+        // Se deshace el ajuste para valorar con el precio que tenía entonces.
+        const sp = splits[s] ?? [];
+        const unadjust = (d) => sp.reduce((k, [sd, ratio]) => (sd > d ? k * ratio : k), 1);
         return (d) => {
           if (d === today && live) return live; // el último punto coincide con la cotización actual
           const c = close(d), r = rate(d);
-          return c != null && r != null ? c * r : null;
+          return c != null && r != null ? c * r * unadjust(d) : null;
         };
       }
       // Sin cotización: de la compra a las valoraciones anotadas, en línea recta.
@@ -126,7 +142,7 @@ export function createHistory({ db, quotes, now = () => Date.now() }) {
         while (s.i < evs.length && evs[s.i].d <= d) {
           const e = evs[s.i++];
           if (e.k === 'D') { div += e.net; continue; }
-          if (e.k === 'B') buy += e.net; else sell += e.net;
+          if (e.k === 'B') buy += e.net; else if (e.k === 'S') sell += e.net;
           s.sh = e.sa; s.ca = e.ca;
         }
         if (s.sh <= 0) continue;
@@ -147,6 +163,7 @@ export function createHistory({ db, quotes, now = () => Date.now() }) {
       ...out,
       benchmarks: bench.filter((b) => b.c.some((x) => x != null)).map(({ key, name, c }) => ({ key, name, c })),
       unpriced: [...new Set(unpriced)],
+      splits: positions.reduce((n, p) => n + p.evs.filter((e) => e.k === 'X').length, 0),
     };
   }
 

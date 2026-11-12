@@ -170,6 +170,9 @@ input.px::-webkit-outer-spin-button,input.px::-webkit-inner-spin-button{-webkit-
 .empty{color:var(--mu);text-align:center;padding:36px 12px;font-size:14px}
 .badge{display:inline-block;border-radius:999px;padding:2px 9px;font-size:11.5px;font-weight:650;white-space:nowrap;background:var(--surface-3);color:var(--tx-2)}
 .badge.sell{color:var(--loss);background:color-mix(in srgb,var(--loss) 15%,transparent)}
+.empty p+p{margin-top:8px}
+.boundary-a{margin-top:16px!important}
+.badge.split{color:var(--tx-2)}
 .badge.div{color:var(--gain);background:color-mix(in srgb,var(--gain) 15%,transparent)}
 .sk{border-radius:var(--r);background:linear-gradient(100deg,var(--surface) 30%,var(--surface-2) 50%,var(--surface) 70%);background-size:300% 100%;animation:shimmer 1.4s infinite linear}
 @keyframes shimmer{from{background-position:100% 0}to{background-position:-100% 0}}
@@ -216,7 +219,7 @@ button.kv:hover svg{transform:translateX(3px);color:var(--tx)}
 .chart .cross{stroke:var(--line-2);stroke-width:1}
 .chart .ln{fill:none;stroke-width:2.2;stroke-linejoin:round;stroke-linecap:round;stroke:var(--chart)}
 .chart .pt{stroke:var(--bg);stroke-width:3;fill:var(--chart)}
-.chart .fade{stroke:none}
+.chart path.fade{stroke:none}
 .chart .up{stroke:var(--gain);color:var(--gain)}.chart .pt.up{fill:var(--gain)}
 .chart .down{stroke:var(--loss);color:var(--loss)}.chart .pt.down{fill:var(--loss)}
 .chart .ln.muted{stroke:var(--mu);stroke-width:1.5}.chart .pt.muted{fill:var(--mu)}

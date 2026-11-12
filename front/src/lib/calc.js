@@ -37,7 +37,7 @@ export function mergeFills(evs) {
     run = [];
   };
   for (const x of evs) {
-    if (x.k === 'D') { flush(); out.push(x); continue; }
+    if (x.k === 'D' || x.k === 'X') { flush(); out.push(x); continue; }
     if (run.length && (run[0].k !== x.k || run[0].d !== x.d)) flush();
     run.push(x);
   }
@@ -79,9 +79,10 @@ export function analyze(positions, flt) {
   const c = closed.map((p) => ({ p, ...stats(p) }));
 
   const evs = (f) => vis.flatMap((p) => p.evs.filter(f).map((x) => ({ ...x, p })));
-  const all = evs(() => true).sort((x, y) => y.d.localeCompare(x.d));
+  // Los splits (k = 'X') solo se enseñan en la ficha del activo: no son operaciones con dinero.
+  const all = evs((x) => x.k !== 'X').sort((x, y) => y.d.localeCompare(x.d));
   // Lo que se lista como operaciones: una fila por orden.
-  const ops = vis.flatMap((p) => mergeFills(p.evs).map((x) => ({ ...x, p }))).sort((x, y) => y.d.localeCompare(x.d));
+  const ops = vis.flatMap((p) => mergeFills(p.evs).filter((x) => x.k !== 'X').map((x) => ({ ...x, p }))).sort((x, y) => y.d.localeCompare(x.d));
   const dv = all.filter((x) => x.k === 'D');
   const sl = all.filter((x) => x.k === 'S');
   const fees = all.filter((x) => x.k !== 'D' && x.fee);
@@ -193,22 +194,94 @@ export function simulateSale(lots, sh, price, fee = 1) {
   return { proceeds, cost, gain: proceeds - cost, used };
 }
 
-/** Resumen por ejercicio para la declaración: ventas (FIFO) y dividendos. */
-export function taxYears(sl, dv) {
+const CARRY_YEARS = 4; // las pérdidas pendientes se compensan en los cuatro ejercicios siguientes
+
+/**
+ * Resumen por ejercicio para la declaración: ventas (FIFO), dividendos y otros rendimientos.
+ * income (opcional): { año: { interest: { g, t, n }, reward: { g, t, n } } } del servidor.
+ *
+ * Sobre el resultado FIFO se aplican, de forma orientativa:
+ *  - la regla de los dos meses: la parte de la pérdida que corresponde a las acciones
+ *    recompradas se difiere y se recupera cuando esas acciones se venden;
+ *  - la compensación de pérdidas: primero con ganancias, después con hasta el 25 % de los
+ *    rendimientos del capital mobiliario, y el resto queda pendiente cuatro ejercicios.
+ */
+export function taxYears(sl, dv, income = {}) {
   const by = {};
-  const y = (k) => (by[k] ??= { year: k, sales: [], divs: [], proceeds: 0, costF: 0, gainF: 0, gainAvg: 0, wins: 0, losses: 0, divG: 0, divT: 0, wash: [], washLoss: 0 });
-  for (const x of sl) {
+  const y = (k) => (by[k] ??= {
+    year: k, sales: [], divs: [], proceeds: 0, costF: 0, gainF: 0, gainAvg: 0, wins: 0, losses: 0, divG: 0, divT: 0,
+    wash: [], washLoss: 0, deferred: 0, released: 0,
+  });
+  // Pérdidas diferidas por valor: [{ d: fecha del lote recomprado, sh: acciones, per: pérdida por acción }]
+  const pending = {};
+  for (const x of [...sl].sort((a, b) => a.d.localeCompare(b.d))) {
     const r = y(x.d.slice(0, 4));
     r.sales.push(x);
     r.proceeds += x.net; r.costF += x.csF; r.gainF += x.reF; r.gainAvg += x.re;
     if (x.reF >= 0) r.wins += x.reF; else r.losses += x.reF;
+    // Si esta venta consume acciones recompradas, aflora la pérdida que arrastraban.
+    const pen = pending[x.p.isin] ?? [];
+    for (const l of x.lotsUsed ?? []) {
+      let left = l.sh;
+      for (const q of pen) {
+        if (q.d !== l.d || q.sh <= 1e-9 || left <= 1e-9) continue;
+        const take = Math.min(q.sh, left);
+        r.released += take * q.per;
+        q.sh -= take; left -= take;
+      }
+    }
     const wb = washBuys(x);
-    if (wb.length) { r.wash.push({ sale: x, buys: wb }); r.washLoss += x.reF; }
+    if (wb.length) {
+      let left = Math.min(x.sh ?? 0, sum(wb, (b) => b.sh ?? 0));
+      const deferred = x.sh ? (x.reF * left) / x.sh : 0;
+      for (const b of wb) {
+        const take = Math.min(b.sh ?? 0, left);
+        if (take <= 1e-9) continue;
+        (pending[x.p.isin] ??= []).push({ d: b.d, sh: take, per: x.reF / x.sh });
+        left -= take;
+      }
+      r.wash.push({ sale: x, buys: wb, deferred });
+      r.washLoss += deferred; r.deferred += deferred;
+    }
   }
+  for (const r of Object.values(by)) r.sales.reverse(); // las más recientes primero, como el resto de listas
   for (const x of dv) {
     const r = y(x.d.slice(0, 4));
     r.divs.push(x);
     r.divG += x.g; r.divT += x.tax;
+  }
+  for (const k of Object.keys(income)) y(k);
+
+  // Base del ahorro de cada ejercicio, arrastrando las pérdidas pendientes de los anteriores.
+  let carry = []; // [{ year, amt }] pérdidas sin compensar, de la más antigua a la más reciente
+  for (const r of Object.values(by).sort((a, b) => a.year.localeCompare(b.year))) {
+    const inc = income[r.year] ?? {};
+    r.intG = inc.interest?.g ?? 0; r.intT = inc.interest?.t ?? 0; r.intN = inc.interest?.n ?? 0;
+    r.rewG = inc.reward?.g ?? 0; r.rewT = inc.reward?.t ?? 0; r.rewN = inc.reward?.n ?? 0;
+    r.rcm = r.divG + r.intG + r.rewG; // rendimientos del capital mobiliario
+    r.withheld = r.divT + r.intT + r.rewT;
+    r.gainTax = r.gainF - r.deferred + r.released; // resultado que cuenta este año
+
+    carry = carry.filter((c) => Number(r.year) - Number(c.year) <= CARRY_YEARS);
+    r.carryIn = sum(carry, (c) => c.amt);
+    const use = (limit) => {
+      let used = 0;
+      for (const c of carry) { const t = Math.min(c.amt, limit - used); c.amt -= t; used += t; }
+      return used;
+    };
+    r.usedPrev = r.gainTax > 0 ? use(r.gainTax) : 0; // contra las ganancias del año
+    const net = r.gainTax - r.usedPrev;
+    let cap = 0.25 * Math.max(0, r.rcm); // contra los rendimientos, con el límite del 25 %
+    r.offsetRcm = 0;
+    if (net < 0) {
+      const o = Math.min(-net, cap);
+      r.offsetRcm += o; cap -= o;
+      if (-net - o > 0.005) carry.push({ year: r.year, amt: -net - o });
+    }
+    r.offsetRcm += use(cap);
+    carry = carry.filter((c) => c.amt > 0.005);
+    r.carryOut = sum(carry, (c) => c.amt);
+    r.base = Math.max(0, net) + r.rcm - r.offsetRcm;
   }
   return Object.values(by).sort((a, b) => b.year.localeCompare(a.year));
 }

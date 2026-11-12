@@ -51,3 +51,28 @@ test('lo que no cotiza se interpola entre la compra y las valoraciones', async (
   assert.deepEqual(r.unpriced, ['Fondo']);
   db.close();
 });
+
+test('split: los cierres ajustados se valoran con las acciones de cada día', async () => {
+  const db = await openDb({ url: ':memory:' });
+  // Split 2:1 el día 6: el proveedor devuelve los cierres anteriores ya divididos entre 2.
+  const quotes = {
+    async resolveIsins(isins, known) {
+      return Object.fromEntries(isins.filter((i) => known[i] === undefined).map((i) => [i, { symbol: 'SPL', exchange: 'X' }]));
+    },
+    async history(symbol) {
+      if (symbol === 'SPL') return { currency: 'EUR', rows: [['2025-01-02', 50], ['2025-01-03', 50], ['2025-01-06', 55]], divs: [], splits: [['2025-01-06', 2]] };
+      throw new Error('sin histórico');
+    },
+  };
+  const h = createHistory({ db, quotes, now: () => NOW });
+  const before = [{ isin: 'DE0000000001', name: 'Split', open: true, evs: [buy('2025-01-02', 10, 1000, 10, 1000)] }];
+  const after = [{ ...before[0], evs: [...before[0].evs, { k: 'X', d: '2025-01-06', ratio: 2, sa: 20, ca: 1000, net: 0 }] }];
+  const r = await h.build({ positions: before, prices: {}, valuations: {}, rebuild: async () => after });
+  const at = (d) => r.d.indexOf(d);
+  assert.equal(r.v[at('2025-01-03')], 1000, '10 acciones a 100 € (50 × 2 sin ajustar)');
+  assert.equal(r.v[at('2025-01-06')], 1100, '20 acciones a 55 €');
+  assert.ok(Math.abs(r.idx.at(-1) - 110) < 0.001);
+  assert.equal(r.splits, 1);
+  assert.deepEqual(await db.getSplits(), { SPL: [['2025-01-06', 2]] });
+  db.close();
+});

@@ -67,7 +67,26 @@ const byTime = (a, b) => {
 /** Id de orden citado en la descripción ("… for buy order: <uuid>"). */
 const orderId = (desc) => (desc.match(/for buy order:\s*([0-9a-f-]{36})/i) || [])[1];
 
-export function buildPortfolio(rows) {
+/**
+ * El proveedor también publica como "split" el ajuste de precio de una escisión (p. ej. 1,067),
+ * que no cambia el número de acciones. Solo se aplican las proporciones de un split real:
+ * a:b con números pequeños (4:1, 3:2, 20:1, 1:10…).
+ */
+export function isShareSplit(ratio) {
+  if (!(ratio > 0) || ratio === 1) return false;
+  const r = ratio > 1 ? ratio : 1 / ratio;
+  for (let b = 1; b <= 10; b++) {
+    const a = Math.round(r * b);
+    if (a <= 100 && Math.abs(a / b - r) < 1e-6 * r) return true;
+  }
+  return false;
+}
+
+/**
+ * @param rows    filas guardadas del CSV y operaciones a mano
+ * @param splits  { ISIN: [[fecha, ratio], …] }; ratio = acciones nuevas por cada acción antigua
+ */
+export function buildPortfolio(rows, splits = {}) {
   const sorted = [...rows].sort(byTime);
   const trades = sorted.filter((r) => r.category === 'TRADING' && (r.type === 'BUY' || r.type === 'SELL'));
   const dividends = sorted.filter((r) => r.type === 'DIVIDEND');
@@ -103,9 +122,29 @@ export function buildPortfolio(rows) {
     return p;
   };
 
-  const events = [...trades, ...dividends].sort(byTime);
+  // Los splits entran como eventos al empezar su día: las operaciones de esa fecha ya van en acciones nuevas.
+  const held = new Set(trades.map((r) => r.symbol));
+  const splitRows = Object.entries(splits).filter(([isin]) => held.has(isin)).flatMap(([isin, list]) =>
+    list.filter(([, ratio]) => isShareSplit(ratio)).map(([d, ratio]) => ({
+      type: 'SPLIT', symbol: isin, date: d, datetime: `${d}T00:00:00.000Z`, ratio, transaction_id: `split-${isin}-${d}`,
+    })));
+
+  const events = [...trades, ...dividends, ...splitRows].sort(byTime);
   for (const r of events) {
     if (!r.symbol) continue;
+    if (r.type === 'SPLIT') {
+      const p = map.get(r.symbol);
+      if (!p || p.sh <= EPS) continue; // sin acciones ese día, el split no cambia nada
+      const before = p.sh;
+      p.sh *= r.ratio;
+      for (const lot of p.lots) { lot.sh *= r.ratio; lot.unit /= r.ratio; }
+      // El coste total no cambia: solo se reparte entre más (o menos) acciones.
+      p.evs.push({
+        id: `split-${r.date}`, tid: r.transaction_id, d: r.date, k: 'X', ratio: r.ratio,
+        from: before, sh: p.sh, px: 0, g: 0, fee: 0, tax: 0, net: 0, sa: p.sh, ca: p.cost, av: p.cost / p.sh,
+      });
+      continue;
+    }
     const p = get(r);
     const ev = { id: shortId(r.transaction_id), tid: r.transaction_id, d: r.date };
 
@@ -196,7 +235,7 @@ export function buildPortfolio(rows) {
       `Efectivo neto salido: ${fmtEur(paid)} € de pre-pagos − ${fmtEur(bonus)} € de bonus + ${fmtEur(charge)} € de cargo = ${fmtEur(paid - bonus + charge)} €.`;
   }
 
-  const dates = events.map((r) => r.date).sort();
+  const dates = events.filter((r) => r.type !== 'SPLIT').map((r) => r.date).sort();
   return { positions, lastDate: dates.at(-1) ?? null, firstDate: dates[0] ?? null };
 }
 
@@ -235,6 +274,31 @@ export function buildCash(rows) {
   }
   // Sin ingresos ni tarjeta en los datos, el saldo no es reconstruible (CSV subido antes de guardar el efectivo).
   return has ? { balance: +balance.toFixed(2), totals, months, days } : null;
+}
+
+/**
+ * Rendimientos que no son dividendos, por ejercicio: intereses de la cuenta y premios
+ * (saveback y bonus), con su retención. { año: { interest: { g, t, n }, reward: { g, t, n } } }
+ */
+export function buildIncome(rows) {
+  const out = {};
+  const slot = (r, k) => ((out[r.date.slice(0, 4)] ??= { interest: { g: 0, t: 0, n: 0 }, reward: { g: 0, t: 0, n: 0 } })[k]);
+  const savebacks = rows.filter((r) => r.type === 'BENEFITS_SAVEBACK' && r.symbol);
+  for (const r of rows) {
+    if (r.type === 'INTEREST_PAYMENT') {
+      const s = slot(r, 'interest');
+      s.g += num(r.amount); s.t += abs(r.tax); s.n++;
+    } else if (r.type === 'BENEFITS_SAVEBACK' || r.type === 'BONUS') {
+      const s = slot(r, 'reward');
+      s.g += num(r.amount); s.t += abs(r.tax); s.n++;
+    } else if (r.type === 'MANUAL' && abs(r.tax) > 0) {
+      slot(r, 'reward').t += abs(r.tax); // cargo de impuestos suelto (p. ej. por el bonus)
+    } else if (r.type === 'BUY' && abs(r.tax) > 0 && r.amount !== ''
+      && savebacks.some((s) => s.symbol === r.symbol && s.date === r.date && Math.abs(abs(s.amount) - abs(r.amount)) < 0.005)) {
+      slot(r, 'reward').t += abs(r.tax); // la retención del saveback viene en la compra que financia
+    }
+  }
+  return out;
 }
 
 /** Fila de transacción a partir de una operación introducida a mano. */
