@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseCsv, buildPortfolio, CsvError } from './engine.js';
 import { sessions, AuthError } from './auth.js';
+import { createHistory } from './history.js';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 
@@ -22,6 +23,8 @@ const parsePrice = (v) => {
 export function createApp({ db, verifyGoogle, googleClientId, sessionSecret, quotes = null, trustProxy = false }) {
   const app = express();
   const session = sessions(sessionSecret);
+  const history = quotes?.history ? createHistory({ db, quotes }) : null;
+  const isDate = (d) => /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(d));
   if (trustProxy) app.set('trust proxy', 1);
   app.use(express.json({ limit: '1mb' }));
   app.use(cookieParser());
@@ -40,7 +43,7 @@ export function createApp({ db, verifyGoogle, googleClientId, sessionSecret, quo
       p.sector = symbols[p.isin]?.sector ?? null;
       p.industry = symbols[p.isin]?.industry ?? null;
     }
-    return { positions, meta: { lastDate, firstDate, rows: rows.length, lastUpload, liveQuotes: !!quotes } };
+    return { positions, meta: { lastDate, firstDate, rows: rows.length, lastUpload, liveQuotes: !!quotes, history: !!history } };
   }
 
   // ---------- sesión ----------
@@ -94,6 +97,7 @@ export function createApp({ db, verifyGoogle, googleClientId, sessionSecret, quo
   api.put('/prices/:isin', async (req, res) => {
     const price = parsePrice(req.body?.price);
     const at = await db.setPrices(req.userId, { [req.params.isin]: price });
+    if (price) await db.setValuation(req.userId, req.params.isin, at.slice(0, 10), price);
     res.json({ isin: req.params.isin, price, at: price ? at : null, source: price ? 'manual' : null });
   });
 
@@ -115,6 +119,34 @@ export function createApp({ db, verifyGoogle, googleClientId, sessionSecret, quo
         failed: failed.map((isin) => names[isin]),
       },
     });
+  });
+
+  // Valor diario de la cartera, índice de rentabilidad e índices de referencia.
+  // La primera vez descarga el histórico de cada valor y puede tardar medio minuto.
+  api.get('/history', async (req, res) => {
+    if (!history) return res.status(503).json({ error: 'El histórico está desactivado.' });
+    const [rows, prices, valuations] = await Promise.all([db.getRows(req.userId), db.getPrices(req.userId), db.getValuations(req.userId)]);
+    res.json({ history: await history.build({ positions: buildPortfolio(rows).positions, prices, valuations }) });
+  });
+
+  // Cierres en euros de un valor desde una fecha, para la ficha.
+  api.get('/assets/:isin/history', async (req, res) => {
+    if (!history) return res.status(503).json({ error: 'El histórico está desactivado.' });
+    const from = isDate(req.query.from) ? req.query.from : '2000-01-01';
+    res.json({ asset: await history.asset(req.params.isin, from) });
+  });
+
+  // Valoraciones con fecha de lo que no cotiza.
+  api.get('/valuations', async (req, res) => res.json({ valuations: await db.getValuations(req.userId) }));
+  api.put('/valuations/:isin/:d', async (req, res) => {
+    const price = parsePrice(req.body?.price);
+    if (!isDate(req.params.d) || !price) return res.status(400).json({ error: 'Fecha o precio no válidos.' });
+    await db.setValuation(req.userId, req.params.isin, req.params.d, price);
+    res.json({ valuations: await db.getValuations(req.userId) });
+  });
+  api.delete('/valuations/:isin/:d', async (req, res) => {
+    await db.deleteValuation(req.userId, req.params.isin, req.params.d);
+    res.json({ valuations: await db.getValuations(req.userId) });
   });
 
   // Varios precios a la vez: { prices: { ISIN: precio, … } }

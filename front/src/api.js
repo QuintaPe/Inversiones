@@ -35,4 +35,10 @@ export const setPrice = (isin, price) => call(`/api/prices/${encodeURIComponent(
 
 export const refreshQuotes = () => call('/api/quotes/refresh', { method: 'POST' });
 
+export const getHistory = () => call('/api/history');
+export const getAssetHistory = (isin, from) => call(`/api/assets/${encodeURIComponent(isin)}/history?from=${from}`);
+export const getValuations = () => call('/api/valuations');
+export const setValuation = (isin, d, price) => call(`/api/valuations/${encodeURIComponent(isin)}/${d}`, json('PUT', { price }));
+export const deleteValuation = (isin, d) => call(`/api/valuations/${encodeURIComponent(isin)}/${d}`, { method: 'DELETE' });
+
 export const clearData = () => call('/api/data', { method: 'DELETE' });

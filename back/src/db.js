@@ -27,6 +27,17 @@ const SCHEMA = [
   // Caché global ISIN → símbolo de cotización (symbol NULL = no encontrado).
   `CREATE TABLE IF NOT EXISTS symbols (
      isin TEXT PRIMARY KEY, symbol TEXT, exchange TEXT, resolved_at TEXT NOT NULL)`,
+  // Histórico diario de cierres (global, por símbolo y en su divisa) y su estado.
+  `CREATE TABLE IF NOT EXISTS price_history (
+     symbol TEXT NOT NULL, d TEXT NOT NULL, c REAL NOT NULL, PRIMARY KEY (symbol, d)) WITHOUT ROWID`,
+  `CREATE TABLE IF NOT EXISTS history_meta (
+     symbol TEXT PRIMARY KEY, currency TEXT NOT NULL, from_d TEXT NOT NULL, last_d TEXT, fetched_at TEXT NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS symbol_divs (
+     symbol TEXT NOT NULL, d TEXT NOT NULL, amount REAL NOT NULL, PRIMARY KEY (symbol, d)) WITHOUT ROWID`,
+  // Valoraciones con fecha que anota el usuario para lo que no cotiza (Private Markets…).
+  `CREATE TABLE IF NOT EXISTS valuations (
+     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+     isin TEXT NOT NULL, d TEXT NOT NULL, price REAL NOT NULL, PRIMARY KEY (user_id, isin, d))`,
   `CREATE TABLE IF NOT EXISTS uploads (
      id INTEGER PRIMARY KEY AUTOINCREMENT,
      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -184,9 +195,73 @@ function makeRepo(client, url) {
       if (stmts.length) await client.batch(stmts, 'write');
     },
 
+    // ---------- histórico ----------
+    async getHistoryMeta() {
+      const r = await client.execute('SELECT symbol, currency, from_d, last_d, fetched_at FROM history_meta');
+      return Object.fromEntries(r.rows.map((x) => [x.symbol, { ...x }]));
+    },
+
+    /** Guarda cierres y dividendos de un símbolo (por lotes) y actualiza su estado. */
+    async saveHistory(symbol, { currency, from, rows, divs = [] }) {
+      const stmts = [
+        ...rows.map(([d, c]) => ({ sql: 'INSERT OR REPLACE INTO price_history (symbol, d, c) VALUES (?, ?, ?)', args: [symbol, d, c] })),
+        ...divs.map(([d, a]) => ({ sql: 'INSERT OR REPLACE INTO symbol_divs (symbol, d, amount) VALUES (?, ?, ?)', args: [symbol, d, a] })),
+      ];
+      for (let i = 0; i < stmts.length; i += 400) await client.batch(stmts.slice(i, i + 400), 'write');
+      await client.execute({
+        sql: `INSERT INTO history_meta (symbol, currency, from_d, last_d, fetched_at) VALUES (?, ?, ?, ?, ?)
+              ON CONFLICT(symbol) DO UPDATE SET currency = excluded.currency, from_d = min(history_meta.from_d, excluded.from_d),
+                last_d = max(coalesce(history_meta.last_d, ''), coalesce(excluded.last_d, '')), fetched_at = excluded.fetched_at`,
+        args: [symbol, currency, from, rows.at(-1)?.[0] ?? null, now()],
+      });
+    },
+
+    /** { símbolo: [[fecha, cierre], …] } ordenado por fecha. */
+    async getHistory(symbols) {
+      const out = Object.fromEntries(symbols.map((s) => [s, []]));
+      for (let i = 0; i < symbols.length; i += 40) {
+        const part = symbols.slice(i, i + 40);
+        const r = await client.execute({
+          sql: `SELECT symbol, d, c FROM price_history WHERE symbol IN (${part.map(() => '?').join(',')}) ORDER BY symbol, d`,
+          args: part,
+        });
+        for (const x of r.rows) out[x.symbol].push([x.d, x.c]);
+      }
+      return out;
+    },
+
+    async getSymbolDivs(symbols) {
+      if (!symbols.length) return {};
+      const r = await client.execute({
+        sql: `SELECT symbol, d, amount FROM symbol_divs WHERE symbol IN (${symbols.map(() => '?').join(',')}) ORDER BY symbol, d`,
+        args: symbols,
+      });
+      const out = {};
+      for (const x of r.rows) (out[x.symbol] ??= []).push([x.d, x.amount]);
+      return out;
+    },
+
+    // ---------- valoraciones manuales con fecha ----------
+    async getValuations(userId) {
+      const r = await client.execute({ sql: 'SELECT isin, d, price FROM valuations WHERE user_id = ? ORDER BY isin, d', args: [userId] });
+      const out = {};
+      for (const x of r.rows) (out[x.isin] ??= []).push({ d: x.d, price: x.price });
+      return out;
+    },
+    async setValuation(userId, isin, d, price) {
+      await client.execute({
+        sql: `INSERT INTO valuations (user_id, isin, d, price) VALUES (?, ?, ?, ?)
+              ON CONFLICT(user_id, isin, d) DO UPDATE SET price = excluded.price`,
+        args: [userId, isin, d, price],
+      });
+    },
+    async deleteValuation(userId, isin, d) {
+      await client.execute({ sql: 'DELETE FROM valuations WHERE user_id = ? AND isin = ? AND d = ?', args: [userId, isin, d] });
+    },
+
     async clearUserData(userId) {
       await client.batch(
-        ['transactions', 'prices', 'uploads'].map((t) => ({ sql: `DELETE FROM ${t} WHERE user_id = ?`, args: [userId] })),
+        ['transactions', 'prices', 'uploads', 'valuations'].map((t) => ({ sql: `DELETE FROM ${t} WHERE user_id = ?`, args: [userId] })),
         'write',
       );
     },

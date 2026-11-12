@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useWidth } from './hooks.js';
 import { compact } from './lib/format.js';
 
+
 /** Marcas "redondas" para el eje Y que cubren [min, max]. */
 function ticks(min, max, n = 4) {
   if (min === max) max = min + 1;
@@ -167,4 +168,90 @@ export function RankBars({ rows }) {
       })}
     </div>
   );
+}
+
+/**
+ * Líneas sobre un eje de tiempo común (mismas unidades). Sin ejes ni rejilla: el valor
+ * se lee con el cursor, que además avisa por onHover(índice | null).
+ * x: ms[]; series: [{ key, values[], cls, step, area }]; tip: (índice) => contenido.
+ */
+export function Lines({ x, series, height = 280, tip, label, onHover, base }) {
+  const [ref, w] = useWidth();
+  const [hi, setHi] = useState(null);
+  const m = { t: 14, b: 26 };
+  let body = null;
+  if (w > 0 && x.length > 1) {
+    const ih = height - m.t - m.b;
+    const all = series.flatMap((s) => s.values).filter((v) => v != null);
+    let lo = Math.min(...all, base ?? Infinity), top = Math.max(...all, base ?? -Infinity);
+    const pad = (top - lo) * 0.08 || 1;
+    lo -= pad * 0.4; top += pad;
+    const t0 = x[0], t1 = x.at(-1);
+    const X = (t) => ((t - t0) / (t1 - t0 || 1)) * w;
+    const Y = (v) => m.t + ih - ((v - lo) / (top - lo)) * ih;
+    const path = (s) => {
+      let d = '', pen = false;
+      s.values.forEach((v, i) => {
+        if (v == null) { pen = false; return; }
+        const px = X(x[i]).toFixed(1), py = Y(v).toFixed(1);
+        d += pen ? (s.step ? `H${px}V${py}` : `L${px},${py}`) : `M${px},${py}`;
+        pen = true;
+      });
+      return d;
+    };
+    const months = Math.round((t1 - t0) / (30.44 * 86400000));
+    const start = new Date(t0);
+    const every = Math.max(1, Math.ceil(months / Math.max(2, Math.floor(w / 80))));
+    const xt = [];
+    for (let i = 1; i <= months; i += every) {
+      const dt = Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + i, 1);
+      if (X(dt) > 28 && X(dt) < w - 28) xt.push({ t: dt, s: new Date(dt).toLocaleDateString('es-ES', { month: 'short', year: '2-digit', timeZone: 'UTC' }) });
+    }
+    // Periodos cortos: se rotulan días en vez de meses.
+    if (!xt.length) {
+      const n = Math.max(2, Math.floor(w / 90));
+      for (let k = 1; k < n; k++) {
+        const t = t0 + ((t1 - t0) * k) / n;
+        xt.push({ t, s: new Date(t).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', timeZone: 'UTC' }) });
+      }
+    }
+    const move = (ev) => {
+      const r = ev.currentTarget.getBoundingClientRect();
+      const t = t0 + ((ev.clientX - r.left) / w) * (t1 - t0);
+      let lo2 = 0, hi2 = x.length - 1;
+      while (lo2 < hi2) { const mid = (lo2 + hi2 + 1) >> 1; if (x[mid] <= t) lo2 = mid; else hi2 = mid - 1; }
+      if (lo2 !== hi) { setHi(lo2); onHover?.(lo2); }
+    };
+    const leave = () => { setHi(null); onHover?.(null); };
+    const main = series[0];
+    const d0 = path(main);
+    body = (
+      <>
+        <svg width={w} height={height} role="img" aria-label={label} onPointerMove={move} onPointerDown={move} onPointerLeave={leave}>
+          {main.area && (
+            <>
+              <defs>
+                <linearGradient id="lines-fade" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0" stopColor="currentColor" stopOpacity="0.2" />
+                  <stop offset="1" stopColor="currentColor" stopOpacity="0" />
+                </linearGradient>
+              </defs>
+              <path className={`fade ${main.cls}`} fill="url(#lines-fade)" d={`${d0}V${m.t + ih}H${X(x[main.values.findIndex((v) => v != null)])}Z`} />
+            </>
+          )}
+          {base != null && <line className="base dotted" x1={0} x2={w} y1={Y(base)} y2={Y(base)} />}
+          {xt.map((k) => <text key={k.t} className="axis" x={X(k.t)} y={height - 6} textAnchor="middle">{k.s}</text>)}
+          {[...series].reverse().map((s) => <path key={s.key} className={`ln ${s.cls}`} d={s === main ? d0 : path(s)} />)}
+          {hi != null && (
+            <>
+              <line className="cross" x1={X(x[hi])} x2={X(x[hi])} y1={m.t} y2={m.t + ih} />
+              {series.map((s) => s.values[hi] != null && <circle key={s.key} className={`pt ${s.cls}`} cx={X(x[hi])} cy={Y(s.values[hi])} r="4.5" />)}
+            </>
+          )}
+        </svg>
+        {hi != null && tip && <Tip x={X(x[hi])} y={2} w={w}>{tip(hi)}</Tip>}
+      </>
+    );
+  }
+  return <div className="chart" ref={ref} style={{ height }}>{body}</div>;
 }

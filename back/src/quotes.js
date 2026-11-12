@@ -95,5 +95,38 @@ export function createQuotes({ fetchImpl = fetch, now = () => Date.now() } = {})
     return { quotes: out, resolved, failed };
   }
 
-  return { quoteIsins };
+  /** Resuelve los ISIN que falten en `symbols`; devuelve solo los nuevos. */
+  async function resolveIsins(isins, symbols = {}) {
+    const resolved = {};
+    for (const isin of isins) {
+      if (!ISIN_RE.test(isin) || symbols[isin] !== undefined) continue;
+      try {
+        resolved[isin] = await resolve(isin);
+      } catch { /* se reintenta en la próxima llamada */ }
+    }
+    return resolved;
+  }
+
+  /**
+   * Cierres diarios de un símbolo desde una fecha (AAAA-MM-DD), en su divisa.
+   * Devuelve { currency, rows: [[fecha, cierre]], divs: [[fecha, importe por acción]] }.
+   */
+  async function history(symbol, from) {
+    const p1 = Math.floor(Date.parse(`${from}T00:00:00Z`) / 1000) - 86400;
+    const p2 = Math.floor(now() / 1000) + 86400;
+    const j = await get(`${CHART}/${encodeURIComponent(symbol)}?interval=1d&period1=${p1}&period2=${p2}&events=div`);
+    const r = j.chart?.result?.[0];
+    if (!r?.timestamp) throw new Error('sin histórico');
+    let currency = r.meta.currency, k = 1;
+    if (currency === 'GBp' || currency === 'GBX') { currency = 'GBP'; k = 0.01; }
+    const off = r.meta.gmtoffset ?? 0; // la fecha es la del día de mercado en su bolsa
+    const day = (ts) => new Date((ts + off) * 1000).toISOString().slice(0, 10);
+    const close = r.indicators?.quote?.[0]?.close ?? [];
+    const byDay = new Map();
+    r.timestamp.forEach((ts, i) => { if (close[i] > 0) byDay.set(day(ts), close[i] * k); });
+    const divs = Object.values(r.events?.dividends ?? {}).map((e) => [day(e.date), e.amount * k]);
+    return { currency, rows: [...byDay].sort((a, b) => a[0].localeCompare(b[0])), divs };
+  }
+
+  return { quoteIsins, resolveIsins, history };
 }

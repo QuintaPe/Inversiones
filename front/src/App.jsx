@@ -26,6 +26,7 @@ let toastId = 0;
 export default function App() {
   const [auth, setAuth] = useState(null); // null = cargando; { user, clientId }
   const [data, setData] = useState(null);
+  const [hist, setHist] = useState(undefined); // undefined = cargando; null = no disponible
   const [toasts, setToasts] = useState([]);
   const [loginErr, setLoginErr] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -67,6 +68,19 @@ export default function App() {
     if (!user) return;
     api.getPortfolio().then(setData).catch(fail);
   }, [user, fail]);
+
+  // Histórico diario: se recalcula cuando cambian las operaciones o un precio manual.
+  const histKey = data ? `${data.meta.rows}|${data.positions.filter((p) => p.priceSource === 'manual').map((p) => p.isin + p.price).join()}` : null;
+  const [histTick, setHistTick] = useState(0);
+  const reloadHistory = useCallback(() => setHistTick((n) => n + 1), []);
+  useEffect(() => {
+    if (!histKey || !data.meta.history || !data.meta.rows) { setHist(histKey ? null : undefined); return undefined; }
+    let alive = true;
+    api.getHistory()
+      .then((r) => alive && setHist(r.history))
+      .catch((err) => { if (alive) { setHist(null); if (err instanceof api.Unauthorized) fail(err); } });
+    return () => { alive = false; };
+  }, [histKey, histTick]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const login = async (credential) => {
     setLoginErr(null);
@@ -166,7 +180,7 @@ export default function App() {
 
   const empty = data && !positions.length;
   const groups = GROUPS.filter(([g]) => g === 'all' || positions.some((p) => p.grp === g));
-  const view = { a, meta: data?.meta, onOpen: setDetail, onPrice, go };
+  const view = { a, hist, flt, meta: data?.meta, onOpen: setDetail, onPrice, go };
   const nav = (cls) => (
     <nav className={cls} aria-label="Secciones">
       {NAV.map(([k, label]) => (
@@ -263,7 +277,7 @@ export default function App() {
       </main>
 
       {nav('tabs')}
-      {detailRow && <PositionDrawer x={detailRow} totalVal={a.val} onClose={closeDetail} onPrice={onPrice} liveQuotes={liveOn} />}
+      {detailRow && <PositionDrawer x={detailRow} totalVal={a.val} onClose={closeDetail} onPrice={onPrice} liveQuotes={liveOn} onHistoryChange={reloadHistory} />}
       <Toasts items={toasts} onClose={closeToast} />
     </div>
   );
