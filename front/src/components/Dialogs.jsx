@@ -23,6 +23,19 @@ export function Confirm({ title, text, action = 'Aceptar', danger, onAnswer }) {
   );
 }
 
+/** En lugar de un formulario con cifras, cuando los importes están ocultos. */
+export function Locked({ title, onClose }) {
+  return (
+    <div className="scrim top" onClick={onClose}>
+      <div className="sheet small" role="dialog" aria-modal="true" aria-label={title} onClick={(ev) => ev.stopPropagation()}>
+        <h2 className="sheet-q">{title}</h2>
+        <p className="sheet-p">Para añadir o editar operaciones, muestra antes los importes con el botón del ojo de la barra superior.</p>
+        <div className="sheet-a"><button type="button" className="btn pri" autoFocus onClick={onClose}>Entendido</button></div>
+      </div>
+    </div>
+  );
+}
+
 const plural = (n, one, many) => `${n.toLocaleString('es-ES')} ${n === 1 ? one : many}`;
 
 /** Lo que va a cambiar al importar un CSV, antes de guardarlo. */

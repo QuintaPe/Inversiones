@@ -155,6 +155,9 @@ input.px::-webkit-outer-spin-button,input.px::-webkit-inner-spin-button{-webkit-
 .hero-v{font-size:clamp(42px,6vw,68px);font-weight:700;letter-spacing:-.05em;line-height:1.04;margin:2px 0 12px;font-variant-numeric:tabular-nums}
 .hero-v.sm{font-size:38px;margin-bottom:6px}
 .hero-d{display:flex;flex-direction:column;gap:4px}
+.hero-sw{position:relative}
+.hero-sw.hovering>.hero-base{visibility:hidden}
+.hero-over{position:absolute;top:0;left:0;right:0}
 .chg{font-size:16px;font-weight:600;font-variant-numeric:tabular-nums}
 .chg span{font-size:.7em;vertical-align:.1em}
 .chg em{font-style:normal;font-weight:500;color:var(--mu);margin-left:4px}
@@ -347,7 +350,6 @@ button.rank-row:hover{background:var(--surface-2)}
 .gbtn{display:flex;min-height:44px;color-scheme:light}
 
 /* ---------- ocultar importes ---------- */
-.private :is(.tile span,.vals b,.chart-d,.perf .stat-v,.hero-v,.stat-v,.chg,.delta,.pill,.row-v,.feed-a,.rank-v,.kv b,.tbl td:not(.l),.calc b,.op-h>b,.op-b,.tip b,.axis,input.px,.price-box small,.note){filter:blur(8px);user-select:none}
 
 /* ---------- adaptación ---------- */
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
@@ -528,5 +530,7 @@ button.plain{background:none;border:0;padding:0;text-align:left;border-radius:12
   .tbl td.hide-m,.tbl th.hide-m,.tbl td.hide-s,.tbl th.hide-s{display:table-cell!important}
   .only-s,.tbl td small.only-s,.tbl td span.only-s{display:none!important}
   .cols{grid-template-columns:1fr 1fr}
-  .private *{filter:none!important}
 }
+
+/* modo privado: los campos con cifras se muestran tapados y sin poder editarse */
+.private input[readonly]{color:var(--mu);cursor:default;letter-spacing:.1em}

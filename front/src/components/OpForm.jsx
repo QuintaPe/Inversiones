@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Icon, Seg } from './ui.jsx';
+import { eur } from '../lib/format.js';
 
 const TYPES = [['BUY', 'Compra'], ['SELL', 'Venta'], ['DIVIDEND', 'Dividendo']];
 const today = () => new Date().toISOString().slice(0, 10);
@@ -84,7 +85,7 @@ export default function OpForm({ initial = {}, positions, onSubmit, onClose }) {
         </div>
         <p className="sheet-t">
           {div ? 'Neto cobrado' : f.type === 'BUY' ? 'Coste total' : 'Cobro neto'}
-          <b>{total.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €</b>
+          <b>{eur(total)}</b>
         </p>
         {err && <p className="note loss" role="alert">{err}</p>}
         <div className="sheet-a">

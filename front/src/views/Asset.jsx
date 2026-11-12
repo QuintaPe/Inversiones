@@ -4,7 +4,7 @@ import { Avatar, Card, Delta, Empty, Icon, Kind, Pill, PriceInput, Seg, Stat } f
 import { Lines } from '../charts.jsx';
 import { country, classLabel, sector } from '../lib/countries.js';
 import { simulateSale, savingsTax } from '../lib/calc.js';
-import { eur, eurS, num, pct, pctS, qty, sign, date, dateLong, time } from '../lib/format.js';
+import { eur, eurS, num, pct, pctS, qty, sign, date, dateLong, time, isMasked, MASK, maskText } from '../lib/format.js';
 // Base del ahorro del año si se añade un resultado: las pérdidas compensan hasta el 25 % de los rendimientos.
 const saleBase = (b, gain) => { const g = b.gains + gain; return Math.max(0, g) + b.divs - Math.min(Math.max(0, -g), 0.25 * b.divs); };
 
@@ -28,7 +28,7 @@ function Op({ x, onEdit, onRemove }) {
           <>
             {qty(x.sh)} × {eur(x.px)} = {num(x.g)} + comisión {num(x.fee)}{x.tax ? ` + impuesto ${num(x.tax)}` : ''} = <b>{eur(x.net)}</b><br />
             Después: {qty(x.sa)} uds. · coste {eur(x.ca)} · medio {eur(x.av)}
-            {x.note && <><br /><i>{x.note}</i></>}
+            {x.note && <><br /><i>{maskText(x.note)}</i></>}
           </>
         )}
         {x.k === 'S' && (
@@ -71,6 +71,11 @@ function Op({ x, onEdit, onRemove }) {
     </li>
   );
 }
+
+/** Tarjeta en lugar de un formulario con cifras cuando los importes están ocultos. */
+const Hidden = ({ title }) => (
+  <Card title={title}><p className="note">Importes ocultos. Muéstralos con el botón del ojo de la barra superior para usar esta sección.</p></Card>
+);
 
 /** Qué pasaría, fiscalmente, si vendieras hoy parte de la posición (FIFO). */
 function Simulator({ p, yearBase }) {
@@ -251,13 +256,14 @@ export default function Asset({ x, totalVal, yearBase, onBack, onPrice, liveQuot
           <section className="hero">
             <span className="eyebrow">{hv ? dateLong(Date.parse(`${hv.d}T00:00:00Z`)) : p.open ? 'Precio actual' : 'Último precio'}</span>
             <div className="hero-v">{hv ? eur(hv.c) : p.price > 0 ? eur(p.price) : view ? eur(view.c.at(-1)) : '—'}</div>
-            <div className="hero-d">
-              {hv ? <span className={`chg ${sign(hv.chg)}`}>{pctS(hv.chg)} <em>en el periodo hasta ese día</em></span> : (
-                <>
-                  {chg != null && <span className={`chg ${sign(chg)}`}><span aria-hidden="true">{chg >= 0 ? '▲' : '▼'}</span> {pctS(chg)} <em>en el periodo</em></span>}
-                  {x.dayPct != null && <span className={`chg ${sign(x.dayPct)}`}><span aria-hidden="true">{x.dayPct >= 0 ? '▲' : '▼'}</span> {pctS(x.dayPct)} <em>última sesión</em></span>}
-                </>
-              )}
+            {/* Misma altura con y sin cursor sobre la gráfica (ver el resumen). */}
+            <div className={`hero-sw ${hv ? 'hovering' : ''}`}>
+              <div className="hero-d hero-base">
+                {chg != null && <span className={`chg ${sign(chg)}`}><span aria-hidden="true">{chg >= 0 ? '▲' : '▼'}</span> {pctS(chg)} <em>en el periodo</em></span>}
+                {x.dayPct != null && <span className={`chg ${sign(x.dayPct)}`}><span aria-hidden="true">{x.dayPct >= 0 ? '▲' : '▼'}</span> {pctS(x.dayPct)} <em>última sesión</em></span>}
+                {chg == null && x.dayPct == null && <span className="chg">&nbsp;</span>}
+              </div>
+              {hv && <div className="hero-d hero-over"><span className={`chg ${sign(hv.chg)}`}>{pctS(hv.chg)} <em>en el periodo hasta ese día</em></span></div>}
             </div>
           </section>
 
@@ -339,7 +345,7 @@ export default function Asset({ x, totalVal, yearBase, onBack, onPrice, liveQuot
                 {x.D.length > 0 && <div><span>Dividendos = bruto {num(x.divG)} − retención {num(x.divT)}</span><b>{eur(x.div)}</b></div>}
                 {x.S.length > 0 && <div><span>Realizado en ventas anteriores</span><b className={sign(x.real)}>{eurS(x.real)}</b></div>}
               </div>
-              {p.extra && <p className="note">{p.extra}</p>}
+              {p.extra && <p className="note">{maskText(p.extra)}</p>}
             </Card>
           )}
         </div>
@@ -359,7 +365,7 @@ export default function Asset({ x, totalVal, yearBase, onBack, onPrice, liveQuot
               ) : p.priceSource === 'live' && p.priceInfo ? (
                 <p className="note">
                   <span className="live-dot" aria-hidden="true" /> En vivo · {p.priceInfo.symbol} · {p.priceInfo.exchange}.{' '}
-                  {p.priceInfo.currency !== 'EUR' && <>{num(p.priceInfo.raw)} {p.priceInfo.currency} × {p.priceInfo.rate.toFixed(4)}. </>}
+                  {p.priceInfo.currency !== 'EUR' && <>{num(p.priceInfo.raw)} {p.priceInfo.currency} × {isMasked() ? MASK : p.priceInfo.rate.toFixed(4)}. </>}
                   {p.priceInfo.time && <>Cotización del {date(p.priceInfo.time)} a las {time(p.priceInfo.time)}.</>}
                 </p>
               ) : (
@@ -372,9 +378,9 @@ export default function Asset({ x, totalVal, yearBase, onBack, onPrice, liveQuot
               )}
             </Card>
           )}
-          {p.open && hist === null && <Valuations p={p} onPrice={onPrice} onChange={onHistoryChange} />}
-          {p.open && p.lots?.length > 0 && <Simulator key={p.isin} p={p} yearBase={yearBase} />}
-          {p.open && p.priceSource === 'live' && <Alerts p={p} alerts={alerts} patch={patch} fail={fail} />}
+          {p.open && hist === null && (isMasked() ? <Hidden title="Valoraciones" /> : <Valuations p={p} onPrice={onPrice} onChange={onHistoryChange} />)}
+          {p.open && p.lots?.length > 0 && (isMasked() ? <Hidden title="Simular una venta" /> : <Simulator key={p.isin} p={p} yearBase={yearBase} />)}
+          {p.open && p.priceSource === 'live' && (isMasked() ? <Hidden title="Alertas de precio" /> : <Alerts p={p} alerts={alerts} patch={patch} fail={fail} />)}
           <Card title={`Operaciones (${x.ops.length})`}
             right={<button type="button" className="btn" onClick={() => onAddOp({ isin: p.isin, name: p.name, asset_class: p.cls })}><Icon name="plus" size={15} />Añadir</button>}>
             <ul className="ops">

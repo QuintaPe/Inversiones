@@ -3,7 +3,7 @@ import { Asset, Card, Empty, Icon, Seg } from '../components/ui.jsx';
 import { Columns } from '../charts.jsx';
 import { taxYears, splitWithholding, TREATY_RATE } from '../lib/calc.js';
 import { country, classLabel } from '../lib/countries.js';
-import { eur, eurS, num, qty, sign, date, pct } from '../lib/format.js';
+import { eur, eurS, num, qty, sign, date, pct, isMasked } from '../lib/format.js';
 
 /** Ventas y dividendos del ejercicio en un CSV listo para trasladar a la declaración. */
 function exportYear(y) {
@@ -131,8 +131,10 @@ export default function Tax({ a, income, onOpen, hist, flt }) {
             <div><span>Valor de tus inversiones {end.closed ? `a 31/12/${y.year}` : `a ${date(end.d)} (el ejercicio no ha terminado)`}</span><b>{eur(end.v)}</b></div>
             <div><span>Umbral a partir del cual hay que informar</span><b>{eur(LIMIT_720)}</b></div>
           </div>
-          <p className={`note ${end.v > LIMIT_720 ? 'warn-t' : ''}`}>
-            {end.v > LIMIT_720
+          <p className={`note ${end.v > LIMIT_720 && !isMasked() ? 'warn-t' : ''}`}>
+            {isMasked()
+              ? 'Importes ocultos: muéstralos para saber si superas el umbral. '
+              : end.v > LIMIT_720
               ? <><Icon name="alert" size={15} /> Superas el umbral. Si tus valores se consideran depositados en el extranjero habría que presentar el modelo 720 (hasta el 31 de marzo del año siguiente) la primera vez y cuando el valor suba más de 20.000 €. </>
               : 'Estás por debajo del umbral. '}
             Con Trade Republic no hay un criterio claro: con IBAN español el efectivo no se declara, pero sobre los valores

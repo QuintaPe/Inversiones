@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as api from './api.js';
 import { analyze, taxYears, GROUPS } from './lib/calc.js';
-import { time } from './lib/format.js';
+import { time, eur, setMasked } from './lib/format.js';
 import { useHashRoute, useStored } from './hooks.js';
 import { Icon, Menu, Seg, Skeleton, Toasts, UploadButton } from './components/ui.jsx';
 import Login from './components/Login.jsx';
 import ErrorBoundary from './components/ErrorBoundary.jsx';
 import Palette from './components/Palette.jsx';
-import { Confirm, ImportPreview } from './components/Dialogs.jsx';
+import { Confirm, ImportPreview, Locked } from './components/Dialogs.jsx';
 import { pushSupported, pushEnabled, enablePush, disablePush } from './lib/push.js';
 import Asset from './views/Asset.jsx';
 import Cash from './views/Cash.jsx';
@@ -58,7 +58,10 @@ export default function App() {
     if (theme === 'auto') delete document.documentElement.dataset.theme;
     else document.documentElement.dataset.theme = theme;
   }, [theme]);
+  // Se fija durante el render, antes que los hijos, para que ninguno llegue a pintar una cifra.
+  setMasked(!!hidden);
   useEffect(() => { document.documentElement.classList.toggle('private', !!hidden); }, [hidden]);
+  const toggleHidden = () => { if (!hidden) setToasts([]); setHidden(!hidden); }; // los avisos ya escritos pueden llevar importes
 
   const notify = useCallback((kind, text) => setToasts((t) => [...t.slice(-3), { id: ++toastId, kind, text }]), []);
   const closeToast = useCallback((id) => setToasts((t) => t.filter((x) => x.id !== id)), []);
@@ -178,9 +181,9 @@ export default function App() {
       setData({ positions: res.positions, meta: res.meta, alerts: res.alerts, targets: res.targets });
       setLive({ at: res.refresh.at, failed: res.refresh.failed, busy: false, error: null });
       for (const f of res.fired ?? []) {
-        const text = `${f.name} ha ${f.dir === 'above' ? 'subido hasta' : 'bajado hasta'} ${f.current.toLocaleString('es-ES', { maximumFractionDigits: 2 })} € (alerta en ${f.price.toLocaleString('es-ES')} €).`;
+        const text = `${f.name} ha ${f.dir === 'above' ? 'subido hasta' : 'bajado hasta'} ${eur(f.current)} (alerta en ${eur(f.price)}).`;
         notify('ok', text);
-        if (window.Notification?.permission === 'granted') new Notification('Alerta de precio', { body: text, icon: '/icon-192.png' });
+        if (window.Notification?.permission === 'granted') new Notification('Alerta de precio', { body: hidden ? `Ha saltado una alerta de ${f.name}.` : text, icon: '/icon-192.png' });
       }
     } catch (err) {
       if (err instanceof api.Unauthorized) fail(err);
@@ -188,7 +191,7 @@ export default function App() {
     } finally {
       liveBusy.current = false;
     }
-  }, [fail]);
+  }, [fail, hidden]);
 
   // Al entrar y cada minuto, solo con la pestaña visible.
   const rowsLoaded = data?.meta?.rows ?? 0;
@@ -341,7 +344,7 @@ export default function App() {
             <button type="button" className="icon-btn" onClick={() => setPalette(true)} aria-label="Buscar (Ctrl+K)" title="Buscar (Ctrl+K)">
               <Icon name="search" />
             </button>
-            <button type="button" className="icon-btn" aria-pressed={!!hidden} onClick={() => setHidden(!hidden)}
+            <button type="button" className="icon-btn" aria-pressed={!!hidden} onClick={toggleHidden}
               aria-label={hidden ? 'Mostrar importes' : 'Ocultar importes'} title={hidden ? 'Mostrar importes' : 'Ocultar importes'}>
               <Icon name={hidden ? 'eyeOff' : 'eye'} />
             </button>
@@ -390,7 +393,7 @@ export default function App() {
           </div>
         ) : (
           <ErrorBoundary resetKey={path}>
-          <div className="view" key={path}>
+          <div className="view" key={`${path}|${hidden ? 1 : 0}`}>
             {route === 'activo' && (assetRow
               ? <Asset x={assetRow} totalVal={whole.val} yearBase={yearBase} onBack={back} onPrice={onPrice} liveQuotes={liveOn} onHistoryChange={reloadHistory}
                   onAddOp={setOpForm} onRemoveOp={removeOp} alerts={(data.alerts ?? []).filter((al) => al.isin === arg)} patch={patch} fail={fail} />
@@ -407,7 +410,8 @@ export default function App() {
       </main>
 
       {nav('tabs', 5)}
-      {opForm && <OpForm initial={opForm} positions={positions} onSubmit={saveOp} onClose={() => setOpForm(null)} />}
+      {opForm && hidden && <Locked title="Importes ocultos" onClose={() => setOpForm(null)} />}
+      {opForm && !hidden && <OpForm initial={opForm} positions={positions} onSubmit={saveOp} onClose={() => setOpForm(null)} />}
       {palette && data && (
         <Palette sections={NAV} positions={positions} onClose={() => setPalette(false)}
           onGo={(to) => { setPalette(false); go(to); }} />

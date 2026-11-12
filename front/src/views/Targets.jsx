@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import * as api from '../api.js';
 import { Asset, Empty } from '../components/ui.jsx';
 import { rebalance } from '../lib/calc.js';
-import { eur, eurS, pct, qty, sign } from '../lib/format.js';
+import { eur, eurS, pct, qty, sign, isMasked, MASK } from '../lib/format.js';
 
 const n = (v) => parseFloat(String(v).replace(',', '.')) || 0;
 const show = (w) => (w ? String(+w.toFixed(2)).replace('.', ',') : '');
@@ -22,6 +22,7 @@ export default function Targets({ a, targets, patch, fail, onOpen }) {
     try { patch(await api.setTargets(next)); } catch (e) { fail(e); }
   };
   const commit = (isin) => {
+    if (isMasked()) return;
     const w = n(draft[isin]);
     if (w !== (targets[isin] ?? 0)) save({ [isin]: w || null });
   };
@@ -34,7 +35,7 @@ export default function Targets({ a, targets, patch, fail, onOpen }) {
     <div className="stack">
       <div className="card tgt-top">
         <label><span>Aportación nueva (€)</span>
-          <input inputMode="decimal" placeholder="0" value={extra} onChange={(ev) => setExtra(ev.target.value)} /></label>
+          <input inputMode="decimal" placeholder="0" readOnly={isMasked()} value={isMasked() ? (extra ? MASK : '') : extra} onChange={(ev) => setExtra(ev.target.value)} /></label>
         <button type="button" className="btn" onClick={() => fill((x) => x.w)}>Usar los pesos actuales</button>
         <button type="button" className="btn" onClick={() => fill(() => 100 / rows.length)}>Repartir a partes iguales</button>
         <div className="tgt-sum">
@@ -58,7 +59,7 @@ export default function Targets({ a, targets, patch, fail, onOpen }) {
                   <td className="hide-s">{pct(x.w)}</td>
                   <td>
                     <input className="tgt" inputMode="decimal" placeholder="0" aria-label={`Peso objetivo de ${x.p.name} en porcentaje`}
-                      value={draft[x.p.isin] ?? ''} onChange={(ev) => setDraft((d) => ({ ...d, [x.p.isin]: ev.target.value }))}
+                      readOnly={isMasked()} value={isMasked() ? (draft[x.p.isin] ? MASK : '') : draft[x.p.isin] ?? ''} onChange={(ev) => setDraft((d) => ({ ...d, [x.p.isin]: ev.target.value }))}
                       onBlur={() => commit(x.p.isin)} onKeyDown={(ev) => ev.key === 'Enter' && ev.currentTarget.blur()} />
                   </td>
                   <td className={`hide-s ${ok && r.w ? sign(x.w - r.w) : ''}`}>{r.w ? `${x.w - r.w >= 0 ? '+' : '−'}${pct(Math.abs(x.w - r.w))}` : <span className="mu">—</span>}</td>

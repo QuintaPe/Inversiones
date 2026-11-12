@@ -2,19 +2,34 @@ const L = 'es-ES';
 const nf = (min, max) => new Intl.NumberFormat(L, { minimumFractionDigits: min, maximumFractionDigits: max, useGrouping: 'always' });
 const f2 = nf(2, 2), f0 = nf(0, 0), f6 = nf(0, 6), f1 = nf(0, 1);
 
+// Modo privado: con él activado, ninguna cifra llega a la página (ni al texto, ni a los
+// atributos, ni a los gráficos). No es un desenfoque: el número no se escribe.
+let masked = false;
+export const MASK = '••••';
+export const setMasked = (v) => { masked = !!v; };
+export const isMasked = () => masked;
+/**
+ * Textos que ya traen cifras escritas (las notas que redacta el servidor): con el modo
+ * privado se tapan los importes, porcentajes y números con decimales; fechas e ids quedan.
+ */
+export const maskText = (s) => (masked && s
+  ? s.replace(/[+−-]?\d[\d.,]*\s*(€|%)/g, (_, u) => `${MASK} ${u}`).replace(/\d[\d.]*,\d+/g, MASK)
+  : s);
+
 /** 1.234,56 */
-export const num = (n) => f2.format(n);
+export const num = (n) => (masked ? MASK : f2.format(n));
 /** 1.234,56 € */
-export const eur = (n) => `${f2.format(n)} €`;
+export const eur = (n) => (masked ? `${MASK} €` : `${f2.format(n)} €`);
 /** +1.234,56 € (signo siempre visible) */
-export const eurS = (n) => `${n >= 0 ? '+' : '−'}${f2.format(Math.abs(n))} €`;
+export const eurS = (n) => (masked ? `${MASK} €` : `${n >= 0 ? '+' : '−'}${f2.format(Math.abs(n))} €`);
 /** +12,34 % */
-export const pctS = (n) => `${n >= 0 ? '+' : '−'}${f2.format(Math.abs(n))} %`;
-export const pct = (n) => `${f2.format(n)} %`;
+export const pctS = (n) => (masked ? `${MASK} %` : `${n >= 0 ? '+' : '−'}${f2.format(Math.abs(n))} %`);
+export const pct = (n) => (masked ? `${MASK} %` : `${f2.format(n)} %`);
 /** Cantidades: hasta 6 decimales, sin ceros de relleno. */
-export const qty = (n) => f6.format(parseFloat(n.toFixed(6)));
+export const qty = (n) => (masked ? MASK : f6.format(parseFloat(n.toFixed(6))));
 /** Eje de gráfico: 0 / 500 / 10 k / 1,5 M */
 export const compact = (n) => {
+  if (masked) return '';
   const a = Math.abs(n);
   if (a >= 1e6) return `${f1.format(n / 1e6)} M`;
   if (a >= 1e4) return `${f1.format(n / 1e3)} k`;

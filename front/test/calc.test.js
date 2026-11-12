@@ -157,3 +157,28 @@ test('taxYears: doble imposición, cuota y ventas por entidad emisora', () => {
   assert.deepEqual(y.issuers.map((e) => [e.p.name, e.n, e.proceeds, e.cost, e.gain]), [['Apple', 2, 2200, 1600, 600], ['SAP', 1, 400, 500, -100]]);
   assert.deepEqual(Object.keys(y.countries).sort(), ['DE', 'US']);
 });
+
+test('modo privado: ningún formateador devuelve una cifra', async () => {
+  const f = await import('../src/lib/format.js');
+  f.setMasked(true);
+  try {
+    for (const out of [f.num(1234.5), f.eur(1234.5), f.eurS(-12), f.pct(3.2), f.pctS(-3.2), f.qty(0.123456), f.compact(15000)]) {
+      assert.doesNotMatch(out, /\d/, out);
+    }
+  } finally {
+    f.setMasked(false);
+  }
+  assert.equal(f.eur(1234.5), '1.234,50 €');
+});
+
+test('modo privado: las notas del servidor pierden sus cifras, no sus fechas', async () => {
+  const f = await import('../src/lib/format.js');
+  const note = 'Pre-pago el 19/09/2025: 10.000 € + 1 € de comisión; 101,5 participaciones (ID 3f2a9c81).';
+  assert.equal(f.maskText(note), note);
+  f.setMasked(true);
+  try {
+    assert.equal(f.maskText(note), 'Pre-pago el 19/09/2025: •••• € + •••• € de comisión; •••• participaciones (ID 3f2a9c81).');
+  } finally {
+    f.setMasked(false);
+  }
+});

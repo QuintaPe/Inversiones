@@ -4,7 +4,7 @@ import { StepArea, Lines, RankBars, Treemap } from '../charts.jsx';
 import { investedSeries, allocation } from '../lib/calc.js';
 import { prepare, periodStats, gainBetween } from '../lib/perf.js';
 import { country, classLabel, region, sector, industry, currency, exchange } from '../lib/countries.js';
-import { eur, eurS, pct, pctS, sign, date, dateLong, qty } from '../lib/format.js';
+import { eur, eurS, pct, pctS, sign, date, dateLong, qty, num } from '../lib/format.js';
 
 const ALLOC = [
   ['pos', 'Posición'], ['sector', 'Sector'], ['industry', 'Industria'], ['country', 'País'],
@@ -158,23 +158,29 @@ export default function Dashboard({ a, hist, flt, cash, meta, onOpen, go }) {
           {hv
             ? <div className="hero-v">{eur(hv.v)}</div>
             : <Flash value={none ? null : a.val} as="div" className="hero-v">{none ? '—' : eur(a.val)}</Flash>}
-          {none ? (
-            <p className="mu">Faltan los precios actuales para calcular el valor y el resultado.</p>
-          ) : hv ? (
-            <div className="hero-d"><Chg n={hv.gain}>{RANGE_NAME[range]} hasta ese día</Chg></div>
-          ) : (
-            <div className="hero-d">
-              {st && <Chg n={st.gain} p={st.mwr}>{RANGE_NAME[range]}</Chg>}
-              {hasDay && <Chg n={a.day} p={a.dayPct}>{dayLabel}</Chg>}
-              {!st && <Chg n={a.pl} p={a.plp}>desde la compra</Chg>}
+          {/* Al señalar un día de la gráfica la cabecera conserva su altura: lo de siempre se
+              oculta sin quitarlo y la línea de ese día se pinta encima. Si cambiara de altura,
+              la gráfica se movería bajo el cursor. */}
+          <div className={`hero-sw ${hv ? 'hovering' : ''}`}>
+            <div className="hero-base">
+              {none ? (
+                <p className="mu">Faltan los precios actuales para calcular el valor y el resultado.</p>
+              ) : (
+                <div className="hero-d">
+                  {st && <Chg n={st.gain} p={st.mwr}>{RANGE_NAME[range]}</Chg>}
+                  {hasDay && <Chg n={a.day} p={a.dayPct}>{dayLabel}</Chg>}
+                  {!st && <Chg n={a.pl} p={a.plp}>desde la compra</Chg>}
+                </div>
+              )}
+              {a.missing > 0 && !none && (
+                <button type="button" className="warn" onClick={() => go('posiciones')} tabIndex={hv ? -1 : undefined}>
+                  <Icon name="alert" size={15} />
+                  {a.missing} {a.missing === 1 ? 'posición sin precio no cuenta' : 'posiciones sin precio no cuentan'} en el valor
+                </button>
+              )}
             </div>
-          )}
-          {a.missing > 0 && !none && !hv && (
-            <button type="button" className="warn" onClick={() => go('posiciones')}>
-              <Icon name="alert" size={15} />
-              {a.missing} {a.missing === 1 ? 'posición sin precio no cuenta' : 'posiciones sin precio no cuentan'} en el valor
-            </button>
-          )}
+            {hv && <div className="hero-d hero-over"><Chg n={hv.gain}>{RANGE_NAME[range]} hasta ese día</Chg></div>}
+          </div>
         </section>
 
         <section className="chart-block">
@@ -218,7 +224,7 @@ export default function Dashboard({ a, hist, flt, cash, meta, onOpen, go }) {
                   value={pctS(b.mwr)} tone={sign(b.mwr)} />
               ))}
               {st.vol != null && <Line label="Volatilidad anualizada" hint="cuánto se mueve tu cartera de un día a otro" value={pct(st.vol)} />}
-              {st.ratio != null && <Line label="Rentabilidad por unidad de riesgo" hint="rentabilidad anualizada ÷ volatilidad; por encima de 1 es buena" value={st.ratio.toLocaleString('es-ES', { maximumFractionDigits: 2 })} tone={sign(st.ratio)} />}
+              {st.ratio != null && <Line label="Rentabilidad por unidad de riesgo" hint="rentabilidad anualizada ÷ volatilidad; por encima de 1 es buena" value={num(st.ratio)} tone={sign(st.ratio)} />}
               {st.best && <Line label="Mejor y peor día" hint={`${date(st.best.d)} y ${date(st.worst.d)}`} value={`${pctS(st.best.r)} / ${pctS(st.worst.r)}`} />}
               <Line label="Rentabilidad ponderada por tiempo" hint="cada día pesa igual, hubiera 100 € o 100.000 €" value={pctS(st.twr)} tone={sign(st.twr)} />
               {st.bench.map((b) => b.r != null && (

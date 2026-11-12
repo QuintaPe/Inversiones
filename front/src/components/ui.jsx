@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { eurS, pctS, sign } from '../lib/format.js';
+import { eurS, pctS, sign, isMasked, MASK } from '../lib/format.js';
 
 /* ---------- iconos (trazo, 20px) ---------- */
 const PATHS = {
@@ -162,10 +162,13 @@ export function PriceInput({ p, onPrice }) {
   const [txt, setTxt] = useState(shown);
   useEffect(() => setTxt(shown), [shown]);
   const commit = () => {
-    if (String(txt).trim() === shown) return;
+    if (isMasked() || String(txt).trim() === shown) return;
     const n = parseFloat(String(txt).replace(',', '.'));
     onPrice(p.isin, n > 0 ? n : null);
   };
+  if (isMasked()) {
+    return <input className="px" value={p.price > 0 ? MASK : ''} readOnly tabIndex={-1} aria-label="Precio oculto" onClick={(ev) => ev.stopPropagation()} />;
+  }
   return (
     <input
       className={`px ${p.price > 0 ? '' : 'missing'} ${p.priceSource === 'live' ? 'live' : ''}`}
