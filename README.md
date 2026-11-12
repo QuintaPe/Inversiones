@@ -27,6 +27,7 @@ Sin `GOOGLE_CLIENT_ID` no se puede iniciar sesión. El back no recarga solo al c
 |---|---|
 | Posiciones, coste, realizado, dividendos | El CSV, operación a operación (`back/src/engine.js`) |
 | Precio actual, variación del día, sector | Yahoo Finance por ISIN, sin clave (`back/src/quotes.js`); no oficial. Si no conoce el ISIN, el símbolo se busca en OpenFIGI |
+| Valor liquidativo de fondos no cotizados (Private Markets) | onvista por ISIN, último publicado y su histórico mensual; no oficial |
 | Valor diario y rentabilidad | Cierres históricos guardados en la base de datos (`back/src/history.js`) |
 | Logotipos | Parqet y Financial Modeling Prep, descargados una vez por el servidor |
 | Efectivo | Suma de todos los movimientos del CSV; de tarjeta y transferencias solo fecha e importe |

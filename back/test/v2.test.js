@@ -220,3 +220,30 @@ test('símbolo: si Yahoo no conoce el ISIN se busca el ticker en una segunda fue
   assert.deepEqual(found.US02079K3059, { symbol: 'GOOGL', exchange: 'NASDAQ', sector: 'Communication Services', industry: null });
   assert.equal(found.XX0000000009, null);
 });
+
+test('fondo no cotizado: se toma su valor liquidativo y su histórico', async () => {
+  const { createQuotes, NAV_EXCHANGE } = await import('../src/quotes.js');
+  const ok = (body) => ({ ok: true, json: async () => body });
+  const snapshot = { instrument: { name: 'FONDO PRIVADO Z EUR' }, quote: { last: 112.4565, isoCurrency: 'EUR', datetimeLast: '2026-09-30T06:00:00.000+00:00', market: { idNotation: 55 } } };
+  let snaps = 0;
+  const fetchImpl = async (url) => {
+    if (url.includes('openfigi')) return ok([{ warning: 'No identifier found.' }]);
+    if (url.includes('finance/search')) return ok({ quotes: [] });
+    if (url.includes('/instruments/query')) return ok({ list: [{ isin: 'LU3176111881', entityType: 'FUND', entityValue: '308' }] });
+    if (url.endsWith('/funds/308/snapshot')) { snaps++; return ok(snapshot); }
+    if (url.includes('/instruments/FUND/308/eod_history?idNotation=55')) return ok({ isoCurrency: 'EUR', datetimeLast: [1764460800, 1767139200], last: [104.4925, 105.6164] });
+    throw new Error(`inesperado: ${url}`);
+  };
+  const q = createQuotes({ fetchImpl });
+  const { quotes, resolved, failed } = await q.quoteIsins(['LU3176111881'], {});
+  assert.deepEqual(resolved.LU3176111881, { symbol: 'NAV:308:55', exchange: NAV_EXCHANGE, sector: null, industry: null });
+  assert.deepEqual(failed, []);
+  assert.equal(quotes.LU3176111881.price, 112.4565);
+  assert.equal(quotes.LU3176111881.info.nav, true);
+  assert.equal(quotes.LU3176111881.info.dayPct, null);
+  assert.equal(quotes.LU3176111881.info.name, 'FONDO PRIVADO Z EUR');
+  await q.quoteIsins(['LU3176111881'], resolved);
+  assert.equal(snaps, 2); // uno al resolver y otro al cotizar; después se reutiliza varias horas
+  const h = await q.history('NAV:308:55', '2025-09-01');
+  assert.deepEqual(h, { currency: 'EUR', rows: [['2025-11-30', 104.4925], ['2025-12-31', 105.6164]], divs: [], splits: [] });
+});

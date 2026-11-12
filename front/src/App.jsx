@@ -168,7 +168,7 @@ export default function App() {
   // ---------- cotización en vivo ----------
   const [live, setLive] = useState({ at: null, failed: [], busy: false, error: null });
   const liveBusy = useRef(false);
-  const liveOn = !!data?.meta?.liveQuotes && (data?.positions ?? []).some((p) => p.open && p.grp === 'ac');
+  const liveOn = !!data?.meta?.liveQuotes && (data?.positions ?? []).some((p) => p.open);
   const refreshQuotes = useCallback(async () => {
     if (liveBusy.current) return;
     liveBusy.current = true;

@@ -200,7 +200,7 @@ export default function Asset({ x, totalVal, yearBase, onBack, onPrice, liveQuot
   const [hist, setHist] = useState(undefined); // undefined = cargando; null = sin cotización
   const [hover, setHover] = useState(null);
   const first = p.evs[0].d;
-  const quoted = p.priceSource === 'live' || (!!p.sector || p.cls === 'FUND') && p.grp === 'ac';
+  const quoted = p.priceSource === 'live' || p.quotable || (!!p.sector || p.cls === 'FUND') && p.grp === 'ac';
 
   useEffect(() => {
     let alive = true;
@@ -351,7 +351,12 @@ export default function Asset({ x, totalVal, yearBase, onBack, onPrice, liveQuot
                 <span>Precio actual (€)</span>
                 <PriceInput p={p} onPrice={onPrice} />
               </label>
-              {p.priceSource === 'live' && p.priceInfo ? (
+              {p.priceSource === 'live' && p.priceInfo?.nav ? (
+                <p className="note">
+                  <span className="live-dot" aria-hidden="true" /> Valor liquidativo{p.priceInfo.time && <> del {date(p.priceInfo.time)}</>}
+                  {p.priceInfo.name && <> · {p.priceInfo.name}</>}. Lo publica la gestora, normalmente una vez al mes; se actualiza solo.
+                </p>
+              ) : p.priceSource === 'live' && p.priceInfo ? (
                 <p className="note">
                   <span className="live-dot" aria-hidden="true" /> En vivo · {p.priceInfo.symbol} · {p.priceInfo.exchange}.{' '}
                   {p.priceInfo.currency !== 'EUR' && <>{num(p.priceInfo.raw)} {p.priceInfo.currency} × {p.priceInfo.rate.toFixed(4)}. </>}

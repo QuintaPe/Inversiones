@@ -16,7 +16,7 @@ export const ROW_COLS = [
 const V1_COLS = ROW_COLS.slice(0, 17);
 
 export const HISTORY_V = 2; // 2 = incluye los splits
-const SYMBOL_V = 3; // 2 = incluye sector e industria; 3 = segunda fuente para los ISIN que Yahoo no encuentra
+const SYMBOL_V = 4; // 4 = valor liquidativo de los fondos no cotizados // 2 = incluye sector e industria; 3 = segunda fuente para los ISIN que Yahoo no encuentra
 const RETRY_UNKNOWN_MS = 7 * 86400000; // un ISIN sin símbolo se reintenta a la semana
 
 // ---------------------------------------------------------------------------------

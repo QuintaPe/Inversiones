@@ -7,6 +7,12 @@
 const SEARCH = 'https://query2.finance.yahoo.com/v1/finance/search';
 const CHART = 'https://query1.finance.yahoo.com/v8/finance/chart';
 const FIGI = 'https://api.openfigi.com/v3/mapping';
+// Fondos que no cotizan en bolsa (Private Markets, ELTIF…): su gestora publica un valor
+// liquidativo, normalmente mensual. Se toma de onvista; el símbolo es «NAV:<fondo>:<serie>».
+const ONVISTA = 'https://api.onvista.de/api/v1';
+const NAV_TTL = 6 * 3600_000; // un valor liquidativo no cambia en horas
+const isNav = (symbol) => symbol.startsWith('NAV:');
+export const NAV_EXCHANGE = 'Valor liquidativo';
 const QUOTE_TTL = 60_000; // no se pide el mismo símbolo más de una vez por minuto
 const PAUSE = 120; // ms entre peticiones, en serie
 const ISIN_RE = /^[A-Z]{2}[A-Z0-9]{9}\d$/;
@@ -55,12 +61,45 @@ export function createQuotes({ fetchImpl = fetch, now = () => Date.now() } = {})
     return ticker ? ticker.replace('/', '-') : null;
   }
 
+  /** Fondo no cotizado → símbolo de su valor liquidativo, o null si la fuente no lo conoce. */
+  async function navSymbol(isin) {
+    const j = await get(`${ONVISTA}/instruments/query?limit=5&searchValue=${encodeURIComponent(isin)}`);
+    const fund = (j.list ?? []).find((x) => x.isin === isin && x.entityType === 'FUND');
+    if (!fund) return null;
+    const snap = await get(`${ONVISTA}/funds/${fund.entityValue}/snapshot`);
+    const notation = snap.quote?.market?.idNotation;
+    if (!notation || !(snap.quote.last > 0)) return null;
+    return { symbol: `NAV:${fund.entityValue}:${notation}`, exchange: NAV_EXCHANGE, sector: null, industry: null };
+  }
+
+  /** Valor liquidativo más reciente de un fondo no cotizado. */
+  async function navQuote(symbol) {
+    const [, fund] = symbol.split(':');
+    const snap = await get(`${ONVISTA}/funds/${fund}/snapshot`);
+    const q = snap.quote;
+    if (!(q?.last > 0)) throw new Error('sin valor liquidativo');
+    return {
+      price: q.last, currency: q.isoCurrency || 'EUR', dayPct: null, // no hay variación diaria: se publica cada mes
+      time: q.datetimeLast ?? q.datetimeBid ?? null, exchange: NAV_EXCHANGE, name: snap.instrument?.name ?? null, nav: true,
+    };
+  }
+
+  /** Histórico de valores liquidativos: mismo formato que `history`. */
+  async function navHistory(symbol, from) {
+    const [, fund, notation] = symbol.split(':');
+    const j = await get(`${ONVISTA}/instruments/FUND/${fund}/eod_history?idNotation=${notation}&range=Y5&startDate=${from}`);
+    if (!j.datetimeLast?.length) throw new Error('sin histórico');
+    const rows = j.datetimeLast.map((ts, i) => [new Date(ts * 1000).toISOString().slice(0, 10), j.last[i]])
+      .filter(([, c]) => c > 0).sort((a, b) => a[0].localeCompare(b[0]));
+    return { currency: j.isoCurrency || 'EUR', rows, divs: [], splits: [] };
+  }
+
   /** ISIN → { symbol, exchange, sector, industry } o null si ninguna fuente lo conoce. */
   async function resolve(isin) {
     const hit = (await search(isin))[0];
     if (hit) return card(hit);
     const ticker = await usTicker(isin).catch(() => null);
-    if (!ticker) return null;
+    if (!ticker) return navSymbol(isin).catch(() => null);
     // Con el ticker, Yahoo sí da la ficha (bolsa, sector); si no, vale el ticker a secas.
     const same = (await search(ticker).catch(() => [])).find((x) => x.symbol === ticker);
     return same ? card(same) : { symbol: ticker, exchange: '', sector: null, industry: null };
@@ -69,7 +108,12 @@ export function createQuotes({ fetchImpl = fetch, now = () => Date.now() } = {})
   /** Último precio de un símbolo: { price, currency, time, exchange }. */
   async function quote(symbol) {
     const hit = cache.get(symbol);
-    if (hit && now() - hit.at < QUOTE_TTL) return hit.data;
+    if (hit && now() - hit.at < (isNav(symbol) ? NAV_TTL : QUOTE_TTL)) return hit.data;
+    if (isNav(symbol)) {
+      const nav = await navQuote(symbol);
+      cache.set(symbol, { at: now(), data: nav });
+      return nav;
+    }
     const j = await get(`${CHART}/${encodeURIComponent(symbol)}?interval=1d&range=1d`);
     const m = j.chart?.result?.[0]?.meta;
     if (!m || !(m.regularMarketPrice > 0)) throw new Error('sin precio');
@@ -114,7 +158,7 @@ export function createQuotes({ fetchImpl = fetch, now = () => Date.now() } = {})
         const rate = await eurRate(q.currency);
         out[isin] = {
           price: q.price * rate,
-          info: { symbol: sym.symbol, exchange: q.exchange || sym.exchange, currency: q.currency, raw: q.price, rate, time: q.time, dayPct: q.dayPct },
+          info: { symbol: sym.symbol, exchange: q.exchange || sym.exchange, currency: q.currency, raw: q.price, rate, time: q.time, dayPct: q.dayPct, ...(q.nav ? { nav: true, name: q.name } : {}) },
         };
       } catch {
         failed.push(isin);
@@ -141,6 +185,7 @@ export function createQuotes({ fetchImpl = fetch, now = () => Date.now() } = {})
    * Cierres y dividendos vienen ya ajustados por los splits posteriores.
    */
   async function history(symbol, from) {
+    if (isNav(symbol)) return navHistory(symbol, from);
     const p1 = Math.floor(Date.parse(`${from}T00:00:00Z`) / 1000) - 86400;
     const p2 = Math.floor(now() / 1000) + 86400;
     const j = await get(`${CHART}/${encodeURIComponent(symbol)}?interval=1d&period1=${p1}&period2=${p2}&events=div%2Csplits`);

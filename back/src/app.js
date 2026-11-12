@@ -94,6 +94,7 @@ export function createApp({ db, verifyGoogle, googleClientId, sessionSecret, quo
       p.priceAt = px?.at ?? null;
       p.priceSource = px?.source ?? null; // 'manual' | 'live'
       p.priceInfo = px?.info ?? null; // símbolo, bolsa, divisa y cambio de la cotización en vivo
+      p.quotable = !!symbols[p.isin]?.symbol; // hay una fuente de precio, aunque ahora mande uno a mano
       p.sector = symbols[p.isin]?.sector ?? null;
       p.industry = symbols[p.isin]?.industry ?? null;
     }
@@ -256,13 +257,17 @@ export function createApp({ db, verifyGoogle, googleClientId, sessionSecret, quo
     res.json({ isin: req.params.isin, price, at: price ? at : null, source: price ? 'manual' : null });
   });
 
-  // Actualiza con cotización en vivo las posiciones abiertas que cotizan (no Private
-  // Markets) y que no tienen un precio fijado a mano.
+  // Actualiza con cotización en vivo las posiciones abiertas que no tienen un precio fijado
+  // a mano. Los fondos no cotizados (Private Markets) reciben su último valor liquidativo.
   api.post('/quotes/refresh', async (req, res) => {
     if (!quotes) return res.status(503).json({ error: 'Las cotizaciones en vivo están desactivadas.' });
     const before = await portfolio(req.userId);
-    const targets = before.positions.filter((p) => p.open && p.grp === 'ac' && p.priceSource !== 'manual');
-    const { quotes: found, resolved, failed } = await quotes.quoteIsins(targets.map((p) => p.isin), await db.getSymbols());
+    const targets = before.positions.filter((p) => p.open && p.priceSource !== 'manual');
+    const known = await db.getSymbols();
+    const { quotes: found, resolved, failed } = await quotes.quoteIsins(targets.map((p) => p.isin), known);
+    // Las que tienen precio a mano también se buscan, para poder ofrecer la vuelta a la cotización.
+    const manual = before.positions.filter((p) => p.open && p.priceSource === 'manual').map((p) => p.isin);
+    if (quotes.resolveIsins && manual.length) Object.assign(resolved, await quotes.resolveIsins(manual, { ...known, ...resolved }));
     await db.saveSymbols(resolved);
     const at = await db.setLivePrices(found);
     const names = Object.fromEntries(targets.map((p) => [p.isin, p.name]));
