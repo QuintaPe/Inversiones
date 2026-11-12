@@ -172,11 +172,11 @@ export function allocation(priced, keyOf, top = 8, labelOf = keyOf) {
   const by = {};
   for (const x of priced) {
     const k = keyOf(x.p);
-    (by[k] ??= { key: k, label: labelOf(x.p), v: 0, n: 0, isin: x.p.isin }).v += x.v;
-    by[k].n++;
+    const r = (by[k] ??= { key: k, label: labelOf(x.p), v: 0, n: 0, cost: 0, isin: x.p.isin });
+    r.v += x.v; r.cost += x.p.cost; r.n++;
   }
   const total = sum(priced, (x) => x.v) || 1;
-  const rows = Object.values(by).sort((a, b) => b.v - a.v).map((r) => ({ ...r, w: (r.v / total) * 100 }));
+  const rows = Object.values(by).sort((a, b) => b.v - a.v).map((r) => ({ ...r, w: (r.v / total) * 100, plp: r.cost ? (r.v / r.cost - 1) * 100 : 0 }));
   if (rows.length <= top + 1) return rows;
   const rest = rows.slice(top);
   return [...rows.slice(0, top), { key: '__otros', label: `Otros (${rest.length})`, v: sum(rest, (r) => r.v), w: sum(rest, (r) => r.w), n: sum(rest, (r) => r.n), other: true }];

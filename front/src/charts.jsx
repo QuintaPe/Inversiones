@@ -175,7 +175,7 @@ export function RankBars({ rows }) {
  * se lee con el cursor, que además avisa por onHover(índice | null).
  * x: ms[]; series: [{ key, values[], cls, step, area }]; tip: (índice) => contenido.
  */
-export function Lines({ x, series, height = 280, tip, label, onHover, base }) {
+export function Lines({ x, series, height = 280, tip, label, onHover, base, marks = [] }) {
   const [ref, w] = useWidth();
   const [hi, setHi] = useState(null);
   const m = { t: 14, b: 26 };
@@ -242,6 +242,9 @@ export function Lines({ x, series, height = 280, tip, label, onHover, base }) {
           {base != null && <line className="base dotted" x1={0} x2={w} y1={Y(base)} y2={Y(base)} />}
           {xt.map((k) => <text key={k.t} className="axis" x={X(k.t)} y={height - 6} textAnchor="middle">{k.s}</text>)}
           {[...series].reverse().map((s) => <path key={s.key} className={`ln ${s.cls}`} d={s === main ? d0 : path(s)} />)}
+          {marks.map((k) => main.values[k.i] != null && (
+            <circle key={k.key} className={`mk ${k.cls}`} cx={X(x[k.i])} cy={Y(main.values[k.i])} r="5" />
+          ))}
           {hi != null && (
             <>
               <line className="cross" x1={X(x[hi])} x2={X(x[hi])} y1={m.t} y2={m.t + ih} />
@@ -254,4 +257,63 @@ export function Lines({ x, series, height = 280, tip, label, onHover, base }) {
     );
   }
   return <div className="chart" ref={ref} style={{ height }}>{body}</div>;
+}
+
+/** Reparto "squarified": rectángulos lo más cuadrados posible, de mayor a menor. */
+function squarify(items, x, y, w, h) {
+  const out = [];
+  const total = items.reduce((t, i) => t + i.v, 0);
+  let rest = items.map((i) => ({ ...i, a: (i.v / total) * w * h }));
+  while (rest.length) {
+    const short = Math.min(w, h);
+    let row = [], best = Infinity, sum = 0;
+    for (const it of rest) {
+      const s2 = sum + it.a;
+      const worst = Math.max(...[...row, it].map((r) => Math.max((short * short * r.a) / (s2 * s2), (s2 * s2) / (short * short * r.a))));
+      if (worst > best) break;
+      row.push(it); sum = s2; best = worst;
+    }
+    const thick = sum / short;
+    let off = 0;
+    for (const r of row) {
+      const len = r.a / thick;
+      out.push(w >= h ? { ...r, x, y: y + off, w: thick, h: len } : { ...r, x: x + off, y, w: len, h: thick });
+      off += len;
+    }
+    if (w >= h) { x += thick; w -= thick; } else { y += thick; h -= thick; }
+    rest = rest.slice(row.length);
+  }
+  return out;
+}
+
+/**
+ * Mapa de bloques: el área es el peso y el color, la rentabilidad (verde/rojo, gris en cero).
+ * items: [{ key, label, v, w, plp, onClick }]
+ */
+export function Treemap({ items, height = 320, cap = 30 }) {
+  const [ref, w] = useWidth();
+  const [hi, setHi] = useState(null);
+  const tiles = w > 0 ? squarify(items.filter((i) => i.v > 0), 0, 0, w, height) : [];
+  const tone = (p) => {
+    const k = Math.min(1, Math.abs(p) / cap);
+    return `color-mix(in srgb, var(${p >= 0 ? '--gain' : '--loss'}) ${Math.round(18 + k * 62)}%, var(--surface-3))`;
+  };
+  const hd = hi != null && tiles[hi];
+  return (
+    <div className="chart tree" ref={ref} style={{ height }} onPointerLeave={() => setHi(null)}>
+      {tiles.map((t, i) => {
+        const Tag = t.onClick ? 'button' : 'div';
+        const big = t.w > 74 && t.h > 40;
+        return (
+          <Tag key={t.key} type={t.onClick ? 'button' : undefined} className="tile" onClick={t.onClick}
+            onPointerEnter={() => setHi(i)} aria-label={`${t.label}: ${t.w2}`}
+            style={{ left: t.x + 1, top: t.y + 1, width: Math.max(0, t.w - 2), height: Math.max(0, t.h - 2), background: tone(t.plp) }}>
+            {big && <b>{t.label}</b>}
+            {big && t.h > 58 && <span>{t.right}</span>}
+          </Tag>
+        );
+      })}
+      {hd && <Tip x={hd.x + hd.w / 2} y={Math.max(0, hd.y - 8)} w={w}><small>{hd.label}</small><b>{hd.right}</b><small>{hd.sub}</small></Tip>}
+    </div>
+  );
 }

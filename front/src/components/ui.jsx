@@ -19,6 +19,9 @@ const PATHS = {
   check: <path d="M5 12.5l4.5 4.5L19 7.5" />,
   alert: <path d="M12 4l9 16H3zM12 10v4M12 17v.5" />,
   chevron: <path d="M9 6l6 6-6 6" />,
+  back: <path d="M19 12H5M11 6l-6 6 6 6" />,
+  bars: <path d="M4 7h10M4 12h16M4 17h6" />,
+  grid: <path d="M4 4h9v9H4zM15 4h5v5h-5zM15 11h5v9h-5zM4 15h9v5H4z" />,
 };
 export const Icon = ({ name, size = 20 }) => (
   <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="1.8"

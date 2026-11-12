@@ -103,7 +103,7 @@ export function buildPortfolio(rows) {
   for (const r of events) {
     if (!r.symbol) continue;
     const p = get(r);
-    const ev = { id: shortId(r.transaction_id), d: r.date };
+    const ev = { id: shortId(r.transaction_id), tid: r.transaction_id, d: r.date };
 
     if (r.type === 'DIVIDEND') {
       const g = abs(r.amount), tax = abs(r.tax);
@@ -178,7 +178,7 @@ export function buildPortfolio(rows) {
     p.evs.push(ev);
   }
 
-  const positions = [...map.values()].map(({ lots, ...p }) => ({ ...p, open: p.sh > EPS }));
+  const positions = [...map.values()].map((p) => ({ ...p, open: p.sh > EPS }));
 
   // Cargos de impuestos sueltos (p. ej. sobre el bonus de Private Markets): se enseñan
   // en el fondo cuya compra coincide en fecha, pero no entran en el coste.

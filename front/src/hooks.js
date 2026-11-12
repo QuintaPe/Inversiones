@@ -2,9 +2,10 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 /** Ruta en el hash (#/posiciones): navegación sin dependencias y con botón atrás. */
 export function useHashRoute(valid, fallback) {
+  // La ruta puede llevar un argumento: #/activo/US0378331005
   const read = () => {
     const r = window.location.hash.replace(/^#\/?/, '');
-    return valid.includes(r) ? r : fallback;
+    return valid.includes(r.split('/')[0]) ? r : fallback;
   };
   const [route, setRoute] = useState(read);
   useEffect(() => {

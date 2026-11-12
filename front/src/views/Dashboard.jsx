@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Asset, Card, Empty, Flash, Icon, Kind, Pill, Seg } from '../components/ui.jsx';
-import { StepArea, Lines, RankBars } from '../charts.jsx';
+import { StepArea, Lines, RankBars, Treemap } from '../charts.jsx';
 import { investedSeries, allocation } from '../lib/calc.js';
 import { prepare, periodStats, gainBetween } from '../lib/perf.js';
 import { country, classLabel, region, sector, industry, currency, exchange } from '../lib/countries.js';
@@ -63,6 +63,7 @@ const Chg = ({ n, p, children }) => (
 
 export default function Dashboard({ a, hist, flt, meta, onOpen, go }) {
   const [by, setBy] = useState('pos');
+  const [map, setMap] = useState(false);
   const [span, setSpan] = useState('day');
   const [range, setRange] = useState('ytd');
   const [mode, setMode] = useState('value');
@@ -234,13 +235,20 @@ export default function Dashboard({ a, hist, flt, meta, onOpen, go }) {
 
         <Card className="alloc" title="Distribución" sub={ALLOC_NOTE[by] ?? (none ? '' : `Las 5 mayores pesan el ${pct(top5)}`)}
           right={<Seg options={ALLOC} value={by} onChange={setBy} label="Agrupar distribución por" />}>
-          {alloc.length
-            ? <RankBars rows={alloc.map((r) => ({
+          <div className="alloc-v">
+            <Seg options={[['bars', 'Barras'], ['map', 'Mapa']]} value={map ? 'map' : 'bars'} onChange={(v) => setMap(v === 'map')} label="Forma de ver la distribución" />
+            {map && <span className="mu">El tamaño es el peso; el color, la rentabilidad desde la compra (de −30 % a +30 %)</span>}
+          </div>
+          {!alloc.length ? <Empty>Hacen falta precios para calcular los pesos.</Empty> : map
+            ? <Treemap items={(by === 'pos' ? allocation(a.priced, (p) => p.isin, 99, (p) => p.name) : alloc).map((r) => ({
+                key: r.key, label: r.label, v: r.v, plp: r.plp, right: `${pct(r.w)} · ${pctS(r.plp)}`, sub: eur(r.v), w2: pct(r.w),
+                onClick: by === 'pos' && !r.other ? () => onOpen(r.isin) : undefined,
+              }))} />
+            : <RankBars rows={alloc.map((r) => ({
                 key: r.key, label: r.label, w: r.w, other: r.other, right: pct(r.w),
                 sub: by === 'pos' || r.other ? eur(r.v) : `${eur(r.v)} · ${r.n} ${r.n === 1 ? 'valor' : 'valores'}`,
                 onClick: by === 'pos' && !r.other ? () => onOpen(r.isin) : undefined,
-              }))} />
-            : <Empty>Hacen falta precios para calcular los pesos.</Empty>}
+              }))} />}
         </Card>
       </div>
 

@@ -5,7 +5,8 @@ import { time } from './lib/format.js';
 import { useHashRoute, useStored } from './hooks.js';
 import { Icon, Menu, Seg, Skeleton, Toasts, UploadButton } from './components/ui.jsx';
 import Login from './components/Login.jsx';
-import PositionDrawer from './components/PositionDrawer.jsx';
+import Palette from './components/Palette.jsx';
+import Asset from './views/Asset.jsx';
 import Dashboard from './views/Dashboard.jsx';
 import Positions from './views/Positions.jsx';
 import Ledger from './views/Ledger.jsx';
@@ -31,9 +32,18 @@ export default function App() {
   const [loginErr, setLoginErr] = useState(null);
   const [busy, setBusy] = useState(false);
   const [flt, setFlt] = useState('all');
-  const [detail, setDetail] = useState(null); // ISIN de la ficha abierta
   const [over, setOver] = useState(false);
-  const [route, go] = useHashRoute(NAV.map((n) => n[0]), 'resumen');
+  const [path, go] = useHashRoute([...NAV.map((n) => n[0]), 'activo'], 'resumen');
+  const [route, arg] = path.split('/');
+  const openAsset = useCallback((isin) => go(`activo/${isin}`), [go]);
+  const [palette, setPalette] = useState(false);
+  useEffect(() => {
+    const key = (ev) => {
+      if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'k') { ev.preventDefault(); setPalette((o) => !o); }
+    };
+    window.addEventListener('keydown', key);
+    return () => window.removeEventListener('keydown', key);
+  }, []);
   const [theme, setTheme] = useStored('theme', 'auto');
   const [hidden, setHidden] = useStored('hide-amounts', false);
   const user = auth?.user ?? null;
@@ -98,7 +108,6 @@ export default function App() {
     setAuth((a) => ({ ...a, user: null }));
     setData(null);
     setToasts([]);
-    setDetail(null);
   };
 
   const upload = async (file) => {
@@ -163,7 +172,7 @@ export default function App() {
     if (!window.confirm('¿Borrar todas tus operaciones y precios guardados? No se puede deshacer.')) return;
     try {
       setData(await api.clearData());
-      setDetail(null);
+      go('resumen');
       notify('ok', 'Datos borrados.');
     } catch (err) {
       fail(err);
@@ -172,19 +181,22 @@ export default function App() {
 
   const positions = data?.positions ?? [];
   const a = useMemo(() => analyze(positions, flt), [positions, flt]);
-  const closeDetail = useCallback(() => setDetail(null), []);
-  const detailRow = detail && (a.o.find((x) => x.p.isin === detail) ?? a.c.find((x) => x.p.isin === detail));
+  // La ficha busca el activo en toda la cartera, sin el filtro de tipo.
+  const whole = useMemo(() => (flt === 'all' ? a : analyze(positions, 'all')), [a, flt, positions]);
+  const assetRow = route === 'activo' ? (whole.o.find((x) => x.p.isin === arg) ?? whole.c.find((x) => x.p.isin === arg)) : null;
+  const back = useCallback(() => (window.history.length > 1 ? window.history.back() : go('posiciones')), [go]);
 
   if (!auth) return <div className="center"><span className="spinner" aria-label="Cargando" /></div>;
   if (!user) return <Login clientId={auth.clientId} onCredential={login} error={loginErr} />;
 
   const empty = data && !positions.length;
   const groups = GROUPS.filter(([g]) => g === 'all' || positions.some((p) => p.grp === g));
-  const view = { a, hist, flt, meta: data?.meta, onOpen: setDetail, onPrice, go };
+  const view = { a, hist, flt, meta: data?.meta, onOpen: openAsset, onPrice, go };
+  const section = route === 'activo' ? 'posiciones' : route;
   const nav = (cls) => (
     <nav className={cls} aria-label="Secciones">
       {NAV.map(([k, label]) => (
-        <a key={k} href={`#/${k}`} className={route === k ? 'on' : ''} aria-current={route === k ? 'page' : undefined}>
+        <a key={k} href={`#/${k}`} className={section === k ? 'on' : ''} aria-current={section === k ? 'page' : undefined}>
           <Icon name={k} /><span>{label}</span>
         </a>
       ))}
@@ -228,6 +240,9 @@ export default function App() {
                 <span className="live-dot" aria-hidden="true" />{liveText}
               </button>
             )}
+            <button type="button" className="icon-btn" onClick={() => setPalette(true)} aria-label="Buscar (Ctrl+K)" title="Buscar (Ctrl+K)">
+              <Icon name="search" />
+            </button>
             <button type="button" className="icon-btn" aria-pressed={!!hidden} onClick={() => setHidden(!hidden)}
               aria-label={hidden ? 'Mostrar importes' : 'Ocultar importes'} title={hidden ? 'Mostrar importes' : 'Ocultar importes'}>
               <Icon name={hidden ? 'eyeOff' : 'eye'} />
@@ -239,7 +254,7 @@ export default function App() {
       </header>
 
       <main className="main">
-        {data && !empty && (
+        {data && !empty && route !== 'activo' && (
           <div className="page-h">
             {route !== 'resumen' && <h1>{TITLES[route]}</h1>}
             {groups.length > 2 && <Seg label="Tipo de activo" options={groups} value={flt} onChange={setFlt} />}
@@ -266,7 +281,10 @@ export default function App() {
             </ol>
           </div>
         ) : (
-          <div className="view" key={route}>
+          <div className="view" key={path}>
+            {route === 'activo' && (assetRow
+              ? <Asset x={assetRow} totalVal={whole.val} onBack={back} onPrice={onPrice} liveQuotes={liveOn} onHistoryChange={reloadHistory} />
+              : <div className="card"><p className="empty">No tienes ninguna posición con el ISIN {arg}.</p></div>)}
             {route === 'resumen' && <Dashboard {...view} />}
             {route === 'posiciones' && <Positions {...view} />}
             {route === 'operaciones' && <Ledger {...view} />}
@@ -277,7 +295,10 @@ export default function App() {
       </main>
 
       {nav('tabs')}
-      {detailRow && <PositionDrawer x={detailRow} totalVal={a.val} onClose={closeDetail} onPrice={onPrice} liveQuotes={liveOn} onHistoryChange={reloadHistory} />}
+      {palette && data && (
+        <Palette sections={NAV} positions={positions} onClose={() => setPalette(false)}
+          onGo={(to) => { setPalette(false); go(to); }} />
+      )}
       <Toasts items={toasts} onClose={closeToast} />
     </div>
   );

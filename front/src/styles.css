@@ -340,7 +340,7 @@ button.rank-row:hover{background:var(--surface-2)}
 .gbtn{display:flex;min-height:44px;color-scheme:light}
 
 /* ---------- ocultar importes ---------- */
-.private :is(.chart-d,.perf .stat-v,.hero-v,.stat-v,.chg,.delta,.pill,.row-v,.feed-a,.rank-v,.kv b,.tbl td:not(.l),.calc b,.op-h>b,.op-b,.tip b,.axis,input.px,.price-box small,.note){filter:blur(8px);user-select:none}
+.private :is(.tile span,.vals b,.chart-d,.perf .stat-v,.hero-v,.stat-v,.chg,.delta,.pill,.row-v,.feed-a,.rank-v,.kv b,.tbl td:not(.l),.calc b,.op-h>b,.op-b,.tip b,.axis,input.px,.price-box small,.note){filter:blur(8px);user-select:none}
 
 /* ---------- adaptación ---------- */
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
@@ -389,3 +389,48 @@ button.rank-row:hover{background:var(--surface-2)}
   .stat-v{font-size:18px}
   .live{padding:0 12px}
 }
+
+/* ---------- ficha de activo ---------- */
+.asset-h{display:flex;align-items:center;gap:14px;margin-bottom:22px}
+.asset-h h1{font-size:28px;font-weight:700;letter-spacing:-.035em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.asset-h p{color:var(--mu);font-size:13.5px;margin-top:1px}
+.chart .mk{stroke:var(--bg);stroke-width:2.5}
+.chart .mk.buy{fill:var(--s1)}.chart .mk.sell{fill:var(--s2)}
+.legend.flat{padding:0}
+.dotk{width:10px;height:10px;border-radius:50%}
+.dotk.buy{background:var(--s1)}.dotk.sell{background:var(--s2)}
+.sw.dotted{background:none;border-top:2px dotted var(--mu);height:0}
+.price-row{display:flex;justify-content:space-between;align-items:center;gap:12px;color:var(--tx-2)}
+.price-row input.px{width:132px;font-size:16px;padding:9px 12px;border-radius:12px}
+.note .live-dot{margin-right:4px}
+.val-f{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.val-f input{flex:1;min-width:110px;background:var(--surface-2);border:0;border-radius:12px;padding:10px 12px;font-size:14px}
+.val-f input:focus{outline:0;box-shadow:0 0 0 2px var(--tx)}
+.vals{list-style:none;padding:0}
+.vals li{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums}
+.vals li:last-child{border-bottom:0}
+.vals span{color:var(--tx-2);margin-right:auto}
+.card .ops .op{background:var(--surface-2)}
+.card .stats{padding-top:4px}
+
+/* ---------- mapa de bloques ---------- */
+.alloc-v{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px;font-size:12.5px}
+.tree{position:relative}
+.tile{position:absolute;border:0;border-radius:8px;padding:7px 9px;display:flex;flex-direction:column;justify-content:flex-start;align-items:flex-start;gap:1px;overflow:hidden;color:#fff;text-align:left;transition:filter .1s}
+button.tile:hover{filter:brightness(1.15)}
+.tile b{font-size:12.5px;font-weight:650;white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis;text-shadow:0 1px 2px rgba(0,0,0,.35)}
+.tile span{font-size:11.5px;font-variant-numeric:tabular-nums;opacity:.92;text-shadow:0 1px 2px rgba(0,0,0,.35)}
+
+/* ---------- buscador ---------- */
+.scrim.top{justify-content:center;align-items:flex-start;padding:12vh 16px 0}
+.palette{width:min(560px,100%);background:var(--surface-2);border-radius:22px;box-shadow:var(--shadow);overflow:hidden;animation:rise .16s ease-out}
+.palette-in{display:flex;align-items:center;gap:12px;padding:16px 18px;border-bottom:1px solid var(--line);color:var(--mu)}
+.palette-in input{flex:1;background:none;border:0;outline:0;font-size:17px;color:var(--tx)}
+kbd{font:inherit;font-size:11.5px;color:var(--mu);background:var(--surface-3);border-radius:6px;padding:2px 7px}
+.palette ul{list-style:none;padding:8px;max-height:52vh;overflow-y:auto}
+.palette li button{display:flex;align-items:center;gap:12px;width:100%;background:none;border:0;border-radius:14px;padding:9px 10px;text-align:left;font-weight:550}
+.palette li button.on{background:var(--surface-3)}
+.palette li small{margin-left:auto;color:var(--mu);font-weight:400;font-size:12.5px}
+.palette .av{background:var(--surface-3)}
+.palette li button.on .av{background:var(--bg)}
+@media(max-width:820px){.asset-h h1{font-size:22px}}
