@@ -192,6 +192,8 @@ export function washBuys(sale) {
 
 /** Tramos de la base del ahorro (IRPF estatal + autonómico, desde 2025). */
 const SAVINGS = [[6000, 0.19], [50000, 0.21], [200000, 0.23], [300000, 0.27], [Infinity, 0.30]];
+/** Tramos de la base del ahorro: [hasta, tipo]. */
+export const SAVINGS_BRACKETS = SAVINGS;
 export function savingsTax(base) {
   let tax = 0, prev = 0;
   for (const [top, rate] of SAVINGS) {

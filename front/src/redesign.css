@@ -129,6 +129,7 @@ button.kpi:hover{background:color-mix(in srgb,var(--acc) 7%,var(--surface));bord
 .rows button,.feed button,button.rank-row{transition:background var(--dur-1),transform var(--dur-1)}
 .rows button:hover,.feed button:hover,button.rank-row:hover,.tbl tbody tr:hover{background:color-mix(in srgb,var(--acc) 7%,var(--surface-2))}
 .kv-h{color:var(--acc-tx);opacity:.9}
+.utabs button.on{box-shadow:inset 0 -2px 0 var(--acc-tx)}
 
 /* ---------- banners ---------- */
 .banner.info{background:color-mix(in srgb,var(--acc) 12%,var(--surface));border:1px solid color-mix(in srgb,var(--acc) 28%,transparent)}

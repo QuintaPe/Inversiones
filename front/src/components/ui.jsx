@@ -17,6 +17,7 @@ const PATHS = {
   search: <><circle cx="11" cy="11" r="6.5" /><path d="M16 16l4 4" /></>,
   download: <path d="M12 4v12M12 16l-4-4M12 16l4-4M4 19h16" />,
   check: <path d="M5 12.5l4.5 4.5L19 7.5" />,
+  copy: <><rect x="8" y="8" width="12" height="12" rx="2.5" /><path d="M16 8V6.5A2.5 2.5 0 0 0 13.5 4h-7A2.5 2.5 0 0 0 4 6.5v7A2.5 2.5 0 0 0 6.5 16H8" /></>,
   alert: <path d="M12 4l9 16H3zM12 10v4M12 17v.5" />,
   chevron: <path d="M9 6l6 6-6 6" />,
   efectivo: <><path d="M3 7h16a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM3 7V6a2 2 0 0 1 2-2h11" /><circle cx="16.5" cy="13" r="1.2" /></>,

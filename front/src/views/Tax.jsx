@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react';
 import { Asset, Card, Empty, Icon, Seg } from '../components/ui.jsx';
 import { Columns } from '../charts.jsx';
-import { taxYears, splitWithholding, TREATY_RATE } from '../lib/calc.js';
+import { taxYears, splitWithholding, TREATY_RATE, SAVINGS_BRACKETS } from '../lib/calc.js';
 import { country, classLabel } from '../lib/countries.js';
-import { eur, eurS, num, qty, sign, date, pct, isMasked } from '../lib/format.js';
+import { eur, eurS, num, qty, sign, date, pct, isMasked, compact } from '../lib/format.js';
 
 /** Ventas y dividendos del ejercicio en un CSV listo para trasladar a la declaración. */
 function exportYear(y) {
@@ -38,6 +38,17 @@ function yearEndValue(hist, year) {
 export default function Tax({ a, income, onOpen, hist, flt }) {
   const years = useMemo(() => taxYears(a.sl, a.dv, income), [a.sl, a.dv, income]);
   const [sel, setSel] = useState(null);
+  const [tab, setTab] = useState('resumen');
+  const [steps, setSteps] = useState(false);
+  const [copied, setCopied] = useState(null);
+  // Fuera de la pestaña elegida no se ven, pero siguen ahí para el informe en PDF.
+  const pane = (k) => `stack tax-pane ${tab === k ? '' : 'off'}`;
+  const copy = (label, v) => {
+    navigator.clipboard?.writeText(v.toFixed(2).replace('.', ',')).then(() => {
+      setCopied(label);
+      setTimeout(() => setCopied((c) => (c === label ? null : c)), 1400);
+    }).catch(() => {});
+  };
   if (!years.length) return <div className="card"><Empty>Todavía no hay ventas, dividendos ni intereses que declarar.</Empty></div>;
   const y = years.find((r) => r.year === sel) ?? years[0];
   const diff = y.gainF - y.gainAvg;
@@ -48,6 +59,17 @@ export default function Tax({ a, income, onOpen, hist, flt }) {
   const byCountry = Object.values(y.countries).map((r) => ({ ...r, c: country(r.isin) })).sort((p, q) => q.g - p.g);
   const end = flt === 'all' ? yearEndValue(hist, y.year) : null;
   const unlisted = y.issuers.filter((e) => e.p.grp === 'pm');
+  // Composición de la base y tramos que se ven (hasta el siguiente al de tu base).
+  const gainsNet = Math.max(0, y.gainTax - y.usedPrev);
+  const parts = [
+    ['gain', 'Ganancias por ventas', gainsNet], ['div', 'Dividendos', y.divG],
+    ['int', 'Intereses', y.intG ?? 0], ['rew', 'Saveback y bonus', y.rewG ?? 0],
+  ].filter(([, , v]) => v >= 0.005).map(([k, label, v]) => ({ k, label, v }));
+  let prev = 0;
+  const ranges = SAVINGS_BRACKETS.map(([top, rate]) => { const r = [prev, top, rate]; prev = top; return r; });
+  const cur = Math.max(0, ranges.findIndex(([from, to]) => base <= to));
+  const shown = ranges.slice(0, Math.min(ranges.length, Math.max(2, cur + 2))).map(([f, t, r]) => [f, t === Infinity ? Math.max(f * 1.5, base) : t, r]);
+  const marginal = ranges[cur][2];
   // Lo que se traslada a Renta Web. Solo llevan número las casillas contrastadas; el resto se
   // localiza por su nombre, porque la numeración cambia de una campaña a otra.
   const boxes = [
@@ -63,7 +85,7 @@ export default function Tax({ a, income, onOpen, hist, flt }) {
   ].filter(Boolean);
 
   return (
-    <div className="stack">
+    <div className="stack tax">
       <div className="toolbar">
         <Seg label="Ejercicio" options={years.map((r) => [r.year, r.year])} value={y.year} onChange={setSel} />
         <button type="button" className="btn" onClick={() => exportYear(y)}><Icon name="download" size={16} />Exportar {y.year}</button>
@@ -73,76 +95,84 @@ export default function Tax({ a, income, onOpen, hist, flt }) {
         <h1>Informe fiscal {y.year}</h1>
         <p>Generado el {date(new Date().toISOString())} a partir de tus operaciones. Orientativo: no es asesoramiento fiscal.</p>
       </header>
-
-      <Card title={`Estimación del ejercicio ${y.year}`} sub="Base del ahorro: ganancias patrimoniales netas más rendimientos del capital">
-        <div className="perf">
-          <div><span className="stat-l">Base del ahorro</span><b className="stat-v">{eur(base)}</b></div>
-          <div><span className="stat-l">Cuota estimada</span><b className="stat-v">{eur(quota)}</b></div>
-          <div><span className="stat-l">{due >= 0 ? 'A pagar tras retenciones' : 'A devolver'}</span><b className="stat-v">{eur(Math.abs(due))}</b></div>
-        </div>
-        <div className="calc">
-          <div><span>Ganancias y pérdidas de las ventas (FIFO)</span><b className={sign(y.gainF)}>{eurS(y.gainF)}</b></div>
-          {Math.abs(y.deferred) >= 0.005 && <div><span>+ Pérdidas diferidas por la regla de los dos meses</span><b>{eurS(-y.deferred)}</b></div>}
-          {Math.abs(y.released) >= 0.005 && <div><span>− Pérdidas diferidas que afloran al vender lo recomprado</span><b>{eurS(y.released)}</b></div>}
-          {y.usedPrev >= 0.005 && <div><span>− Pérdidas de años anteriores</span><b>−{eur(y.usedPrev)}</b></div>}
-          <div className="t"><span>= Ganancias y pérdidas patrimoniales</span><b className={sign(y.gainTax - y.usedPrev)}>{eurS(y.gainTax - y.usedPrev)}</b></div>
-          <div><span>Dividendos íntegros ({y.divs.length} cobros)</span><b>{eur(y.divG)}</b></div>
-          {y.intN > 0 && <div><span>Intereses de la cuenta ({y.intN} abonos)</span><b>{eur(y.intG)}</b></div>}
-          {y.rewN > 0 && <div><span>Saveback y bonus ({y.rewN} abonos)</span><b>{eur(y.rewG)}</b></div>}
-          <div className="t"><span>= Rendimientos del capital mobiliario</span><b>{eur(y.rcm)}</b></div>
-          {y.offsetRcm >= 0.005 && <div><span>− Pérdidas compensadas con rendimientos (máx. 25 %: {eur(0.25 * y.rcm)})</span><b>−{eur(y.offsetRcm)}</b></div>}
-          <div className="t"><span>= Base del ahorro</span><b>{eur(base)}</b></div>
-          <div><span>Cuota íntegra del ahorro (tipo medio {pct(y.avgRate * 100)})</span><b>{eur(quota)}</b></div>
-          {y.dii >= 0.005 && <div><span>− Deducción por doble imposición internacional</span><b>−{eur(y.dii)}</b></div>}
-          <div><span>− Retenciones practicadas en España (dividendos{y.intT > 0 ? ', intereses' : ''}{y.rewT > 0 ? ', premios' : ''})</span><b>−{eur(y.withheld)}</b></div>
-          <div className="t"><span>= {due >= 0 ? 'A pagar' : 'A devolver'}</span><b>{eur(Math.abs(due))}</b></div>
-          {y.carryOut >= 0.005 && <div><span>Pérdidas pendientes para los próximos ejercicios</span><b className="loss">−{eur(y.carryOut)}</b></div>}
-        </div>
-        <p className="note">
-          {lost && <>Las pérdidas patrimoniales no restan directamente: compensan como mucho el 25 % de los rendimientos del año y el resto
-            se guarda para los cuatro ejercicios siguientes. </>}
-          Tramos del ahorro: 19 % hasta 6.000 €, 21 % hasta 50.000 €, 23 % hasta 200.000 €, 27 % hasta 300.000 € y 30 % en
-          adelante. De la retención de cada dividendo se separa la parte española (a cuenta de la cuota) de la del país de
-          origen, que se recupera con la deducción por doble imposición hasta el {TREATY_RATE * 100} % habitual de los convenios.
-          No incluye rentas de fuera de esta cuenta, que cambiarían el tipo medio.
-        </p>
-      </Card>
-
-      <div className="card table-card">
-        <header className="card-h"><div><h2>Para trasladar a Renta Web</h2><p>Ejercicio {y.year} · importes de esta cuenta</p></div></header>
-        <table className="tbl boxes">
-          <thead><tr><th className="l">Casilla</th><th className="l">Concepto</th><th>Importe</th></tr></thead>
-          <tbody>
-            {boxes.map(([box, label, v]) => (
-              <tr key={label} className="static"><td className="l">{box ? <b className="box">{box}</b> : <span className="mu">—</span>}</td><td className="l wrap">{label}</td><td>{eur(v)}</td></tr>
-            ))}
-          </tbody>
-        </table>
-        <p className="note pad">
-          Las ventas se introducen entidad por entidad (tabla «Ventas por entidad emisora»). Los conceptos sin número se
-          buscan por su nombre en Renta Web: la numeración cambia entre campañas, así que comprueba también las que sí lo llevan.
-          {unlisted.length > 0 && ` ${unlisted.map((e) => e.p.name).join(', ')} no cotiza: su venta va en el apartado de otros elementos patrimoniales, no con las acciones negociadas.`}
-        </p>
+      <div className="utabs tax-tabs" role="tablist" aria-label="Apartado">
+        {[['resumen', 'Resumen'], ['ventas', `Ventas · ${y.sales.length}`], ['dividendos', `Dividendos · ${y.divs.length}`], ['renta', 'Renta Web']].map(([k, l]) => (
+          <button key={k} type="button" role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{l}</button>
+        ))}
       </div>
-
-      {end && (
-        <Card title="Modelo 720" sub="Declaración informativa de bienes en el extranjero">
-          <div className="calc">
-            <div><span>Valor de tus inversiones {end.closed ? `a 31/12/${y.year}` : `a ${date(end.d)} (el ejercicio no ha terminado)`}</span><b>{eur(end.v)}</b></div>
-            <div><span>Umbral a partir del cual hay que informar</span><b>{eur(LIMIT_720)}</b></div>
+      <div className={pane('resumen')}>
+      <section className="card tax-hero">
+        <div className="tax-top">
+          <div>
+            <span className="eyebrow">Ejercicio {y.year} · estimación</span>
+            <div className={`tax-due ${due < 0 ? 'gain' : ''}`}>{eur(Math.abs(due))}</div>
+            <p className="tax-due-l">{due >= 0 ? 'a pagar en la declaración, tras las retenciones' : 'a devolver en la declaración'}</p>
           </div>
-          <p className={`note ${end.v > LIMIT_720 && !isMasked() ? 'warn-t' : ''}`}>
-            {isMasked()
-              ? 'Importes ocultos: muéstralos para saber si superas el umbral. '
-              : end.v > LIMIT_720
-              ? <><Icon name="alert" size={15} /> Superas el umbral. Si tus valores se consideran depositados en el extranjero habría que presentar el modelo 720 (hasta el 31 de marzo del año siguiente) la primera vez y cuando el valor suba más de 20.000 €. </>
-              : 'Estás por debajo del umbral. '}
-            Con Trade Republic no hay un criterio claro: con IBAN español el efectivo no se declara, pero sobre los valores
-            las fuentes no coinciden. Confírmalo con la Agencia Tributaria o con un asesor; cuenta también lo que tengas en otros brókeres extranjeros.
-          </p>
-        </Card>
-      )}
+          <dl className="tax-stats">
+            <div><dt>Base del ahorro</dt><dd>{eur(base)}</dd></div>
+            <div><dt>Cuota</dt><dd>{eur(quota)}</dd></div>
+            <div><dt>Ya retenido</dt><dd>{eur(y.withheld + y.dii)}</dd></div>
+          </dl>
+        </div>
 
+        {parts.length > 0 && (
+          <div className="tax-viz">
+            <div>
+              <h3 className="kv-h">De dónde sale tu base</h3>
+              <div className="stackbar" role="img" aria-label="Composición de la base del ahorro">
+                {parts.map((x) => <i key={x.k} className={`sb-${x.k}`} style={{ flexGrow: x.v }} title={`${x.label}: ${eur(x.v)}`} />)}
+              </div>
+              <ul className="legend flat">
+                {parts.map((x) => <li key={x.k}><i className={`dotk sb-${x.k}`} />{x.label} <b>{eur(x.v)}</b></li>)}
+              </ul>
+            </div>
+            <div>
+              <h3 className="kv-h">Tu tramo del ahorro</h3>
+              <div className="brackets" role="img" aria-label={`Tramo marginal del ${Math.round(marginal * 100)} %`}>
+                {shown.map(([from, to, rate]) => (
+                  <span key={from} className={`br ${base > from ? 'on' : ''}`}>
+                    <i style={{ width: `${Math.max(0, Math.min(1, (base - from) / (to - from))) * 100}%` }} />
+                    <small>{Math.round(rate * 100)} %{to < Infinity ? ` hasta ${compact(to)}` : ''}</small>
+                  </span>
+                ))}
+              </div>
+              <p className="note">Pagas el {Math.round(marginal * 100)} % por el último euro y un {pct(y.avgRate * 100)} de media.</p>
+            </div>
+          </div>
+        )}
+
+        <button type="button" className="fold" aria-expanded={steps} onClick={() => setSteps((v) => !v)}>
+          {steps ? 'Ocultar el cálculo' : 'Ver el cálculo paso a paso'}
+        </button>
+        <div className={steps ? 'tax-steps' : 'tax-steps folded'}>
+        <div className="calc">
+            <div><span>Ganancias y pérdidas de las ventas (FIFO)</span><b className={sign(y.gainF)}>{eurS(y.gainF)}</b></div>
+            {Math.abs(y.deferred) >= 0.005 && <div><span>+ Pérdidas diferidas por la regla de los dos meses</span><b>{eurS(-y.deferred)}</b></div>}
+            {Math.abs(y.released) >= 0.005 && <div><span>− Pérdidas diferidas que afloran al vender lo recomprado</span><b>{eurS(y.released)}</b></div>}
+            {y.usedPrev >= 0.005 && <div><span>− Pérdidas de años anteriores</span><b>−{eur(y.usedPrev)}</b></div>}
+            <div className="t"><span>= Ganancias y pérdidas patrimoniales</span><b className={sign(y.gainTax - y.usedPrev)}>{eurS(y.gainTax - y.usedPrev)}</b></div>
+            <div><span>Dividendos íntegros ({y.divs.length} cobros)</span><b>{eur(y.divG)}</b></div>
+            {y.intN > 0 && <div><span>Intereses de la cuenta ({y.intN} abonos)</span><b>{eur(y.intG)}</b></div>}
+            {y.rewN > 0 && <div><span>Saveback y bonus ({y.rewN} abonos)</span><b>{eur(y.rewG)}</b></div>}
+            <div className="t"><span>= Rendimientos del capital mobiliario</span><b>{eur(y.rcm)}</b></div>
+            {y.offsetRcm >= 0.005 && <div><span>− Pérdidas compensadas con rendimientos (máx. 25 %: {eur(0.25 * y.rcm)})</span><b>−{eur(y.offsetRcm)}</b></div>}
+            <div className="t"><span>= Base del ahorro</span><b>{eur(base)}</b></div>
+            <div><span>Cuota íntegra del ahorro (tipo medio {pct(y.avgRate * 100)})</span><b>{eur(quota)}</b></div>
+            {y.dii >= 0.005 && <div><span>− Deducción por doble imposición internacional</span><b>−{eur(y.dii)}</b></div>}
+            <div><span>− Retenciones practicadas en España (dividendos{y.intT > 0 ? ', intereses' : ''}{y.rewT > 0 ? ', premios' : ''})</span><b>−{eur(y.withheld)}</b></div>
+            <div className="t"><span>= {due >= 0 ? 'A pagar' : 'A devolver'}</span><b>{eur(Math.abs(due))}</b></div>
+            {y.carryOut >= 0.005 && <div><span>Pérdidas pendientes para los próximos ejercicios</span><b className="loss">−{eur(y.carryOut)}</b></div>}
+          </div>
+          <p className="note">
+            {lost && <>Las pérdidas patrimoniales no restan directamente: compensan como mucho el 25 % de los rendimientos del año y el resto
+              se guarda para los cuatro ejercicios siguientes. </>}
+            Tramos del ahorro: 19 % hasta 6.000 €, 21 % hasta 50.000 €, 23 % hasta 200.000 €, 27 % hasta 300.000 € y 30 % en
+            adelante. De la retención de cada dividendo se separa la parte española (a cuenta de la cuota) de la del país de
+            origen, que se recupera con la deducción por doble imposición hasta el {TREATY_RATE * 100} % habitual de los convenios.
+            No incluye rentas de fuera de esta cuenta, que cambiarían el tipo medio.
+          </p>
+        </div>
+      </section>
       {y.wash.length > 0 && (
         <Card title="Posible regla de los dos meses" sub={`${eurS(y.washLoss)} en pérdidas diferidas, descontadas del resultado del año`}>
           <ul className="rows">
@@ -163,35 +193,23 @@ export default function Tax({ a, income, onOpen, hist, flt }) {
           </p>
         </Card>
       )}
-
-      <div className="cols">
-        <Card title={`Ganancias y pérdidas patrimoniales ${y.year}`} sub="Transmisiones del ejercicio, criterio FIFO">
+      {end && (
+        <Card title="Modelo 720" sub="Declaración informativa de bienes en el extranjero">
           <div className="calc">
-            <div><span>Valor de transmisión ({y.sales.length} ventas, neto de comisiones)</span><b>{eur(y.proceeds)}</b></div>
-            <div><span>− Valor de adquisición (FIFO, con comisiones e impuestos)</span><b>−{eur(y.costF)}</b></div>
-            <div className="t"><span>= Resultado</span><b className={sign(y.gainF)}>{eurS(y.gainF)}</b></div>
-            <div><span>Ventas con ganancia</span><b className="gain">{eurS(y.wins)}</b></div>
-            <div><span>Ventas con pérdida</span><b className={y.losses ? 'loss' : ''}>{y.losses ? eurS(y.losses) : eur(0)}</b></div>
+            <div><span>Valor de tus inversiones {end.closed ? `a 31/12/${y.year}` : `a ${date(end.d)} (el ejercicio no ha terminado)`}</span><b>{eur(end.v)}</b></div>
+            <div><span>Umbral a partir del cual hay que informar</span><b>{eur(LIMIT_720)}</b></div>
           </div>
-          {Math.abs(diff) >= 0.005 && (
-            <p className="note">
-              Con coste medio (el que usa el resto de la aplicación) el resultado sería {eurS(y.gainAvg)}: {eur(Math.abs(diff))}{' '}
-              {diff > 0 ? 'menos' : 'más'}. La diferencia aparece cuando vendes parte de una posición comprada a varios precios.
-            </p>
-          )}
+          <p className={`note ${end.v > LIMIT_720 && !isMasked() ? 'warn-t' : ''}`}>
+            {isMasked()
+              ? 'Importes ocultos: muéstralos para saber si superas el umbral. '
+              : end.v > LIMIT_720
+              ? <><Icon name="alert" size={15} /> Superas el umbral. Si tus valores se consideran depositados en el extranjero habría que presentar el modelo 720 (hasta el 31 de marzo del año siguiente) la primera vez y cuando el valor suba más de 20.000 €. </>
+              : 'Estás por debajo del umbral. '}
+            Con Trade Republic no hay un criterio claro: con IBAN español el efectivo no se declara, pero sobre los valores
+            las fuentes no coinciden. Confírmalo con la Agencia Tributaria o con un asesor; cuenta también lo que tengas en otros brókeres extranjeros.
+          </p>
         </Card>
-
-        <Card title={`Dividendos ${y.year}`} sub="Rendimientos del capital mobiliario">
-          <div className="calc">
-            <div><span>Ingresos íntegros ({y.divs.length} cobros)</span><b>{eur(y.divG)}</b></div>
-            <div><span>− Retención española (a cuenta del IRPF)</span><b>−{eur(y.divEs)}</b></div>
-            <div><span>− Retención en el país de origen</span><b>−{eur(y.divFor)}</b></div>
-            <div className="t"><span>= Neto cobrado</span><b>{eur(y.divG - y.divT)}</b></div>
-            <div><span>Retención efectiva</span><b>{y.divG ? pct((y.divT / y.divG) * 100) : '—'}</b></div>
-          </div>
-        </Card>
-      </div>
-
+      )}
       {years.length > 1 && (
         <Card title="Resultado realizado por ejercicio" sub="Criterio FIFO">
           <Columns signed height={180} label="Resultado realizado por ejercicio"
@@ -199,6 +217,39 @@ export default function Tax({ a, income, onOpen, hist, flt }) {
             tip={(d) => <><small>{d.label} · {d.n} ventas</small><b>{eurS(d.v)}</b></>} />
         </Card>
       )}
+      <div className="card table-card">
+        <header className="card-h"><div><h2>Resumen por ejercicio</h2></div></header>
+        <table className="tbl">
+          <thead><tr><th className="l">Ejercicio</th><th className="hide-s">Ventas</th><th className="hide-s">Transmisión</th>
+            <th>Resultado FIFO</th><th className="hide-m">Con coste medio</th><th>Dividendos brutos</th><th className="hide-s">Retenciones</th></tr></thead>
+          <tbody>
+            {years.map((r) => (
+              <tr key={r.year} onClick={() => setSel(r.year)} tabIndex={0} onKeyDown={(ev) => ev.key === 'Enter' && setSel(r.year)}>
+                <td className="l"><b>{r.year}</b></td><td className="hide-s">{r.sales.length}</td><td className="hide-s">{eur(r.proceeds)}</td>
+                <td className={sign(r.gainF)}>{eurS(r.gainF)}</td><td className={`hide-m ${sign(r.gainAvg)}`}>{eurS(r.gainAvg)}</td>
+                <td>{eur(r.divG)}</td><td className="hide-s">{eur(r.divT)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      </div>
+      <div className={pane('ventas')}>
+      <Card title={`Ganancias y pérdidas patrimoniales ${y.year}`} sub="Transmisiones del ejercicio, criterio FIFO">
+        <div className="calc">
+          <div><span>Valor de transmisión ({y.sales.length} ventas, neto de comisiones)</span><b>{eur(y.proceeds)}</b></div>
+          <div><span>− Valor de adquisición (FIFO, con comisiones e impuestos)</span><b>−{eur(y.costF)}</b></div>
+          <div className="t"><span>= Resultado</span><b className={sign(y.gainF)}>{eurS(y.gainF)}</b></div>
+          <div><span>Ventas con ganancia</span><b className="gain">{eurS(y.wins)}</b></div>
+          <div><span>Ventas con pérdida</span><b className={y.losses ? 'loss' : ''}>{y.losses ? eurS(y.losses) : eur(0)}</b></div>
+        </div>
+        {Math.abs(diff) >= 0.005 && (
+          <p className="note">
+            Con coste medio (el que usa el resto de la aplicación) el resultado sería {eurS(y.gainAvg)}: {eur(Math.abs(diff))}{' '}
+            {diff > 0 ? 'menos' : 'más'}. La diferencia aparece cuando vendes parte de una posición comprada a varios precios.
+          </p>
+        )}
+      </Card>
 
       <div className="card table-card">
         <header className="card-h"><div><h2>Ventas de {y.year}</h2><p>Cada venta con los lotes de compra que consume</p></div></header>
@@ -231,7 +282,6 @@ export default function Tax({ a, income, onOpen, hist, flt }) {
           </table>
         ) : <Empty>Sin ventas en {y.year}.</Empty>}
       </div>
-
       {y.issuers.length > 0 && (
         <div className="card table-card">
           <header className="card-h"><div><h2>Ventas de {y.year} por entidad emisora</h2><p>Una línea por valor, como las pide Renta Web</p></div></header>
@@ -250,7 +300,17 @@ export default function Tax({ a, income, onOpen, hist, flt }) {
           </table>
         </div>
       )}
-
+      </div>
+      <div className={pane('dividendos')}>
+      <Card title={`Dividendos ${y.year}`} sub="Rendimientos del capital mobiliario">
+        <div className="calc">
+          <div><span>Ingresos íntegros ({y.divs.length} cobros)</span><b>{eur(y.divG)}</b></div>
+          <div><span>− Retención española (a cuenta del IRPF)</span><b>−{eur(y.divEs)}</b></div>
+          <div><span>− Retención en el país de origen</span><b>−{eur(y.divFor)}</b></div>
+          <div className="t"><span>= Neto cobrado</span><b>{eur(y.divG - y.divT)}</b></div>
+          <div><span>Retención efectiva</span><b>{y.divG ? pct((y.divT / y.divG) * 100) : '—'}</b></div>
+        </div>
+      </Card>
       {byCountry.length > 0 && (
         <div className="card table-card">
           <header className="card-h"><div><h2>Dividendos de {y.year} por país</h2><p>Doble imposición internacional: qué se retuvo en origen y cuánto se puede deducir</p></div></header>
@@ -275,24 +335,29 @@ export default function Tax({ a, income, onOpen, hist, flt }) {
           </p>
         </div>
       )}
-
-      <div className="card table-card">
-        <header className="card-h"><div><h2>Resumen por ejercicio</h2></div></header>
-        <table className="tbl">
-          <thead><tr><th className="l">Ejercicio</th><th className="hide-s">Ventas</th><th className="hide-s">Transmisión</th>
-            <th>Resultado FIFO</th><th className="hide-m">Con coste medio</th><th>Dividendos brutos</th><th className="hide-s">Retenciones</th></tr></thead>
-          <tbody>
-            {years.map((r) => (
-              <tr key={r.year} onClick={() => setSel(r.year)} tabIndex={0} onKeyDown={(ev) => ev.key === 'Enter' && setSel(r.year)}>
-                <td className="l"><b>{r.year}</b></td><td className="hide-s">{r.sales.length}</td><td className="hide-s">{eur(r.proceeds)}</td>
-                <td className={sign(r.gainF)}>{eurS(r.gainF)}</td><td className={`hide-m ${sign(r.gainAvg)}`}>{eurS(r.gainAvg)}</td>
-                <td>{eur(r.divG)}</td><td className="hide-s">{eur(r.divT)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
       </div>
-
+      <div className={pane('renta')}>
+      <section className="card">
+        <header className="card-h"><div><h2>Para trasladar a Renta Web</h2><p>Ejercicio {y.year} · pulsa un importe para copiarlo</p></div></header>
+        <ul className="boxes-l">
+          {boxes.map(([box, label, v]) => (
+            <li key={label}>
+              <span className="box-n">{box ?? '—'}</span>
+              <span className="box-t">{label}</span>
+              <button type="button" className="box-v" disabled={isMasked()} onClick={() => copy(label, v)}
+                aria-label={`Copiar ${label}`} title="Copiar el importe">
+                {eur(v)}<Icon name={copied === label ? 'check' : 'copy'} size={15} />
+              </button>
+            </li>
+          ))}
+        </ul>
+        <p className="note">
+          Las ventas se introducen entidad por entidad (en «Ventas», tabla por entidad emisora). Los conceptos sin número se
+          buscan por su nombre en Renta Web: la numeración cambia entre campañas, así que comprueba también las que sí lo llevan.
+          {unlisted.length > 0 && ` ${unlisted.map((e) => e.p.name).join(', ')} no cotiza: su venta va en el apartado de otros elementos patrimoniales, no con las acciones negociadas.`}
+        </p>
+      </section>
+      </div>
       <p className="note">
         <b>Orientativo, no es asesoramiento fiscal.</b> Hacienda exige FIFO por valor homogéneo, que es lo que se calcula
         aquí a partir de tu CSV. La regla de los dos meses y la compensación de pérdidas se aplican de forma

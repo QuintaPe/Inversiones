@@ -590,6 +590,51 @@ button.plain{background:none;border:0;padding:0;text-align:left;border-radius:12
 .login-demo .btn.wide{margin-top:var(--sp-1)}
 .login-demo small{color:var(--mu);font-size:var(--fs-xs)}
 
+/* ---------- fiscalidad: cabecera con la respuesta, visuales y apartados ---------- */
+.tax-pane.off{display:none}
+.tax-steps.folded{display:none}
+.tax-steps{margin-top:var(--sp-3)}
+.tax-top{display:flex;justify-content:space-between;align-items:flex-end;gap:var(--sp-6);flex-wrap:wrap}
+.tax-due{font-size:clamp(40px,5vw,58px);font-weight:700;letter-spacing:-.05em;line-height:1.05;margin:var(--sp-1) 0 2px;font-variant-numeric:tabular-nums}
+.tax-due-l{color:var(--tx-2);font-size:var(--fs-md)}
+.tax-stats{display:grid;grid-template-columns:repeat(3,auto);gap:var(--sp-2) var(--sp-8);margin:0}
+.tax-stats dt{color:var(--mu);font-size:var(--fs-xs);font-weight:600}
+.tax-stats dd{margin:2px 0 0;font-size:20px;font-weight:650;letter-spacing:-.02em;font-variant-numeric:tabular-nums;white-space:nowrap}
+.tax-viz{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--sp-8);margin-top:var(--sp-5);padding-top:var(--sp-1);border-top:1px solid var(--line)}
+.stackbar{display:flex;gap:3px;height:12px;border-radius:6px;overflow:hidden;margin:var(--sp-3) 0}
+.stackbar i{display:block;min-width:6px}
+.sb-gain{background:var(--gain)}.sb-div{background:var(--chart)}.sb-int{background:var(--s1)}.sb-rew{background:var(--warn)}
+.tax .legend.flat{gap:6px 16px}
+.tax .legend b{color:var(--tx);font-weight:650;margin-left:2px;font-variant-numeric:tabular-nums}
+.brackets{display:flex;gap:3px;margin:var(--sp-3) 0 30px}
+.br{position:relative;flex:1;height:12px;border-radius:6px;background:var(--surface-2)}
+.br i{display:block;height:100%;border-radius:6px;background:var(--chart)}
+.br small{position:absolute;top:18px;left:0;color:var(--mu);font-size:11.5px;white-space:nowrap}
+.br.on small{color:var(--tx-2);font-weight:600}
+.utabs{display:flex;gap:var(--sp-6);border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:none}
+.utabs::-webkit-scrollbar{display:none}
+.utabs button{background:none;border:0;border-radius:0;padding:10px 0 12px;color:var(--mu);font-size:var(--fs-md);font-weight:600;white-space:nowrap;box-shadow:inset 0 -2px 0 transparent;transition:color var(--dur-1),box-shadow var(--dur-1)}
+.utabs button:hover{color:var(--tx)}
+.utabs button.on{color:var(--tx);box-shadow:inset 0 -2px 0 var(--tx)}
+.card .note.warn-t{display:block;background:color-mix(in srgb,var(--warn) 11%,transparent);color:var(--tx-2);padding:var(--sp-3) 14px;border-radius:var(--r-sm)}
+.card .note.warn-t svg{color:var(--warn);margin-right:4px}
+.boxes-l{list-style:none;padding:0;margin:0}
+.boxes-l li{display:grid;grid-template-columns:64px minmax(0,1fr) auto;align-items:center;gap:var(--sp-3);padding:var(--sp-3) 0;border-bottom:1px solid var(--line)}
+.boxes-l li:last-child{border-bottom:0}
+.box-n{justify-self:start;background:var(--surface-2);border-radius:8px;padding:2px 9px;font-variant-numeric:tabular-nums;font-weight:650;font-size:var(--fs-sm);color:var(--tx-2)}
+.box-t{color:var(--tx-2);font-size:14px}
+.box-v{display:inline-flex;align-items:center;gap:var(--sp-2);background:var(--surface-2);border:0;border-radius:10px;padding:7px 10px 7px 12px;font-weight:650;font-variant-numeric:tabular-nums;white-space:nowrap;transition:background var(--dur-1)}
+.box-v svg{color:var(--mu)}
+.box-v:hover{background:var(--surface-3)}.box-v:hover svg{color:var(--tx)}
+.box-v:disabled{cursor:default}
+@media(max-width:960px){.tax-viz{grid-template-columns:minmax(0,1fr);gap:var(--sp-4)}}
+@media(max-width:640px){
+  .tax-stats{grid-template-columns:repeat(3,minmax(0,1fr));width:100%;gap:var(--sp-3)}
+  .tax-stats dd{font-size:16px}
+  .boxes-l li{grid-template-columns:48px minmax(0,1fr);row-gap:var(--sp-2)}
+  .box-v{grid-column:2;justify-self:start}
+}
+
 /* ---------- fiscalidad: casillas e informe imprimible ---------- */
 .box{display:inline-block;background:var(--surface-3);border-radius:8px;padding:2px 9px;font-variant-numeric:tabular-nums;letter-spacing:.02em}
 .tbl td.wrap{white-space:normal;min-width:180px}
@@ -608,6 +653,9 @@ button.plain{background:none;border:0;padding:0;text-align:left;border-radius:12
   .main{max-width:none;padding:0}
   .view{animation:none}
   .print-h{display:block;margin-bottom:6px}
+  .tax-pane.off{display:flex!important}
+  .tax-steps.folded{display:block!important}
+  .tax-tabs,.fold,.box-v svg{display:none!important}
   .print-h h1{font-size:22px;letter-spacing:-.03em}
   .print-h p{color:var(--mu)}
   .stack{gap:14px}
