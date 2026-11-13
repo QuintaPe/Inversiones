@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
-import { Asset, Empty, Flash, Pill, PriceInput, Search, Th, useSort } from '../components/ui.jsx';
+import { Asset, Avatar, Card, Empty, Flash, Icon, Pill, PriceInput, Search, Seg, Th, useSort } from '../components/ui.jsx';
 import { Kpi } from '../components/Kpi.jsx';
+import { Treemap } from '../charts.jsx';
+import { useStored } from '../hooks.js';
 import { sum } from '../lib/calc.js';
 import Targets from './Targets.jsx';
 import { eur, eurS, pct, pctS, qty, sign, date } from '../lib/format.js';
@@ -14,23 +16,46 @@ const GET = {
 export default function Positions({ a, onOpen, onPrice, targets, patch, fail }) {
   const [tab, setTab] = useState('open');
   const [q, setQ] = useState('');
+  const [view, setView] = useStored('pos-view', 'list');
+  const [mapBy, setMapBy] = useState('total');
   const open = useSort('v');
   const closed = useSort('real');
   const match = (x) => !q || `${x.p.name} ${x.p.isin}`.toLowerCase().includes(q.trim().toLowerCase());
   const rows = useMemo(() => open.apply(a.o.filter(match), (x, k) => GET[k](x)), [a.o, q, open.sort]);
   const crow = useMemo(() => closed.apply(a.c.filter(match), (x, k) => GET[k](x)), [a.c, q, closed.sort]);
   const s = open, c = closed;
+  const top3 = [...a.priced].sort((x, y) => y.v - x.v).slice(0, 3).reduce((t, x) => t + (x.w ?? 0), 0);
 
   return (
     <div className="stack">
       {a.priced.length > 0 && (
-        <div className="kpis-row">
-          <Kpi label="Valor" value={eur(a.val)} sub={`${a.priced.length} de ${a.o.length} con precio`} />
-          <Kpi label="Coste" value={eur(a.costPriced)} sub="lo que pagaste por ellas" />
-          <Kpi label="Resultado latente" value={eurS(a.pl)} tone={sign(a.pl)} sub={`${pctS(a.plp)} sobre el coste`} />
-          <Kpi label={a.day != null ? 'Hoy' : 'Realizado'} value={a.day != null ? eurS(a.day) : eurS(a.real)}
-            tone={sign(a.day ?? a.real)} sub={a.day != null ? `${pctS(a.dayPct)} en la sesión` : 'en ventas, desde el inicio'} />
-        </div>
+        <>
+          <section className="hero">
+            <span className="eyebrow">Valor de tus posiciones</span>
+            <Flash value={a.val} as="div" className="hero-v">{eur(a.val)}</Flash>
+            <div className="hero-d">
+              <span className={`chg ${sign(a.pl)}`}><span aria-hidden="true">{a.pl >= 0 ? '▲' : '▼'}</span> {eurS(a.pl)} · {pctS(a.plp)} <em>desde la compra</em></span>
+              {a.day != null && <span className={`chg ${sign(a.day)}`}><span aria-hidden="true">{a.day >= 0 ? '▲' : '▼'}</span> {eurS(a.day)} · {pctS(a.dayPct)} <em>hoy</em></span>}
+            </div>
+          </section>
+
+          <div className="kpis-row">
+            <Kpi label="Invertido" value={eur(a.costPriced)} sub={`en ${a.priced.length} ${a.priced.length === 1 ? 'posición' : 'posiciones'}`} />
+            <Kpi label="Realizado en ventas" value={eurS(a.real)} tone={sign(a.real)} sub="desde el inicio" />
+            <Kpi label="Dividendos cobrados" value={eur(a.divN)} sub="netos, desde el inicio" />
+            <Kpi label="Concentración" value={pct(top3)} sub="pesan tus 3 mayores posiciones" />
+          </div>
+
+          <Card title="Mapa de la cartera" className="pos-map"
+            sub={mapBy === 'day' ? 'Tamaño: peso · color: cuánto se ha movido hoy' : 'Tamaño: peso · color: rentabilidad desde la compra'}
+            right={a.day != null && <Seg label="Color del mapa" options={[['total', 'Total'], ['day', 'Hoy']]} value={mapBy} onChange={setMapBy} />}>
+            <Treemap height={260} cap={mapBy === 'day' ? 3 : 40}
+              items={a.priced.map((x) => {
+                const c = mapBy === 'day' ? (x.dayPct ?? 0) : (x.plp ?? 0);
+                return { key: x.p.isin, label: x.p.name, v: x.v, plp: c, right: `${pct(x.w)} · ${pctS(c)}`, sub: eur(x.v), w2: pct(x.w), onClick: () => onOpen(x.p.isin) };
+              })} />
+          </Card>
+        </>
       )}
 
       <div className="utabs" role="tablist" aria-label="Estado">
@@ -41,10 +66,47 @@ export default function Positions({ a, onOpen, onPrice, targets, patch, fail }) 
       {tab !== 'target' && (
         <div className="toolbar">
           <Search value={q} onChange={setQ} placeholder="Buscar por nombre o ISIN" label="Buscar posición" />
+          {tab === 'open' && (
+            <>
+              {view === 'cards' && (
+                <select aria-label="Ordenar por" value={s.sort.key} onChange={(ev) => s.onSort(ev.target.value)}>
+                  {[['v', 'Valor'], ['plp', 'Rentabilidad'], ['pl', 'Resultado en €'], ['day', 'Hoy'], ['name', 'Nombre']].map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                </select>
+              )}
+              <span className="view-t" role="group" aria-label="Vista">
+                <button type="button" className="icon-btn sm" aria-pressed={view === 'list'} onClick={() => setView('list')} aria-label="Ver como lista" title="Lista"><Icon name="list" size={16} /></button>
+                <button type="button" className="icon-btn sm" aria-pressed={view === 'cards'} onClick={() => setView('cards')} aria-label="Ver como tarjetas" title="Tarjetas"><Icon name="grid" size={16} /></button>
+              </span>
+            </>
+          )}
         </div>
       )}
 
-      {tab === 'target' ? <Targets a={a} targets={targets} patch={patch} fail={fail} onOpen={onOpen} /> : tab === 'open' ? (
+      {tab === 'target' ? <Targets a={a} targets={targets} patch={patch} fail={fail} onOpen={onOpen} /> : tab === 'open' && view === 'cards' ? (
+        rows.length ? (
+          <ul className="pos-cards">
+            {rows.map((x) => (
+              <li key={x.p.isin}>
+                <button type="button" className="pos-card" onClick={() => onOpen(x.p.isin)}>
+                  <span className="pos-card-h">
+                    <Avatar p={x.p} />
+                    <span className="asset-t"><b className="name">{x.p.name}</b><small>{qty(x.p.sh)} uds. a {eur(x.avg)}</small></span>
+                  </span>
+                  <Flash value={x.v} className="pos-card-v">{x.has ? eur(x.v) : '—'}</Flash>
+                  <span className="pos-card-r">
+                    {x.has ? <><span className={sign(x.pl)}>{eurS(x.pl)}</span><Pill n={x.plp} plain /></> : <span className="mu">sin precio</span>}
+                  </span>
+                  <span className="pos-card-f">
+                    <span className="wt-b"><i style={{ width: `${Math.min(100, (x.w ?? 0) * 2)}%` }} /></span>
+                    <small>{x.w != null ? `${pct(x.w)} de la cartera` : ''}</small>
+                    {x.dayPct != null && <small className={sign(x.dayPct)}>{pctS(x.dayPct)} hoy</small>}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : <div className="card"><Empty>{q ? 'Ninguna posición coincide con la búsqueda.' : 'No hay posiciones abiertas en esta vista.'}</Empty></div>
+      ) : tab === 'open' ? (
         <div className="card table-card">
           <table className="tbl tbl-pos">
             <thead>
@@ -65,7 +127,9 @@ export default function Positions({ a, onOpen, onPrice, targets, patch, fail }) 
                     <Asset p={x.p}>{qty(x.p.sh)} uds. a {eur(x.avg)}</Asset>
                   </td>
                   <td className="hide-s">
-                    <PriceInput p={x.p} onPrice={onPrice} />
+                    {x.p.priceSource === 'live'
+                      ? <span className="px-t"><i className="live-dot" aria-hidden="true" />{eur(x.p.price)}</span>
+                      : <PriceInput p={x.p} onPrice={onPrice} />}
                     {x.dayPct != null && <small className={sign(x.dayPct)}>{pctS(x.dayPct)} hoy</small>}
                   </td>
                   <td>

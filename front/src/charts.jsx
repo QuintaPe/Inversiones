@@ -299,7 +299,7 @@ export function Treemap({ items, height = 320, cap = 30 }) {
   const tiles = w > 0 ? squarify(items.filter((i) => i.v > 0), 0, 0, w, height) : [];
   const tone = (p) => {
     const k = Math.min(1, Math.abs(p) / cap);
-    return `color-mix(in srgb, var(${p >= 0 ? '--gain' : '--loss'}) ${Math.round(18 + k * 62)}%, var(--surface-3))`;
+    return `color-mix(in srgb, var(${p >= 0 ? '--gain' : '--loss'}) ${Math.round(16 + k * 44)}%, var(--surface-2))`;
   };
   const hd = hi != null && tiles[hi];
   return (

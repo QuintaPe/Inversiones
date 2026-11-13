@@ -260,6 +260,25 @@ button.kv:hover svg{transform:translateX(3px);color:var(--tx)}
 .pad-x{padding:0 24px 16px}
 @media(max-width:640px){.flow-r{grid-template-columns:minmax(0,1fr) 64px auto}.flow-l{white-space:normal}.flow-r b{min-width:0}.pad-x{padding:0 18px 14px}}
 
+/* posiciones: precio en vivo como texto, vista de tarjetas */
+.px-t{display:inline-flex;align-items:center;gap:6px;font-weight:600;font-variant-numeric:tabular-nums}
+.px-t .live-dot{width:6px;height:6px;animation:none}
+.view-t{display:inline-flex;gap:4px;margin-left:auto}
+.pos-cards{list-style:none;padding:0;margin:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:var(--sp-3)}
+.pos-card{display:flex;flex-direction:column;gap:var(--sp-1);width:100%;height:100%;text-align:left;background:var(--surface);border:0;border-radius:20px;padding:var(--sp-4);color:var(--tx);transition:background var(--dur-1),transform var(--dur-1)}
+.pos-card:hover{background:var(--surface-2)}
+.pos-card:active{transform:scale(.99)}
+.pos-card-h{display:flex;align-items:center;gap:var(--sp-3);min-width:0;margin-bottom:var(--sp-2)}
+.pos-card-h .name{display:block;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pos-card-h small{color:var(--mu);font-size:var(--fs-xs)}
+.pos-card-v{font-size:22px;font-weight:700;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+.pos-card-r{display:flex;align-items:center;gap:var(--sp-2);font-weight:650;font-size:14px;font-variant-numeric:tabular-nums}
+.pos-card-f{display:flex;align-items:center;gap:var(--sp-2);margin-top:auto;padding-top:var(--sp-3)}
+.pos-card-f .wt-b{flex:1;width:auto}
+.pos-card-f small{color:var(--mu);font-size:var(--fs-xs);white-space:nowrap;font-variant-numeric:tabular-nums}
+.pos-card-f small.gain{color:var(--gain)}.pos-card-f small.loss{color:var(--loss)}
+@media(max-width:640px){.pos-cards{grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--sp-2)}.pos-card{padding:var(--sp-3)}.pos-card-v{font-size:18px}.pos-card-f small:not(.gain):not(.loss){display:none}.pos-card-r>span:first-child:not(.pill){display:none}.pos-card-h{gap:var(--sp-2)}}
+
 /* avatar diminuto (calendario de dividendos) */
 .av.xs{width:22px;height:22px;font-size:8.5px;margin-left:-6px;box-shadow:0 0 0 2px var(--surface)}
 .av.xs:first-child{margin-left:0}
