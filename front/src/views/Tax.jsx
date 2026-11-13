@@ -25,17 +25,7 @@ function exportYear(y) {
   URL.revokeObjectURL(el.href);
 }
 
-const LIMIT_720 = 50000;
-/** Valor de la cartera al cierre del ejercicio (o el último conocido si aún no ha acabado). */
-function yearEndValue(hist, year) {
-  if (!hist?.d?.length) return null;
-  const end = `${year}-12-31`;
-  let i = hist.d.length - 1;
-  while (i >= 0 && hist.d[i] > end) i--;
-  return i < 0 ? null : { v: hist.v[i], d: hist.d[i], closed: hist.d.at(-1) >= end };
-}
-
-export default function Tax({ a, income, onOpen, hist, flt }) {
+export default function Tax({ a, income, onOpen }) {
   const years = useMemo(() => taxYears(a.sl, a.dv, income), [a.sl, a.dv, income]);
   const [sel, setSel] = useState(null);
   const [tab, setTab] = useState('resumen');
@@ -57,7 +47,6 @@ export default function Tax({ a, income, onOpen, hist, flt }) {
   const quota = y.quota, due = y.due;
   const lost = y.gainTax - y.usedPrev < 0; // el año cierra con pérdidas patrimoniales
   const byCountry = Object.values(y.countries).map((r) => ({ ...r, c: country(r.isin) })).sort((p, q) => q.g - p.g);
-  const end = flt === 'all' ? yearEndValue(hist, y.year) : null;
   const unlisted = y.issuers.filter((e) => e.p.grp === 'pm');
   // Composición de la base y tramos que se ven (hasta el siguiente al de tu base).
   const gainsNet = Math.max(0, y.gainTax - y.usedPrev);
@@ -190,23 +179,6 @@ export default function Tax({ a, income, onOpen, hist, flt }) {
             Si compras el mismo valor en los dos meses anteriores o posteriores a venderlo con pérdidas, esa pérdida se
             difiere, en la parte que corresponde a las acciones recompradas, hasta que las vendas. La estimación la
             descuenta este año y la recupera en el ejercicio en que vendes esas acciones. Es orientativo: revisa cada caso.
-          </p>
-        </Card>
-      )}
-      {end && (
-        <Card title="Modelo 720" sub="Declaración informativa de bienes en el extranjero">
-          <div className="calc">
-            <div><span>Valor de tus inversiones {end.closed ? `a 31/12/${y.year}` : `a ${date(end.d)} (el ejercicio no ha terminado)`}</span><b>{eur(end.v)}</b></div>
-            <div><span>Umbral a partir del cual hay que informar</span><b>{eur(LIMIT_720)}</b></div>
-          </div>
-          <p className={`note ${end.v > LIMIT_720 && !isMasked() ? 'warn-t' : ''}`}>
-            {isMasked()
-              ? 'Importes ocultos: muéstralos para saber si superas el umbral. '
-              : end.v > LIMIT_720
-              ? <><Icon name="alert" size={15} /> Superas el umbral. Si tus valores se consideran depositados en el extranjero habría que presentar el modelo 720 (hasta el 31 de marzo del año siguiente) la primera vez y cuando el valor suba más de 20.000 €. </>
-              : 'Estás por debajo del umbral. '}
-            Con Trade Republic no hay un criterio claro: con IBAN español el efectivo no se declara, pero sobre los valores
-            las fuentes no coinciden. Confírmalo con la Agencia Tributaria o con un asesor; cuenta también lo que tengas en otros brókeres extranjeros.
           </p>
         </Card>
       )}
