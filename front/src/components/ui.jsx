@@ -27,6 +27,7 @@ const PATHS = {
   bars: <path d="M4 7h10M4 12h16M4 17h6" />,
   bell: <path d="M6 16V11a6 6 0 1 1 12 0v5l1.5 2h-15zM10 20a2 2 0 0 0 4 0" />,
   grid: <path d="M4 4h9v9H4zM15 4h5v5h-5zM15 11h5v9h-5zM4 15h9v5H4z" />,
+  list: <path d="M4 7h16M4 12h16M4 17h10" />,
 };
 export const Icon = ({ name, size = 20 }) => (
   <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="1.8"

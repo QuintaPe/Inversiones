@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Asset, Card, Empty, Flash, Icon, Kind, Pill, Seg } from '../components/ui.jsx';
+import { Asset, Card, Empty, Flash, Icon, Pill, Seg } from '../components/ui.jsx';
 import { StepArea, Lines, RankBars, Treemap } from '../charts.jsx';
 import { investedSeries, allocation, monthlyDividends, sum } from '../lib/calc.js';
 import { prepare, periodStats, gainBetween } from '../lib/perf.js';
@@ -104,6 +104,7 @@ export default function Dashboard({ a, hist, histProgress, flt, cash, meta, onOp
   const [span, setSpan] = useState('day');
   const [range, setRange] = useState('ytd');
   const [mode, setMode] = useState('value');
+  const [detail, setDetail] = useState(false);
   const [hover, setHover] = useState(null); // índice del día bajo el cursor (en el histórico completo)
   const start = rangeStart(range);
   const none = a.priced.length === 0;
@@ -130,11 +131,12 @@ export default function Dashboard({ a, hist, histProgress, flt, cash, meta, onOp
   }, [a.ops, start, series]);
 
   const alloc = useMemo(() => {
-    if (by !== 'pos') return allocation(a.priced, ALLOC_KEY[by]);
+    // En el resumen, las cinco mayores y el resto junto: lo justo para verlo de un vistazo.
+    if (by !== 'pos') return allocation(a.priced, ALLOC_KEY[by], 5);
     // Por posición se agrupa por ISIN; si dos comparten nombre se distinguen con el final del ISIN.
     const names = a.priced.map((x) => x.p.name);
     const dup = new Set(names.filter((n, i) => names.indexOf(n) !== i));
-    return allocation(a.priced, (p) => p.isin, 8, (p) => (dup.has(p.name) ? `${p.name} ·${p.isin.slice(-4)}` : p.name));
+    return allocation(a.priced, (p) => p.isin, 5, (p) => (dup.has(p.name) ? `${p.name} ·${p.isin.slice(-4)}` : p.name));
   }, [a.priced, by]);
 
   const hasDay = a.day != null;
@@ -221,7 +223,7 @@ export default function Dashboard({ a, hist, histProgress, flt, cash, meta, onOp
   const hv = h && hover != null ? { v: h.v[hover], d: h.d[hover], gain: gainBetween(h, st.i0, hover) } : null;
 
   return (
-    <div className="dash">
+    <div className="dash dash-one">
       <div className="dash-main">
         <section className="hero">
           <span className="eyebrow">{hv ? dateLong(Date.parse(`${hv.d}T00:00:00Z`)) : 'Cartera'}</span>
@@ -240,6 +242,11 @@ export default function Dashboard({ a, hist, histProgress, flt, cash, meta, onOp
                   {st && <Chg n={st.gain} p={st.mwr}>{RANGE_NAME[range]}</Chg>}
                   {hasDay && <Chg n={a.day} p={a.dayPct}>{dayLabel}</Chg>}
                   {!st && <Chg n={a.pl} p={a.plp}>desde la compra</Chg>}
+                  {cash && flt === 'all' && (
+                    <button type="button" className="hero-x" onClick={() => go('efectivo')}>
+                      Con el efectivo, {eur(a.val + cash.balance)}
+                    </button>
+                  )}
                 </div>
               )}
               {a.missing > 0 && !none && (
@@ -283,6 +290,54 @@ export default function Dashboard({ a, hist, histProgress, flt, cash, meta, onOp
           </div>
         )}
 
+
+        <div className="dash-pair">
+        <Card title="Inversiones" sub={`${a.open.length} posiciones${nLive ? ` · ${nLive} en vivo` : ''}`}
+          right={hasDay && <Seg options={[['day', 'Día'], ['total', 'Total']]} value={span} onChange={setSpan} label="Variación mostrada" />}>
+          <ul className="rows">
+            {list.slice(0, 6).map((x) => {
+              const n = useDay ? x.dayPct : x.plp;
+              return (
+                <li key={x.p.isin}>
+                  <button type="button" onClick={() => onOpen(x.p.isin)}>
+                    <Asset p={x.p}>{qty(x.p.sh)} uds.</Asset>
+                    <span className="row-r">
+                      <Flash value={x.v} className="row-v">{x.has ? eur(x.v) : '—'}</Flash>
+                      {x.has ? <Pill n={n} /> : <small className="mu">sin precio</small>}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+          <button type="button" className="btn wide soft" onClick={() => go('posiciones')}>{list.length > 6 ? `Ver las ${list.length} posiciones` : 'Ver detalle de posiciones'}</button>
+        </Card>
+        <Card className="alloc" title="Distribución" sub={ALLOC_NOTE[by] ?? (none ? '' : `Las 5 mayores pesan el ${pct(top5)}`)}
+          right={(
+            <span className="alloc-c">
+              <select value={by} onChange={(ev) => setBy(ev.target.value)} aria-label="Agrupar distribución por">
+                {ALLOC.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+              </select>
+              <button type="button" className="icon-btn sm" aria-pressed={map} onClick={() => setMap((m) => !m)}
+                aria-label={map ? 'Ver como barras' : 'Ver como mapa de bloques'} title={map ? 'Ver como barras' : 'Ver como mapa de bloques'}>
+                <Icon name={map ? 'list' : 'grid'} size={16} />
+              </button>
+            </span>
+          )}>
+          {map && <p className="note alloc-n">El tamaño es el peso; el color, la rentabilidad desde la compra (de −30 % a +30 %).</p>}
+          {!alloc.length ? <Empty>Hacen falta precios para calcular los pesos.</Empty> : map
+            ? <Treemap items={(by === 'pos' ? allocation(a.priced, (p) => p.isin, 99, (p) => p.name) : alloc).map((r) => ({
+                key: r.key, label: r.label, v: r.v, plp: r.plp, right: `${pct(r.w)} · ${pctS(r.plp)}`, sub: eur(r.v), w2: pct(r.w),
+                onClick: by === 'pos' && !r.other ? () => onOpen(r.isin) : undefined,
+              }))} />
+            : <RankBars rows={alloc.map((r) => ({
+                key: r.key, label: r.label, w: r.w, other: r.other, right: pct(r.w),
+                sub: by === 'pos' || r.other ? eur(r.v) : `${eur(r.v)} · ${r.n} ${r.n === 1 ? 'valor' : 'valores'}`,
+                onClick: by === 'pos' && !r.other ? () => onOpen(r.isin) : undefined,
+              }))} />}
+        </Card>
+        </div>
+
         {st ? (
           <Card title={`Rentabilidad ${RANGE_NAME[range]}`}
             sub={`${start ? `Desde el ${date(start)}` : `Desde el ${date(h.d[0])}`} · ${per.B.length} compras, ${per.S.length} ventas, ${per.D.length} dividendos`}>
@@ -291,6 +346,11 @@ export default function Dashboard({ a, hist, histProgress, flt, cash, meta, onOp
               <div><span className="stat-l">Rentabilidad</span><b className={`stat-v ${sign(st.gain)}`}>{st.mwr != null ? pctS(st.mwr) : '—'}</b></div>
               <div><span className="stat-l">Caída máxima</span><b className="stat-v">{pct(st.mdd)}</b></div>
             </div>
+            <button type="button" className="fold" aria-expanded={detail} onClick={() => setDetail((d) => !d)}>
+              {detail ? 'Ocultar detalle' : 'Ver detalle: movimientos, índices y riesgo'}
+            </button>
+            {detail && (
+            <>
             <h3 className="kv-h">Movimientos</h3>
             <div className="kvs">
               <Line label="Valor al inicio" value={eur(st.v0)} />
@@ -354,6 +414,23 @@ export default function Dashboard({ a, hist, histProgress, flt, cash, meta, onOp
                 dividida entre la volatilidad.
               </p>
             </details>
+            {contrib.length > 1 && (
+              <>
+                <h3 className="kv-h">Qué ha aportado cada valor</h3>
+                <ul className="rows">
+                  {contrib.map((x) => (
+                    <li key={x.p.isin}>
+                      <button type="button" onClick={() => onOpen(x.p.isin)}>
+                        <Asset p={x.p}>{x.p.open ? 'En cartera' : 'Cerrada'} · latente + realizado + dividendos</Asset>
+                        <span className="row-r"><span className={`row-v ${sign(x.t)}`}>{eurS(x.t)}</span></span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+            </>
+            )}
           </Card>
         ) : (
           <Card title={start ? `Periodo: ${RANGE_NAME[range]}` : 'Resultado'}
@@ -371,87 +448,7 @@ export default function Dashboard({ a, hist, histProgress, flt, cash, meta, onOp
           </Card>
         )}
 
-        <Card className="alloc" title="Distribución" sub={ALLOC_NOTE[by] ?? (none ? '' : `Las 5 mayores pesan el ${pct(top5)}`)}
-          right={<Seg options={ALLOC} value={by} onChange={setBy} label="Agrupar distribución por" />}>
-          <div className="alloc-v">
-            <Seg options={[['bars', 'Barras'], ['map', 'Mapa']]} value={map ? 'map' : 'bars'} onChange={(v) => setMap(v === 'map')} label="Forma de ver la distribución" />
-            {map && <span className="mu">El tamaño es el peso; el color, la rentabilidad desde la compra (de −30 % a +30 %)</span>}
-          </div>
-          {!alloc.length ? <Empty>Hacen falta precios para calcular los pesos.</Empty> : map
-            ? <Treemap items={(by === 'pos' ? allocation(a.priced, (p) => p.isin, 99, (p) => p.name) : alloc).map((r) => ({
-                key: r.key, label: r.label, v: r.v, plp: r.plp, right: `${pct(r.w)} · ${pctS(r.plp)}`, sub: eur(r.v), w2: pct(r.w),
-                onClick: by === 'pos' && !r.other ? () => onOpen(r.isin) : undefined,
-              }))} />
-            : <RankBars rows={alloc.map((r) => ({
-                key: r.key, label: r.label, w: r.w, other: r.other, right: pct(r.w),
-                sub: by === 'pos' || r.other ? eur(r.v) : `${eur(r.v)} · ${r.n} ${r.n === 1 ? 'valor' : 'valores'}`,
-                onClick: by === 'pos' && !r.other ? () => onOpen(r.isin) : undefined,
-              }))} />}
-        </Card>
       </div>
-
-      <aside className="dash-side">
-        {cash && flt === 'all' && !none && (
-          <Card title="Patrimonio">
-            <div className="kvs">
-              <Line label="Cartera" value={eur(a.val)} />
-              <Line label="Efectivo en la cuenta" value={eur(cash.balance)} onClick={() => go('efectivo')} />
-              <Line label="Total" value={eur(a.val + cash.balance)} />
-            </div>
-          </Card>
-        )}
-        <Card title="Inversiones" sub={`${a.open.length} posiciones${nLive ? ` · ${nLive} en vivo` : ''}`}
-          right={hasDay && <Seg options={[['day', 'Día'], ['total', 'Total']]} value={span} onChange={setSpan} label="Variación mostrada" />}>
-          <ul className="rows">
-            {list.slice(0, 10).map((x) => {
-              const n = useDay ? x.dayPct : x.plp;
-              return (
-                <li key={x.p.isin}>
-                  <button type="button" onClick={() => onOpen(x.p.isin)}>
-                    <Asset p={x.p}>{qty(x.p.sh)} uds.</Asset>
-                    <span className="row-r">
-                      <Flash value={x.v} className="row-v">{x.has ? eur(x.v) : '—'}</Flash>
-                      {x.has ? <Pill n={n} /> : <small className="mu">sin precio</small>}
-                    </span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-          <button type="button" className="btn wide soft" onClick={() => go('posiciones')}>{list.length > 10 ? `Ver las ${list.length} posiciones` : 'Ver detalle de posiciones'}</button>
-        </Card>
-
-        {contrib.length > 1 && (
-          <Card title="Qué ha aportado cada valor" sub="Latente + realizado + dividendos, desde el inicio">
-            <ul className="rows">
-              {contrib.map((x) => (
-                <li key={x.p.isin}>
-                  <button type="button" onClick={() => onOpen(x.p.isin)}>
-                    <Asset p={x.p}>{x.p.open ? 'En cartera' : 'Cerrada'}</Asset>
-                    <span className="row-r"><span className={`row-v ${sign(x.t)}`}>{eurS(x.t)}</span></span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </Card>
-        )}
-
-        <Card title="Últimos movimientos" right={<button type="button" className="link" onClick={() => go('operaciones')}>Ver todos</button>}>
-          <ul className="rows">
-            {a.ops.slice(0, 6).map((x) => (
-              <li key={x.id + x.k}>
-                <button type="button" onClick={() => onOpen(x.p.isin)}>
-                  <Asset p={x.p}>{date(x.d)}</Asset>
-                  <span className="row-r">
-                    <span className="row-v">{x.k === 'B' ? `−${eur(x.net)}` : eurS(x.net)}</span>
-                    <Kind k={x.k} />
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </Card>
-      </aside>
     </div>
   );
 }
