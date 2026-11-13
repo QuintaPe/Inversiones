@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mergeFills, washBuys, savingsTax, simulateSale, rebalance, taxYears } from '../src/lib/calc.js';
+import { analyze, mergeFills, washBuys, savingsTax, simulateSale, rebalance, taxYears } from '../src/lib/calc.js';
 import { prepare, periodStats } from '../src/lib/perf.js';
 
 test('mergeFills junta ejecuciones del mismo día con una sola comisión', () => {
@@ -181,4 +181,20 @@ test('modo privado: las notas del servidor pierden sus cifras, no sus fechas', a
   } finally {
     f.setMasked(false);
   }
+});
+
+test('analyze reutiliza lo que depende de los eventos, pero no los precios', () => {
+  const evs = [{ k: 'B', d: '2025-01-02', sh: 10, net: 100, fee: 1, sa: 10, ca: 100 }];
+  const base = { isin: 'X1', name: 'Uno', grp: 'ac', open: true, sh: 10, cost: 100, evs, lots: [] };
+  const a1 = analyze([{ ...base, price: 12 }], 'all');
+  const a2 = analyze([{ ...base, price: 15 }], 'all');
+  assert.equal(a1.val, 120);
+  assert.equal(a2.val, 150, 'el precio nuevo cuenta');
+  assert.equal(a2.ops, a1.ops, 'mismos eventos: misma lista');
+  // Eventos nuevos (otra lista): se recalcula.
+  const evs2 = [...evs, { k: 'D', d: '2025-02-01', g: 5, tax: 1, net: 4, fee: 0 }];
+  const a3 = analyze([{ ...base, evs: evs2, price: 15 }], 'all');
+  assert.notEqual(a3.ops, a1.ops);
+  assert.equal(a3.dv.length, 1);
+  assert.equal(a3.divN, 4);
 });

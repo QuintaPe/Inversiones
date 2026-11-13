@@ -61,7 +61,7 @@ const Chg = ({ n, p, children }) => (
   </span>
 );
 
-export default function Dashboard({ a, hist, flt, cash, meta, onOpen, go }) {
+export default function Dashboard({ a, hist, histProgress, flt, cash, meta, onOpen, go }) {
   const [by, setBy] = useState('pos');
   const [map, setMap] = useState(false);
   const [span, setSpan] = useState('day');
@@ -193,7 +193,11 @@ export default function Dashboard({ a, hist, flt, cash, meta, onOpen, go }) {
           <div className="chart-f">
             {chart
               ? <Seg options={[['value', 'Valor'], ['perf', 'Rentabilidad']]} value={mode} onChange={setMode} label="Qué muestra la gráfica" />
-              : <span className="mu">{loading ? 'Reconstruyendo el histórico (la primera vez tarda medio minuto)…' : 'Capital invertido'}</span>}
+              : <span className="mu" role="status">{loading
+                ? histProgress?.total
+                  ? `Descargando cotizaciones históricas: ${histProgress.done} de ${histProgress.total}…`
+                  : 'Reconstruyendo el histórico…'
+                : 'Capital invertido'}</span>}
             <Seg options={RANGES} value={range} onChange={setRange} label="Periodo" />
           </div>
           {legend && (

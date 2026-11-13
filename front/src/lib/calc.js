@@ -45,21 +45,50 @@ export function mergeFills(evs) {
   return out;
 }
 
+// Lo que solo depende de los eventos de cada posición se calcula una vez por lista de
+// eventos: un cambio de precio llega con los mismos `evs` (misma referencia) y no lo repite.
+const statsCache = new WeakMap(); // evs → estadísticas de la posición
+function stats(p) {
+  let s = statsCache.get(p.evs);
+  if (s) return s;
+  const ops = mergeFills(p.evs); // órdenes, con las ejecuciones parciales ya juntas
+  const B = ops.filter((x) => x.k === 'B'), S = ops.filter((x) => x.k === 'S'), D = ops.filter((x) => x.k === 'D');
+  s = {
+    ops, B, S, D,
+    bought: sum(B, (x) => x.net), soldCost: sum(S, (x) => x.cs),
+    real: sum(S, (x) => x.re), div: sum(D, (x) => x.net), divG: sum(D, (x) => x.g), divT: sum(D, (x) => x.tax),
+    fees: sum(p.evs, (x) => x.fee || 0),
+    first: B[0]?.d, last: B.at(-1)?.d,
+  };
+  statsCache.set(p.evs, s);
+  return s;
+}
+
+/**
+ * Listas de eventos de toda la vista (todos, órdenes, dividendos, ventas, comisiones). Se
+ * reutilizan mientras las posiciones visibles tengan los mismos `evs`. Cada elemento lleva
+ * su posición en `p`: sirve para nombre, ISIN, acciones o coste, no para el precio (puede
+ * ser la posición de antes de la última cotización).
+ */
+const listsCache = new Map(); // filtro → { refs, value }
+function eventLists(vis, flt) {
+  const refs = vis.map((p) => p.evs);
+  const hit = listsCache.get(flt);
+  if (hit && hit.refs.length === refs.length && hit.refs.every((r, i) => r === refs[i])) return hit.value;
+  const evs = (f) => vis.flatMap((p) => p.evs.filter(f).map((x) => ({ ...x, p })));
+  // Los splits (k = 'X') solo se enseñan en la ficha del activo: no son operaciones con dinero.
+  const all = evs((x) => x.k !== 'X').sort((x, y) => y.d.localeCompare(x.d));
+  // Lo que se lista como operaciones: una fila por orden.
+  const ops = vis.flatMap((p) => stats(p).ops.filter((x) => x.k !== 'X').map((x) => ({ ...x, p }))).sort((x, y) => y.d.localeCompare(x.d));
+  const value = { all, ops, dv: all.filter((x) => x.k === 'D'), sl: all.filter((x) => x.k === 'S'), fees: all.filter((x) => x.k !== 'D' && x.fee) };
+  listsCache.set(flt, { refs, value });
+  return value;
+}
+
 export function analyze(positions, flt) {
   const vis = positions.filter((p) => flt === 'all' || p.grp === flt);
   const open = vis.filter((p) => p.open);
   const closed = vis.filter((p) => !p.open);
-  const stats = (p) => {
-    const ops = mergeFills(p.evs); // órdenes, con las ejecuciones parciales ya juntas
-    const B = ops.filter((x) => x.k === 'B'), S = ops.filter((x) => x.k === 'S'), D = ops.filter((x) => x.k === 'D');
-    return {
-      ops, B, S, D,
-      bought: sum(B, (x) => x.net), soldCost: sum(S, (x) => x.cs),
-      real: sum(S, (x) => x.re), div: sum(D, (x) => x.net), divG: sum(D, (x) => x.g), divT: sum(D, (x) => x.tax),
-      fees: sum(p.evs, (x) => x.fee || 0),
-      first: B[0]?.d, last: B.at(-1)?.d,
-    };
-  };
   const o = open.map((p) => {
     const has = p.price > 0;
     const v = has ? p.sh * p.price : null;
@@ -79,14 +108,7 @@ export function analyze(positions, flt) {
   for (const x of o) x.w = x.has && val ? (x.v / val) * 100 : null;
   const c = closed.map((p) => ({ p, ...stats(p) }));
 
-  const evs = (f) => vis.flatMap((p) => p.evs.filter(f).map((x) => ({ ...x, p })));
-  // Los splits (k = 'X') solo se enseñan en la ficha del activo: no son operaciones con dinero.
-  const all = evs((x) => x.k !== 'X').sort((x, y) => y.d.localeCompare(x.d));
-  // Lo que se lista como operaciones: una fila por orden.
-  const ops = vis.flatMap((p) => mergeFills(p.evs).filter((x) => x.k !== 'X').map((x) => ({ ...x, p }))).sort((x, y) => y.d.localeCompare(x.d));
-  const dv = all.filter((x) => x.k === 'D');
-  const sl = all.filter((x) => x.k === 'S');
-  const fees = all.filter((x) => x.k !== 'D' && x.fee);
+  const { all, ops, dv, sl, fees } = eventLists(vis, flt);
   const cost = sum(open, (p) => p.cost);
   const costPriced = sum(priced, (x) => x.p.cost);
   const pl = val - costPriced, real = sum(sl, (x) => x.re), divN = sum(dv, (x) => x.net);

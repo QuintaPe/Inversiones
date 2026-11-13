@@ -1,11 +1,11 @@
 // Service worker: la app abre sin conexión y enseña los últimos datos que cargó.
-const SHELL = 'shell-v1';
+const SHELL = 'shell-v2';
 const DATA = 'data-v1';
 // Solo estas lecturas se guardan para verlas sin conexión.
-const OFFLINE_API = ['/api/portfolio', '/api/history', '/api/cash', '/api/me', '/api/config', '/api/dividends/forecast'];
+const OFFLINE_API = ['/api/portfolio', '/api/events', '/api/history', '/api/cash', '/api/me', '/api/config', '/api/dividends/forecast'];
 
 self.addEventListener('install', (ev) => {
-  ev.waitUntil(caches.open(SHELL).then((c) => c.addAll(['/'])).then(() => self.skipWaiting()));
+  ev.waitUntil(caches.open(SHELL).then((c) => c.addAll(['/'])).then(() => precache()).then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', (ev) => {
   ev.waitUntil(
@@ -13,21 +13,34 @@ self.addEventListener('activate', (ev) => {
       .then(() => self.clients.claim()),
   );
 });
-// Estáticos de compilaciones anteriores: sobran en cuanto llega una página nueva que ya no los usa.
-async function prune(html) {
+// Todos los JS y CSS de la compilación actual (también las secciones que se cargan bajo
+// demanda): se guardan de antemano para abrir cualquiera sin conexión, y lo que ya no está
+// en la lista es de una compilación anterior y sobra.
+async function precache() {
+  let files;
+  try {
+    const res = await fetch('/asset-manifest.json', { cache: 'no-store' });
+    if (!res.ok) return;
+    ({ files } = await res.json());
+  } catch {
+    return; // sin lista (desarrollo, sin conexión): se guardan según se usan
+  }
   const c = await caches.open(SHELL);
+  const have = new Set((await c.keys()).map((r) => new URL(r.url).pathname));
+  await Promise.all(files.filter((f) => !have.has(f)).map((f) => c.add(f).catch(() => {})));
+  const keep = new Set(files);
   for (const req of await c.keys()) {
     const p = new URL(req.url).pathname;
-    // Solo JS y CSS: las fuentes las referencia el CSS, no la página, y casi nunca cambian.
-    if (p.startsWith('/assets/') && /\.(js|css)$/.test(p) && !html.includes(p)) await c.delete(req);
+    // Solo JS y CSS: las fuentes las referencia el CSS y casi nunca cambian.
+    if (p.startsWith('/assets/') && /\.(js|css)$/.test(p) && !keep.has(p)) await c.delete(req);
   }
 }
-// Guarda la página; si ha cambiado (despliegue nuevo), limpia los estáticos que ya no referencia.
+// Guarda la página; si ha cambiado (despliegue nuevo), guarda los estáticos nuevos y quita los viejos.
 async function keepPage(res) {
   const c = await caches.open(SHELL);
   const [html, old] = await Promise.all([res.clone().text(), c.match('/').then((r) => r?.text())]);
   await c.put('/', res);
-  if (old !== undefined && old !== html) await prune(html);
+  if (old !== undefined && old !== html) await precache();
 }
 
 // Los datos guardados son de un usuario: si la sesión ya no es la suya, se borran.

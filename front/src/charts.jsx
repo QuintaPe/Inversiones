@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useWidth } from './hooks.js';
 import { compact } from './lib/format.js';
+import { decimate } from './lib/decimate.js';
 
 
 /** Marcas "redondas" para el eje Y que cubren [min, max]. */
@@ -42,8 +43,9 @@ export function StepArea({ points, height = 220, tip, label, bare = false }) {
     const yMax = yt.at(-1);
     const X = (t) => m.l + ((t - t0) / (t1 - t0 || 1)) * iw;
     const Y = (v) => m.t + ih - ((v - lo) / (yMax - lo || 1)) * ih;
+    const idx = decimate(points.length, (i) => points[i].v, (i) => X(points[i].t));
     let d = `M${X(points[0].t)},${Y(points[0].v)}`;
-    for (let i = 1; i < points.length; i++) d += `H${X(points[i].t)}V${Y(points[i].v)}`;
+    for (const i of idx) if (i > 0) d += `H${X(points[i].t).toFixed(1)}V${Y(points[i].v).toFixed(1)}`;
     // Marcas del eje X: inicio de mes, espaciadas para que quepan.
     const xt = [];
     const start = new Date(t0), end = new Date(t1);
@@ -182,8 +184,8 @@ export function Lines({ x, series, height = 280, tip, label, onHover, base, mark
   let body = null;
   if (w > 0 && x.length > 1) {
     const ih = height - m.t - m.b;
-    const all = series.flatMap((s) => s.values).filter((v) => v != null);
-    let lo = Math.min(...all, base ?? Infinity), top = Math.max(...all, base ?? -Infinity);
+    let lo = base ?? Infinity, top = base ?? -Infinity;
+    for (const s of series) for (const v of s.values) if (v != null) { if (v < lo) lo = v; if (v > top) top = v; }
     const pad = (top - lo) * 0.08 || 1;
     lo -= pad * 0.4; top += pad;
     const t0 = x[0], t1 = x.at(-1);
@@ -191,12 +193,13 @@ export function Lines({ x, series, height = 280, tip, label, onHover, base, mark
     const Y = (v) => m.t + ih - ((v - lo) / (top - lo)) * ih;
     const path = (s) => {
       let d = '', pen = false;
-      s.values.forEach((v, i) => {
-        if (v == null) { pen = false; return; }
+      for (const i of decimate(s.values.length, (k) => s.values[k], (k) => X(x[k]))) {
+        const v = s.values[i];
+        if (v == null) { pen = false; continue; }
         const px = X(x[i]).toFixed(1), py = Y(v).toFixed(1);
         d += pen ? (s.step ? `H${px}V${py}` : `L${px},${py}`) : `M${px},${py}`;
         pen = true;
-      });
+      }
       return d;
     };
     const months = Math.round((t1 - t0) / (30.44 * 86400000));

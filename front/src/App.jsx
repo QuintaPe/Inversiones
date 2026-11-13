@@ -1,22 +1,40 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as api from './api.js';
 import { analyze, taxYears, GROUPS } from './lib/calc.js';
 import { time, eur, setMasked } from './lib/format.js';
 import { useHashRoute, useStored } from './hooks.js';
 import { Icon, Menu, Seg, Skeleton, Toasts, UploadButton } from './components/ui.jsx';
-import Login from './components/Login.jsx';
 import ErrorBoundary from './components/ErrorBoundary.jsx';
-import Palette from './components/Palette.jsx';
 import { Confirm, ImportPreview, Locked } from './components/Dialogs.jsx';
 import { pushSupported, pushEnabled, enablePush, disablePush } from './lib/push.js';
-import Asset from './views/Asset.jsx';
-import Cash from './views/Cash.jsx';
-import OpForm from './components/OpForm.jsx';
-import Dashboard from './views/Dashboard.jsx';
-import Positions from './views/Positions.jsx';
-import Ledger from './views/Ledger.jsx';
-import Dividends from './views/Dividends.jsx';
-import Tax from './views/Tax.jsx';
+
+// Cada sección se descarga al abrirla (y las demás en cuanto la app queda libre).
+const VIEWS = {
+  Dashboard: () => import('./views/Dashboard.jsx'),
+  Positions: () => import('./views/Positions.jsx'),
+  Ledger: () => import('./views/Ledger.jsx'),
+  Dividends: () => import('./views/Dividends.jsx'),
+  Tax: () => import('./views/Tax.jsx'),
+  Cash: () => import('./views/Cash.jsx'),
+  Asset: () => import('./views/Asset.jsx'),
+  OpForm: () => import('./components/OpForm.jsx'),
+  Palette: () => import('./components/Palette.jsx'),
+};
+const Dashboard = lazy(VIEWS.Dashboard);
+const Positions = lazy(VIEWS.Positions);
+const Ledger = lazy(VIEWS.Ledger);
+const Dividends = lazy(VIEWS.Dividends);
+const Tax = lazy(VIEWS.Tax);
+const Cash = lazy(VIEWS.Cash);
+const Asset = lazy(VIEWS.Asset);
+const OpForm = lazy(VIEWS.OpForm);
+const Palette = lazy(VIEWS.Palette);
+const Login = lazy(() => import('./components/Login.jsx'));
+const prefetchViews = () => {
+  const run = () => Object.values(VIEWS).forEach((load) => load().catch(() => {}));
+  if ('requestIdleCallback' in window) window.requestIdleCallback(run, { timeout: 4000 });
+  else setTimeout(run, 1500);
+};
 
 const NAV = [
   ['resumen', 'Resumen'],
@@ -70,6 +88,7 @@ export default function App() {
   const fail = useCallback((err, prefix = '') => {
     if (err instanceof api.Unauthorized) {
       navigator.serviceWorker?.controller?.postMessage('clear-data'); // la copia sin conexión era de esa sesión
+      api.resetEvents();
       setAuth((a) => ({ ...a, user: null }));
       setData(null);
       setLoginErr('Tu sesión ha caducado. Vuelve a iniciar sesión.');
@@ -87,24 +106,35 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
     api.getPortfolio().then(setData).catch(fail);
+    prefetchViews();
   }, [user, fail]);
 
   // Histórico diario: se recalcula cuando cambian las operaciones o un precio manual.
   const histKey = data ? `${data.meta.rows}|${data.positions.filter((p) => p.priceSource === 'manual').map((p) => p.isin + p.price).join()}` : null;
   const [histTick, setHistTick] = useState(0);
+  const [histProgress, setHistProgress] = useState(null); // { done, total } mientras se reconstruye
   const reloadHistory = useCallback(() => setHistTick((n) => n + 1), []);
   useEffect(() => {
     if (!histKey || !data.meta.history || !data.meta.rows) { setHist(histKey ? null : undefined); return undefined; }
-    let alive = true;
-    api.getHistory()
+    let alive = true, timer = null;
+    // Si el servidor aún la está reconstruyendo, enseña la última guardada (si hay) y se vuelve a preguntar.
+    const ask = () => api.getHistory()
       .then((r) => {
         if (!alive) return;
+        if (r.pending) {
+          if (r.history) setHist(r.history);
+          setHistProgress(r.progress ?? { done: 0, total: 0 });
+          timer = setTimeout(ask, 1500);
+          return;
+        }
+        setHistProgress(null);
         setHist(r.history);
         // El histórico acaba de descubrir un split: las posiciones se piden otra vez, ya ajustadas.
         if (r.history && (r.history.splits ?? 0) !== (data.meta.splits ?? 0)) api.getPortfolio().then((d) => alive && setData(d)).catch(() => {});
       })
-      .catch((err) => { if (alive) { setHist(null); if (err instanceof api.Unauthorized) fail(err); } });
-    return () => { alive = false; };
+      .catch((err) => { if (alive) { setHist(null); setHistProgress(null); if (err instanceof api.Unauthorized) fail(err); } });
+    ask();
+    return () => { alive = false; clearTimeout(timer); };
   }, [histKey, histTick]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const login = async (credential) => {
@@ -136,6 +166,7 @@ export default function App() {
     await disablePush().catch(() => {}); // los avisos de esta cuenta no deben llegar a quien use después el dispositivo
     setPushOn(false);
     await api.logout().catch(() => {});
+    api.resetEvents();
     navigator.serviceWorker?.controller?.postMessage('clear-data');
     window.google?.accounts.id.disableAutoSelect();
     setAuth((a) => ({ ...a, user: null }));
@@ -172,6 +203,14 @@ export default function App() {
   const [live, setLive] = useState({ at: null, failed: [], busy: false, error: null });
   const liveBusy = useRef(false);
   const liveOn = !!data?.meta?.liveQuotes && (data?.positions ?? []).some((p) => p.open);
+  // Alertas de precio que acaban de saltar: aviso en la app y, si hay permiso, del sistema.
+  const announce = useCallback((fired = []) => {
+    for (const f of fired) {
+      const text = `${f.name} ha ${f.dir === 'above' ? 'subido hasta' : 'bajado hasta'} ${eur(f.current)} (alerta en ${eur(f.price)}).`;
+      notify('ok', text);
+      if (window.Notification?.permission === 'granted') new Notification('Alerta de precio', { body: hidden ? `Ha saltado una alerta de ${f.name}.` : text, icon: '/icon-192.png' });
+    }
+  }, [notify, hidden]);
   const refreshQuotes = useCallback(async () => {
     if (liveBusy.current) return;
     liveBusy.current = true;
@@ -180,29 +219,54 @@ export default function App() {
       const res = await api.refreshQuotes();
       setData({ positions: res.positions, meta: res.meta, alerts: res.alerts, targets: res.targets });
       setLive({ at: res.refresh.at, failed: res.refresh.failed, busy: false, error: null });
-      for (const f of res.fired ?? []) {
-        const text = `${f.name} ha ${f.dir === 'above' ? 'subido hasta' : 'bajado hasta'} ${eur(f.current)} (alerta en ${eur(f.price)}).`;
-        notify('ok', text);
-        if (window.Notification?.permission === 'granted') new Notification('Alerta de precio', { body: hidden ? `Ha saltado una alerta de ${f.name}.` : text, icon: '/icon-192.png' });
-      }
+      announce(res.fired);
     } catch (err) {
       if (err instanceof api.Unauthorized) fail(err);
       setLive((l) => ({ ...l, busy: false, error: err.message }));
     } finally {
       liveBusy.current = false;
     }
-  }, [fail, hidden]);
+  }, [fail, announce]);
 
-  // Al entrar y cada minuto, solo con la pestaña visible.
+  // Al entrar (y al volver a la pestaña) se cotiza; después el servidor envía los precios
+  // por su canal mientras la pestaña está visible. Sin canal, se pide cada minuto.
   const rowsLoaded = data?.meta?.rows ?? 0;
+  const streamOn = !!data?.meta?.stream && typeof window.EventSource === 'function';
+  const dataV = useRef(null);
+  dataV.current = data?.meta?.v;
   useEffect(() => {
     if (!liveOn) return undefined;
-    const tick = () => document.visibilityState === 'visible' && refreshQuotes();
-    tick();
-    const id = setInterval(tick, 60_000);
-    document.addEventListener('visibilitychange', tick);
-    return () => { clearInterval(id); document.removeEventListener('visibilitychange', tick); };
-  }, [liveOn, rowsLoaded, refreshQuotes]);
+    let es = null, poll = null;
+    const open = () => {
+      if (!streamOn) { poll ??= setInterval(refreshQuotes, 60_000); return; }
+      es = new EventSource('/api/stream');
+      es.addEventListener('quotes', (ev) => {
+        const q = JSON.parse(ev.data);
+        setData((d) => d && ({
+          ...d,
+          alerts: q.alerts ?? d.alerts,
+          positions: d.positions.map((p) => (q.prices[p.isin] && p.priceSource !== 'manual'
+            ? { ...p, price: q.prices[p.isin].price, priceAt: q.prices[p.isin].at, priceSource: 'live', priceInfo: q.prices[p.isin].info }
+            : p)),
+        }));
+        setLive({ at: q.at, failed: q.failed, busy: false, error: null });
+        announce(q.fired);
+      });
+      // Otra pestaña u otro dispositivo ha cambiado las operaciones.
+      es.addEventListener('changed', (ev) => {
+        if (JSON.parse(ev.data).v !== dataV.current) api.getPortfolio().then(setData).catch(fail);
+      });
+      // El navegador reintenta solo; si el servidor cierra del todo, se vuelve a pedir cada minuto.
+      es.onerror = () => { if (es.readyState === EventSource.CLOSED) { es = null; poll ??= setInterval(refreshQuotes, 60_000); } };
+    };
+    const close = () => { es?.close(); es = null; clearInterval(poll); poll = null; };
+    const onVis = () => {
+      if (document.visibilityState === 'visible') { refreshQuotes(); if (!es && !poll) open(); } else close();
+    };
+    if (document.visibilityState === 'visible') { refreshQuotes(); open(); }
+    document.addEventListener('visibilitychange', onVis);
+    return () => { close(); document.removeEventListener('visibilitychange', onVis); };
+  }, [liveOn, rowsLoaded, streamOn, refreshQuotes, announce, fail]);
 
   const onPrice = useCallback(async (isin, price) => {
     try {
@@ -280,12 +344,18 @@ export default function App() {
   const back = useCallback(() => (window.history.length > 1 ? window.history.back() : go('posiciones')), [go]);
 
   if (!auth) return <div className="center"><span className="spinner" aria-label="Cargando" /></div>;
-  if (!user) return <Login clientId={auth.clientId} onCredential={login} error={loginErr} />;
+  if (!user) {
+    return (
+      <Suspense fallback={<div className="center"><span className="spinner" aria-label="Cargando" /></div>}>
+        <Login clientId={auth.clientId} onCredential={login} error={loginErr} />
+      </Suspense>
+    );
+  }
 
   const empty = data && !positions.length;
   const unknownRows = Object.values(data?.meta?.unknown ?? {}).reduce((t, n) => t + n, 0);
   const groups = GROUPS.filter(([g]) => g === 'all' || positions.some((p) => p.grp === g));
-  const view = { a, hist, flt, meta: data?.meta, onOpen: openAsset, onPrice, go, cash: cash?.cash, income: cash?.income, onAddOp: setOpForm, onRestoreOp: restoreOp, targets: data?.targets ?? {}, alerts: data?.alerts ?? [], patch, fail };
+  const view = { a, hist, histProgress, flt, meta: data?.meta, onOpen: openAsset, onPrice, go, cash: cash?.cash, income: cash?.income, onAddOp: setOpForm, onRestoreOp: restoreOp, targets: data?.targets ?? {}, alerts: data?.alerts ?? [], patch, fail };
   const section = route === 'activo' ? 'posiciones' : route;
   const nav = (cls, max = NAV.length) => (
     <nav className={cls} aria-label="Secciones">
@@ -393,6 +463,7 @@ export default function App() {
           </div>
         ) : (
           <ErrorBoundary resetKey={path}>
+          <Suspense fallback={<Skeleton />}>
           <div className="view" key={`${path}|${hidden ? 1 : 0}`}>
             {route === 'activo' && (assetRow
               ? <Asset x={assetRow} totalVal={whole.val} yearBase={yearBase} onBack={back} onPrice={onPrice} liveQuotes={liveOn} onHistoryChange={reloadHistory}
@@ -405,17 +476,20 @@ export default function App() {
             {route === 'fiscalidad' && <Tax {...view} />}
             {route === 'efectivo' && <Cash cash={cash?.cash} labels={cash?.labels ?? {}} portfolioValue={whole.val} />}
           </div>
+          </Suspense>
           </ErrorBoundary>
         )}
       </main>
 
       {nav('tabs', 5)}
       {opForm && hidden && <Locked title="Importes ocultos" onClose={() => setOpForm(null)} />}
-      {opForm && !hidden && <OpForm initial={opForm} positions={positions} onSubmit={saveOp} onClose={() => setOpForm(null)} />}
-      {palette && data && (
-        <Palette sections={NAV} positions={positions} onClose={() => setPalette(false)}
-          onGo={(to) => { setPalette(false); go(to); }} />
-      )}
+      <Suspense fallback={null}>
+        {opForm && !hidden && <OpForm initial={opForm} positions={positions} onSubmit={saveOp} onClose={() => setOpForm(null)} />}
+        {palette && data && (
+          <Palette sections={NAV} positions={positions} onClose={() => setPalette(false)}
+            onGo={(to) => { setPalette(false); go(to); }} />
+        )}
+      </Suspense>
       {imp && <ImportPreview preview={imp.preview} hasData={!empty} onImport={runImport} onClose={() => setImp(null)} />}
       {question && <Confirm {...question} onAnswer={answer} />}
       <Toasts items={toasts} onClose={closeToast} />
