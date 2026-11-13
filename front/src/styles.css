@@ -240,6 +240,26 @@ button.kv:hover svg{transform:translateX(3px);color:var(--tx)}
 .icon-btn.sm{width:34px;height:34px}
 .alloc-n{margin:0 0 var(--sp-3)}
 
+/* efectivo: cabecera de sección, barras de flujo y avisos */
+.sect-h{display:flex;justify-content:space-between;align-items:center;gap:var(--sp-3);flex-wrap:wrap;margin-top:var(--sp-2)}
+.sect-h h2{font-size:var(--fs-xl);font-weight:700;letter-spacing:-.03em}
+.callout{display:flex;gap:var(--sp-2);align-items:flex-start;margin-top:var(--sp-3);max-width:640px;background:color-mix(in srgb,var(--warn) 11%,transparent);color:var(--tx-2);border-radius:var(--r-sm);padding:var(--sp-3) 14px;font-size:var(--fs-sm)}
+.callout svg{flex:none;color:var(--warn);margin-top:2px}
+.flow{display:flex;flex-direction:column}
+.flow-r{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr) auto;align-items:center;gap:var(--sp-3);padding:10px 0;border-bottom:1px solid var(--line)}
+.flow-r:last-child{border-bottom:0}
+.flow-r.total{border-top:1px solid var(--line-2);margin-top:2px}
+.flow-r.total .flow-l{color:var(--tx);font-weight:650}
+.flow-l{color:var(--tx-2);font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.flow-t{position:relative;height:10px;border-radius:5px;background:linear-gradient(90deg,transparent calc(50% - .5px),var(--line-2) calc(50% - .5px),var(--line-2) calc(50% + .5px),transparent calc(50% + .5px))}
+.flow-t i{position:absolute;top:0;height:100%;border-radius:5px;min-width:3px}
+.flow-t i.in{background:var(--gain)}
+.flow-t i.out{background:color-mix(in srgb,var(--tx-2) 55%,transparent)}
+.flow-r.total .flow-t i{background:var(--chart)}
+.flow-r b{font-weight:650;font-variant-numeric:tabular-nums;white-space:nowrap;text-align:right;min-width:96px}
+.pad-x{padding:0 24px 16px}
+@media(max-width:640px){.flow-r{grid-template-columns:minmax(0,1fr) 64px auto}.flow-l{white-space:normal}.flow-r b{min-width:0}.pad-x{padding:0 18px 14px}}
+
 /* indicadores bajo la gráfica */
 .kpis-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:var(--sp-3)}
 .kpi{display:flex;flex-direction:column;gap:2px;min-width:0;text-align:left;background:var(--surface);border:0;border-radius:18px;padding:var(--sp-4) var(--sp-4) var(--sp-3);color:var(--tx);transition:background var(--dur-1),transform var(--dur-1)}
