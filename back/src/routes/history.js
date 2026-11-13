@@ -7,7 +7,7 @@ const HISTORY_TTL = 10 * 60_000;
 const HISTORY_FORMAT = 2;
 
 /** Devuelve { forget(userId) } para soltar lo que se guarda en memoria de una cuenta borrada. */
-export default function historyRoutes(api, { db, history, pf, historyWaitMs }) {
+export default function historyRoutes(api, { db, history, pf, historyWaitMs, log = console }) {
   const { built } = pf;
   const historyCache = new Map(); // usuario → { key, at, value }
   const historyJobs = new Map(); // usuario → { key, progress, promise }: reconstrucción en marcha
@@ -45,7 +45,7 @@ export default function historyRoutes(api, { db, history, pf, historyWaitMs }) {
         const entry = { key, at: Date.now(), value };
         historyCache.set(userId, entry);
         if (historyCache.size > 500) historyCache.delete(historyCache.keys().next().value);
-        await db.saveHistoryCache(userId, key, value).catch((err) => console.error('Histórico:', err.message));
+        await db.saveHistoryCache(userId, key, value).catch((err) => log.error('Histórico:', err.message));
         return entry;
       }).finally(() => { if (historyJobs.get(userId)?.promise === promise) historyJobs.delete(userId); });
       promise.catch(() => {}); // si nadie la espera, que no quede como rechazo sin tratar

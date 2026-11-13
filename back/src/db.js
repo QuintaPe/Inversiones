@@ -255,6 +255,8 @@ function makeRepo(client, url, { cache = true } = {}) {
     url,
     cached: cache,
     close: () => client.close(),
+    /** Comprueba que la base de datos responde. */
+    ping: () => client.execute('SELECT 1'),
     /** Número que cambia cada vez que cambian las operaciones del usuario. */
     rowsVersion: (userId) => rowsVer.get(userId) ?? 0,
     /** Número que cambia cada vez que se descubren splits nuevos. */
