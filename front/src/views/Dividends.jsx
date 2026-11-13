@@ -61,6 +61,7 @@ export default function Dividends({ a, onOpen }) {
     return forecast.cal.map((m) => ({ ...m, who: [...(payers[m.key]?.values() ?? [])] }));
   }, [forecast, fc]);
   const [all, setAll] = useState(false);
+  const [allRows, setAllRows] = useState(false);
 
   const calCard = calendar && (
     <Card title="Calendario de los próximos 12 meses" sub="Si cada empresa repite los pagos por acción de su último año, con lo que tienes hoy">
@@ -133,28 +134,32 @@ export default function Dividends({ a, onOpen }) {
 
       {calCard}
 
-      <div className="cols">
-        <Card title="Por activo" sub="Neto cobrado desde el inicio">
-          <ul className="rank-l">
-            {rows.map((r) => (
-              <li key={r.p.isin}>
-                <button type="button" onClick={() => onOpen(r.p.isin)}>
-                  <Asset p={r.p} size="sm">{r.n} {r.n === 1 ? 'cobro' : 'cobros'} · último {date(r.last)}{r.g ? ` · ret. ${pct((r.tax / r.g) * 100)}` : ''}{!r.p.open && ' · cerrada'}</Asset>
-                  <span className="rank-l-b" aria-hidden="true"><i style={{ width: `${(r.net / top) * 100}%` }} /></span>
-                  <span className="row-r">
-                    <span className="row-v">{eur(r.net)}</span>
-                    {r.yoc != null && <small className="mu">{pct(r.yoc)} s/ coste</small>}
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </Card>
-        <Card title="Cobrado mes a mes" sub="Dividendos netos ya cobrados">
-          <Columns data={months.map((m) => ({ ...m, label: month(m.key) }))} height={240} label="Dividendos netos por mes"
-            tip={(d) => <><small>{d.label}</small><b>{eur(d.v)}</b><small>{d.n} {d.n === 1 ? 'cobro' : 'cobros'}</small></>} />
-        </Card>
-      </div>
+      <Card title="Cobrado mes a mes" sub="Dividendos netos ya cobrados">
+        <Columns data={months.map((m) => ({ ...m, label: month(m.key) }))} height={240} label="Dividendos netos por mes"
+          tip={(d) => <><small>{d.label}</small><b>{eur(d.v)}</b><small>{d.n} {d.n === 1 ? 'cobro' : 'cobros'}</small></>} />
+      </Card>
+
+      <Card title="Por activo" sub={`Neto cobrado desde el inicio · ${rows.length} ${rows.length === 1 ? 'valor' : 'valores'}`}>
+        <ul className="rank-l two">
+          {(allRows ? rows : rows.slice(0, 10)).map((r) => (
+            <li key={r.p.isin}>
+              <button type="button" onClick={() => onOpen(r.p.isin)}>
+                <Asset p={r.p} size="sm">{r.n} {r.n === 1 ? 'cobro' : 'cobros'} · último {date(r.last)}{r.g ? ` · ret. ${pct((r.tax / r.g) * 100)}` : ''}{!r.p.open && ' · cerrada'}</Asset>
+                <span className="rank-l-b" aria-hidden="true"><i style={{ width: `${(r.net / top) * 100}%` }} /></span>
+                <span className="row-r">
+                  <span className="row-v">{eur(r.net)}</span>
+                  {r.yoc != null && <small className="mu">{pct(r.yoc)} s/ coste</small>}
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+        {rows.length > 10 && (
+          <button type="button" className="fold" aria-expanded={allRows} onClick={() => setAllRows((v) => !v)}>
+            {allRows ? 'Ver solo los 10 primeros' : `Ver los ${rows.length}`}
+          </button>
+        )}
+      </Card>
 
       <section className="card">
         <header className="card-h"><div><h2>Todos los cobros</h2><p>{a.dv.length} cobros · bruto {eur(g)} − retención {eur(tax)}</p></div></header>

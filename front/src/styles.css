@@ -383,6 +383,9 @@ button.kv:hover svg{transform:translateX(3px);color:var(--tx)}
 .rank-l{list-style:none;padding:0;margin:0 -10px}
 .rank-l button{display:grid;grid-template-columns:minmax(0,1fr) 72px auto;align-items:center;gap:var(--sp-3);width:100%;background:none;border:0;border-radius:16px;padding:10px;text-align:left;transition:background var(--dur-1)}
 .rank-l button:hover{background:var(--surface-2)}
+.rank-l.two{columns:2;column-gap:var(--sp-8)}
+.rank-l.two li{break-inside:avoid}
+@media(max-width:960px){.rank-l.two{columns:1}}
 .rank-l-b{height:6px;border-radius:3px;background:var(--surface-2);overflow:hidden}
 .rank-l-b i{display:block;height:100%;border-radius:3px;background:var(--chart)}
 
