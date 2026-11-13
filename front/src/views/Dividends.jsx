@@ -63,7 +63,23 @@ export default function Dividends({ a, onOpen }) {
   const [all, setAll] = useState(false);
   const [allRows, setAllRows] = useState(false);
 
-  const calCard = calendar && (
+  // Mientras llega la previsión se reserva su sitio, para que la página no salte al aparecer.
+  const loadingFc = fc === undefined;
+  const calSkeleton = loadingFc && (
+    <section className="card" aria-busy="true" aria-label="Cargando la previsión de dividendos">
+      <span className="sk sk-t" style={{ width: 260, height: 20 }} />
+      <span className="sk sk-t" style={{ width: 380, height: 13, marginTop: 8 }} />
+      <div className="divcal sk-cal">{Array.from({ length: 12 }, (_, i) => <span key={i} className="sk" />)}</div>
+      <span className="sk sk-t" style={{ width: 120, height: 12, margin: '26px 0 10px' }} />
+      <ul className="sk-rows">
+        {Array.from({ length: 5 }, (_, i) => (
+          <li key={i}><span className="sk sk-av" /><span><span className="sk sk-t" style={{ width: 140, height: 14 }} /><span className="sk sk-t" style={{ width: 220, height: 11, marginTop: 6 }} /></span><span className="sk sk-t" style={{ width: 70, height: 14, marginLeft: 'auto' }} /></li>
+        ))}
+      </ul>
+      <span className="sk sk-t" style={{ width: '70%', height: 12, marginTop: 14 }} />
+    </section>
+  );
+  const calCard = calendar ? (
     <Card title="Calendario de los próximos 12 meses" sub="Si cada empresa repite los pagos por acción de su último año, con lo que tienes hoy">
       <ol className="divcal">
         {calendar.map((m, i) => (
@@ -97,9 +113,9 @@ export default function Dividends({ a, onOpen }) {
         los importes pueden cambiar. Los importes son brutos.
       </p>
     </Card>
-  );
+  ) : null;
 
-  if (!a.dv.length) return <div className="stack">{calCard ?? <div className="card"><Empty>No hay dividendos cobrados en esta vista.</Empty></div>}</div>;
+  if (!a.dv.length) return <div className="stack">{calCard ?? calSkeleton ?? <div className="card"><Empty>No hay dividendos cobrados en esta vista.</Empty></div>}</div>;
 
   const g = sum(a.dv, (x) => x.g), tax = sum(a.dv, (x) => x.tax);
   const cut = new Date(); cut.setFullYear(cut.getFullYear() - 1);
@@ -112,6 +128,8 @@ export default function Dividends({ a, onOpen }) {
   const kpis = [
     { key: 'all', label: 'Neto cobrado', value: eur(a.divN), sub: `${a.dv.length} cobros desde el inicio`, spark: months.length > 1 && <Spark bars={months.slice(-24).map((m) => m.v)} /> },
     { key: 'tax', label: 'Retenciones', value: eur(tax), sub: g ? `${pct((tax / g) * 100)} del bruto (${eur(g)})` : '' },
+    loadingFc && { key: 'fc', label: 'Previsión 12 meses', value: <span className="sk sk-t" style={{ width: 110, height: 22 }} />, sub: 'calculando…',
+      spark: <span className="sk sk-t" style={{ height: 26, marginTop: 'auto', width: '100%' }} /> },
     forecast && { key: 'fc', label: 'Previsión 12 meses', value: eur(forecast.net), sub: `neto · ${eur(forecast.gross)} bruto`, tone: 'gain', spark: <Spark bars={forecast.cal.map((m) => m.v)} /> },
     { key: 'yoc', label: 'Rentab. sobre coste', value: a.cost ? pct((net12open / a.cost) * 100) : '—',
       sub: forecast?.valued ? `por dividendo hoy: ${pct((forecast.gross / forecast.valued) * 100)}` : 'neto 12 meses ÷ invertido' },
@@ -125,6 +143,7 @@ export default function Dividends({ a, onOpen }) {
         <div className="hero-d">
           <span className="chg"><em>{last12.length} cobros · unos {eur(net12 / 12)} al mes</em></span>
           {forecast && <span className="chg gain">▲ {eur(forecast.net)} <em>previstos en los próximos 12 meses</em></span>}
+          {loadingFc && <span className="chg"><span className="sk sk-t" style={{ width: 280, height: '1em', display: 'inline-block', verticalAlign: 'middle' }} aria-hidden="true" /></span>}
         </div>
       </section>
 
@@ -132,7 +151,7 @@ export default function Dividends({ a, onOpen }) {
         {kpis.map(({ key, ...k }) => <Kpi key={key} {...k} />)}
       </div>
 
-      {calCard}
+      {calCard ?? calSkeleton}
 
       <Card title="Cobrado mes a mes" sub="Dividendos netos ya cobrados">
         <Columns data={months.map((m) => ({ ...m, label: month(m.key) }))} height={240} label="Dividendos netos por mes"

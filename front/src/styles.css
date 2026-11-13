@@ -409,6 +409,14 @@ button.kv:hover svg{transform:translateX(3px);color:var(--tx)}
 }
 
 /* indicadores bajo la gráfica */
+/* esqueletos de texto y del calendario de dividendos */
+.sk-t{display:block;border-radius:6px;max-width:100%}
+.kpi-v .sk-t{margin:3px 0}
+.sk-cal{margin-top:var(--sp-5)}
+.sk-cal .sk{display:block;height:93px;border-radius:var(--r-sm)}
+.sk-rows{list-style:none;padding:0;margin:0}
+.sk-rows li{display:flex;align-items:center;gap:var(--sp-3);height:63px}
+.sk-av{width:34px;height:34px;border-radius:50%;flex:none}
 .kpis-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:var(--sp-3)}
 .kpi{display:flex;flex-direction:column;gap:2px;min-width:0;text-align:left;background:var(--surface);border:0;border-radius:18px;padding:var(--sp-4) var(--sp-4) var(--sp-3);color:var(--tx);transition:background var(--dur-1),transform var(--dur-1)}
 button.kpi:hover{background:var(--surface-2)}
