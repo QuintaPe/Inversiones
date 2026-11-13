@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import * as api from '../api.js';
-import { Asset, Avatar, Empty, Flash, Icon, Pill, PriceInput, Search, Tabs, Th, useSort } from '../components/ui.jsx';
+import { Asset, Avatar, Empty, Flash, Icon, PriceInput, Search, Sticky, Tabs, Th, useSort } from '../components/ui.jsx';
 import { Kpi, Spark } from '../components/Kpi.jsx';
 import { useStored } from '../hooks.js';
+import { useParam } from '../router.js';
 import { classLabel, sector } from '../lib/countries.js';
 import { sum } from '../lib/calc.js';
 import Targets from './Targets.jsx';
@@ -24,8 +25,8 @@ const GroupHead = ({ g }) => (
 );
 
 export default function Positions({ a, onOpen, onPrice, targets, patch, fail }) {
-  const [tab, setTab] = useState('open');
-  const [q, setQ] = useState('');
+  const [tab, setTab] = useParam('ver', 'open', { open: 'abiertas', closed: 'cerradas', target: 'objetivo' });
+  const [q, setQ] = useParam('q', '');
   const [view, setView] = useStored('pos-view', 'list');
   const open = useSort('v');
   const closed = useSort('real');
@@ -61,7 +62,7 @@ export default function Positions({ a, onOpen, onPrice, targets, patch, fail }) 
     <div className="stack">
       {a.priced.length > 0 && (
         <>
-          <section className="hero">
+          <section className="hero hero-split">
             <span className="eyebrow">Valor de tus posiciones</span>
             <Flash value={a.val} as="div" className="hero-v">{eur(a.val)}</Flash>
             <div className="hero-d">
@@ -79,7 +80,7 @@ export default function Positions({ a, onOpen, onPrice, targets, patch, fail }) 
         </>
       )}
 
-      <Tabs label="Estado" value={tab} onChange={setTab} items={[['open', `Abiertas · ${a.o.length}`], ['closed', `Cerradas · ${a.c.length}`], ['target', 'Cartera objetivo']]} />
+      <Sticky><Tabs label="Estado" value={tab} onChange={setTab} items={[['open', `Abiertas · ${a.o.length}`], ['closed', `Cerradas · ${a.c.length}`], ['target', 'Cartera objetivo']]} /></Sticky>
       {tab !== 'target' && (
         <div className="toolbar">
           <Search value={q} onChange={setQ} placeholder="Buscar por nombre o ISIN" label="Buscar posición" />
@@ -123,7 +124,7 @@ export default function Positions({ a, onOpen, onPrice, targets, patch, fail }) 
                     {sparks?.[x.p.isin] && <Spark values={sparks[x.p.isin]} tone={sign(sparks[x.p.isin].at(-1) - sparks[x.p.isin][0])} />}
                   </span>
                   <span className="pos-card-r">
-                    {x.has ? <><span className={sign(x.pl)}>{eurS(x.pl)}</span><Pill n={x.plp} plain /></> : <span className="mu">sin precio</span>}
+                    {x.has ? <><span className={sign(x.pl)}>{eurS(x.pl)}</span><span className={`pct ${sign(x.plp)}`}>{pctS(x.plp)}</span></> : <span className="mu">sin precio</span>}
                   </span>
                   <span className="pos-card-f">
                     <span className="wt-b"><i style={{ width: `${Math.min(100, (x.w ?? 0) * 2)}%` }} /></span>
@@ -169,11 +170,11 @@ export default function Positions({ a, onOpen, onPrice, targets, patch, fail }) 
                   <td>
                     {x.has ? <Flash value={x.v}>{eur(x.v)}</Flash> : <span className="mu">—</span>}
                     <small className="hide-s">coste {eur(x.p.cost)}</small>
-                    <small className="only-s">{x.has ? <Pill n={x.plp} plain /> : 'sin precio'}</small>
+                    <small className={`only-s ${x.has ? sign(x.plp) : ''}`}>{x.has ? pctS(x.plp) : 'sin precio'}</small>
                   </td>
                   <td className="hide-s">
                     {x.has ? <span className={sign(x.pl)}>{eurS(x.pl)}</span> : <span className="mu">—</span>}
-                    {x.has && <small><Pill n={x.plp} plain /></small>}
+                    {x.has && <small className={sign(x.plp)}>{pctS(x.plp)}</small>}
                   </td>
                   <td className="hide-m">
                     {x.w != null
@@ -195,7 +196,7 @@ export default function Positions({ a, onOpen, onPrice, targets, patch, fail }) 
                     <td>{eur(sum(rows, (x) => x.v ?? 0))}<small className="hide-s">coste {eur(sum(rows, (x) => x.p.cost))}</small></td>
                     <td className="hide-s">
                       <span className={sign(pl)}>{pr.length ? eurS(pl) : '—'}</span>
-                      {pr.length > 0 && <small><Pill n={(pl / cost) * 100} plain /></small>}
+                      {pr.length > 0 && <small className={sign(pl)}>{pctS((pl / cost) * 100)}</small>}
                     </td>
                     <td className="hide-m" />
                     <td className="hide-m hide-l">{eur(sum(rows, (x) => x.div))}</td>
@@ -227,7 +228,7 @@ export default function Positions({ a, onOpen, onPrice, targets, patch, fail }) 
                   <td className="hide-s">{eur(x.bought)}<small>cobrado {eur(sum(x.S, (k) => k.net))}</small></td>
                   <td>
                     <span className={sign(x.real)}>{eurS(x.real)}</span>
-                    <small><Pill n={x.bought ? (x.real / x.bought) * 100 : null} plain /></small>
+                    <small className={x.bought ? sign(x.real) : 'mu'}>{x.bought ? pctS((x.real / x.bought) * 100) : '—'}</small>
                   </td>
                   <td className="hide-m">{x.div ? eur(x.div) : <span className="mu">—</span>}</td>
                 </tr>

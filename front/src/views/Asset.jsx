@@ -3,6 +3,7 @@ import * as api from '../api.js';
 import { Avatar, Card, Empty, Icon, PriceInput, Seg, Tabs } from '../components/ui.jsx';
 import { Kpi } from '../components/Kpi.jsx';
 import { Lines } from '../charts.jsx';
+import { useParam } from '../router.js';
 import { country, classLabel, sector } from '../lib/countries.js';
 import { simulateSale, savingsTax } from '../lib/calc.js';
 import { eur, eurS, num, pct, pctS, qty, sign, date, dateLong, time, isMasked, MASK, maskText } from '../lib/format.js';
@@ -338,11 +339,13 @@ function Valuations({ p, onPrice, onChange }) {
 
 export default function Asset({ x, totalVal, yearBase, onBack, onPrice, liveQuotes, onHistoryChange, onAddOp, onRemoveOp, alerts = [], patch, fail }) {
   const { p } = x;
-  const [range, setRange] = useState('max');
-  const [tab, setTab] = useState('resumen');
+  const [range, setRange] = useParam('periodo', 'max', { 1: '1m', 3: '3m', 6: '6m', ytd: 'año', 12: '1a', max: 'max' });
+  const [tab, setTab] = useParam('ver', 'resumen', { ops: 'operaciones', sim: 'simulador', alerts: 'alertas' });
   const [steps, setSteps] = useState(false);
   const [editPx, setEditPx] = useState(false);
   const [hist, setHist] = useState(undefined); // undefined = cargando; null = sin cotización
+  const [bench, setBench] = useState(null); // MSCI World en euros, para comparar
+  const [cmp, setCmp] = useState(false);
   const [hover, setHover] = useState(null);
   const first = p.evs[0].d;
   const quoted = p.priceSource === 'live' || p.quotable || (!!p.sector || p.cls === 'FUND') && p.grp === 'ac';
@@ -351,7 +354,7 @@ export default function Asset({ x, totalVal, yearBase, onBack, onPrice, liveQuot
     let alive = true;
     setHist(undefined);
     api.getAssetHistory(p.isin, shift(first, -120))
-      .then((r) => alive && setHist(r.asset?.rows?.length ? r.asset : null))
+      .then((r) => { if (!alive) return; setHist(r.asset?.rows?.length ? r.asset : null); setBench(r.bench?.rows?.length ? r.bench : null); })
       .catch(() => alive && setHist(null));
     return () => { alive = false; };
   }, [p.isin, first]);
@@ -374,6 +377,15 @@ export default function Asset({ x, totalVal, yearBase, onBack, onPrice, liveQuot
   }, [hist, range, p.open, p.price, x.ops]);
 
   const chg = view ? (view.c.at(-1) / view.c[0] - 1) * 100 : null;
+  // Comparación: el valor y el índice en base 100 al inicio del periodo.
+  const vs = useMemo(() => {
+    if (!cmp || !view || !bench) return null;
+    let j = 0, last = null;
+    const b = view.dates.map((d) => { while (j < bench.rows.length && bench.rows[j][0] <= d) last = bench.rows[j++][1]; return last; });
+    const b0 = b.find((v) => v != null);
+    if (!b0) return null;
+    return { me: view.c.map((c) => (c / view.c[0]) * 100), ix: b.map((v) => (v == null ? null : (v / b0) * 100)), name: bench.name };
+  }, [cmp, view, bench]);
   const hv = view && hover != null ? { c: view.c[hover], d: view.dates[hover], chg: (view.c[hover] / view.c[0] - 1) * 100 } : null;
   const totalRet = p.open && x.has ? x.pl + x.div : null;
 
@@ -440,7 +452,17 @@ export default function Asset({ x, totalVal, yearBase, onBack, onPrice, liveQuot
           </div>
         </section>
         <section className="chart-block">
-          {view ? (
+          {view && vs ? (
+            <Lines x={view.t} height={300} label={`${p.name} frente al ${vs.name}, base 100`} base={100} onHover={setHover}
+              series={[{ key: 'me', values: vs.me, cls: vs.me.at(-1) >= 100 ? 'up' : 'down', area: true }, { key: 'ix', values: vs.ix, cls: 'b1' }]}
+              tip={(i) => (
+                <>
+                  <small>{dateLong(view.t[i])}</small>
+                  <b>{p.name} {pctS(vs.me[i] - 100)}</b>
+                  {vs.ix[i] != null && <small>{vs.name} {pctS(vs.ix[i] - 100)}</small>}
+                </>
+              )} />
+          ) : view ? (
             <Lines x={view.t} height={300} label={`Precio de ${p.name} en euros`} base={p.open ? x.avg : undefined}
               onHover={setHover} marks={view.marks}
               series={[{ key: 'c', values: view.c, cls: chg >= 0 ? 'up' : 'down', area: true }]}
@@ -458,11 +480,23 @@ export default function Asset({ x, totalVal, yearBase, onBack, onPrice, liveQuot
           {hist && (
             <>
               <div className="chart-f">
-                <ul className="legend flat">
-                  <li><i className="dotk buy" />Compras</li>
-                  <li><i className="dotk sell" />Ventas</li>
-                  {p.open && <li><i className="sw dotted" />Tu precio medio ({eur(x.avg)})</li>}
-                </ul>
+                {vs ? (
+                  <ul className="legend flat">
+                    <li><i className={`sw ${vs.me.at(-1) >= 100 ? 'up' : 'down'}`} />{p.name} {pctS(vs.me.at(-1) - 100)}</li>
+                    <li><i className="sw b1" />{vs.name} {vs.ix.at(-1) != null ? pctS(vs.ix.at(-1) - 100) : ''}</li>
+                  </ul>
+                ) : (
+                  <ul className="legend flat">
+                    <li><i className="dotk buy" />Compras</li>
+                    <li><i className="dotk sell" />Ventas</li>
+                    {p.open && <li><i className="sw dotted" />Tu precio medio ({eur(x.avg)})</li>}
+                  </ul>
+                )}
+                {bench && (
+                  <button type="button" className={`btn soft cmp-b ${cmp ? 'on' : ''}`} aria-pressed={cmp} onClick={() => setCmp((v) => !v)}>
+                    {cmp ? 'Ver el precio' : `Comparar con el ${bench.name}`}
+                  </button>
+                )}
                 <Seg options={RANGES} value={range} onChange={setRange} label="Periodo" />
               </div>
             </>

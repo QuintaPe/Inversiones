@@ -19,12 +19,14 @@ export const maskText = (s) => (masked && s
 /** 1.234,56 */
 export const num = (n) => (masked ? MASK : f2.format(n));
 /** 1.234,56 € */
-export const eur = (n) => (masked ? `${MASK} €` : `${f2.format(n)} €`);
+// Entre la cifra y la unidad, espacio de no separación: el «€» o el «%» nunca se quedan solos en una línea.
+const NB = '\u00a0';
+export const eur = (n) => (masked ? `${MASK}${NB}€` : `${f2.format(n)}${NB}€`);
 /** +1.234,56 € (signo siempre visible) */
-export const eurS = (n) => (masked ? `${MASK} €` : `${n >= 0 ? '+' : '−'}${f2.format(Math.abs(n))} €`);
+export const eurS = (n) => (masked ? `${MASK}${NB}€` : `${n >= 0 ? '+' : '−'}${f2.format(Math.abs(n))}${NB}€`);
 /** +12,34 % */
-export const pctS = (n) => (masked ? `${MASK} %` : `${n >= 0 ? '+' : '−'}${f2.format(Math.abs(n))} %`);
-export const pct = (n) => (masked ? `${MASK} %` : `${f2.format(n)} %`);
+export const pctS = (n) => (masked ? `${MASK}${NB}%` : `${n >= 0 ? '+' : '−'}${f2.format(Math.abs(n))}${NB}%`);
+export const pct = (n) => (masked ? `${MASK}${NB}%` : `${f2.format(n)}${NB}%`);
 /** Cantidades: hasta 6 decimales, sin ceros de relleno. */
 export const qty = (n) => (masked ? MASK : f6.format(parseFloat(n.toFixed(6))));
 /** Eje de gráfico: 0 / 500 / 10 k / 1,5 M */

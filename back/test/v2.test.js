@@ -154,7 +154,7 @@ test('el vigilante cotiza los valores con alertas, las marca y avisa al disposit
   assert.deepEqual(asked, ['XX0000000001']);
   assert.equal(sent.length, 1);
   assert.match(sent[0][1].body, /Acme ha subido hasta 20 €/);
-  assert.equal(sent[0][1].url, '/#/activo/XX0000000001');
+  assert.equal(sent[0][1].url, '/activo/XX0000000001');
   assert.equal((await db.getPushSubs('u')).length, 1); // el dispositivo caducado se olvida
   assert.equal((await db.getAlerts('u')).filter((a) => a.triggered_at).length, 1);
   assert.equal((await db.getPrices('u')).XX0000000001.price, 20); // la cotización queda para todos

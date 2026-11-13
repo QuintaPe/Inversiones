@@ -21,7 +21,7 @@ export function createAlertWatcher({ db, quotes, push = null, log = console }) {
     await db.triggerAlerts(userId, fired.map((al) => al.id));
     if (notify && push) {
       for (const al of fired) {
-        await push.notify(userId, { title: 'Alerta de precio', body: alertText(al, al.name, al.current), url: `/#/activo/${al.isin}`, tag: `alert-${al.id}` });
+        await push.notify(userId, { title: 'Alerta de precio', body: alertText(al, al.name, al.current), url: `/activo/${al.isin}`, tag: `alert-${al.id}` });
       }
     }
     return fired;

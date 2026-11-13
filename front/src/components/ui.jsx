@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { eurS, pctS, sign, isMasked, MASK } from '../lib/format.js';
+import { useStuck } from '../hooks.js';
 
 /* ---------- iconos (trazo, 20px) ---------- */
 const PATHS = {
@@ -300,4 +301,20 @@ export function Tabs({ items, value, onChange, label }) {
       ))}
     </div>
   );
+}
+
+/**
+ * Lo que se queda fijo arriba al hacer scroll, bajo la barra y el título de la sección (pestañas,
+ * filtros). Solo mientras está pegado lleva el fondo de la página, para tapar lo que pasa debajo.
+ */
+export function Sticky({ children, className = '' }) {
+  const [ref, stuck] = useStuck();
+  // Su altura, para pintar el difuminado de debajo en el sitio exacto del fondo.
+  useEffect(() => {
+    const el = ref.current;
+    const ro = new ResizeObserver(() => el.style.setProperty('--sub-h', `${el.getBoundingClientRect().height}px`));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [ref]);
+  return <div ref={ref} className={`sticky-sub ${stuck ? 'is-stuck' : ''} ${className}`}>{children}</div>;
 }

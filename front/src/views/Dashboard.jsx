@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react';
-import { Asset, Card, Empty, Flash, Icon, Pill, Seg } from '../components/ui.jsx';
+import { Asset, Avatar, Card, Empty, Flash, Icon, Seg } from '../components/ui.jsx';
 import { StepArea, Lines, RankBars, Treemap } from '../charts.jsx';
 import { investedSeries, allocation, monthlyDividends, sum } from '../lib/calc.js';
 import { prepare, periodStats, gainBetween } from '../lib/perf.js';
 import { useTween } from '../hooks.js';
-import { Kpi, Spark } from '../components/Kpi.jsx';
+import { RANGE_NAME, useRange } from '../lib/periods.js';
+import { Kpi, Spark, VsBars } from '../components/Kpi.jsx';
 import { country, classLabel, region, sector, industry, currency, exchange } from '../lib/countries.js';
 import { eur, eurS, pct, pctS, sign, date, dateLong, qty, num } from '../lib/format.js';
 
@@ -24,8 +25,6 @@ const ALLOC_NOTE = {
   currency: 'Divisa en la que cotiza cada valor',
   exchange: 'Bolsa de la que se toma la cotización',
 };
-const RANGES = [['mtd', 'MTD'], ['3', '3M'], ['6', '6M'], ['ytd', 'YTD'], ['12', '1A'], ['max', 'Máx']];
-const RANGE_NAME = { mtd: 'este mes', ytd: 'este año', 3: 'en 3 meses', 6: 'en 6 meses', 12: 'en un año', max: 'desde el inicio' };
 const isToday = (iso) => iso && new Date(iso).toDateString() === new Date().toDateString();
 
 /** Primer día del periodo (AAAA-MM-DD, hora local) o null para todo el histórico. */
@@ -67,7 +66,7 @@ export default function Dashboard({ a, hist, histProgress, flt, cash, meta, onOp
   const [by, setBy] = useState('pos');
   const [map, setMap] = useState(false);
   const [span, setSpan] = useState('day');
-  const [range, setRange] = useState('ytd');
+  const [range] = useRange(); // se elige en la cabecera fija (App.jsx)
   const [mode, setMode] = useState('value');
   const [detail, setDetail] = useState(false);
   const [hover, setHover] = useState(null); // índice del día bajo el cursor (en el histórico completo)
@@ -76,9 +75,15 @@ export default function Dashboard({ a, hist, histProgress, flt, cash, meta, onOp
   const heroVal = useTween(none ? null : a.val);
 
   // El histórico es de toda la cartera: solo se usa sin filtro de tipo de activo.
-  const h = useMemo(() => (hist && flt === 'all' ? prepare(hist) : null), [hist, flt]);
+  // Con un filtro de tipo, las series de ese tipo (el servidor las manda si la cartera mezcla tipos).
+  const h = useMemo(() => {
+    if (!hist) return null;
+    if (flt === 'all') return prepare(hist);
+    const g = hist.groups?.[flt];
+    return g ? prepare({ ...hist, ...g }) : null;
+  }, [hist, flt]);
   const st = useMemo(() => (h ? periodStats(h, start) : null), [h, start]);
-  const loading = hist === undefined && flt === 'all';
+  const loading = hist === undefined;
 
   // --- sin histórico: capital invertido, como antes ---
   const full = useMemo(() => investedSeries(a.vis), [a.vis]);
@@ -129,26 +134,48 @@ export default function Dashboard({ a, hist, histProgress, flt, cash, meta, onOp
     const months = monthlyDividends(a.dv).slice(-12);
     const cut = new Date(); cut.setFullYear(cut.getFullYear() - 1);
     const last = a.dv.filter((x) => x.d >= cut.toISOString().slice(0, 10));
-    out.push({ key: 'div', label: 'Dividendos 12 meses', value: eur(sum(last, (x) => x.net)), sub: `${last.length} ${last.length === 1 ? 'cobro' : 'cobros'} netos`,
+    // Solo si este tipo de activo cobra dividendos (los Private Markets no reparten).
+    if (a.dv.length) out.push({ key: 'div', label: 'Dividendos 12 meses', value: eur(sum(last, (x) => x.net)), sub: `${last.length} ${last.length === 1 ? 'cobro' : 'cobros'} netos`,
       spark: months.length > 1 && <Spark bars={months.map((m) => m.v)} />, onClick: () => go('dividendos') });
     // Frente al MSCI World en el periodo elegido, con las mismas aportaciones.
     const world = st?.bench.find((b) => b.mwr != null);
     if (world && st.mwr != null) {
       const diff = st.mwr - world.mwr;
       out.push({ key: 'bench', label: `Frente al ${world.name}`, value: `${diff >= 0 ? '+' : '−'}${num(Math.abs(diff))} p. p.`, tone: sign(diff),
-        sub: `${RANGE_NAME[range]}: tú ${pctS(st.mwr)} · índice ${pctS(world.mwr)}`, onClick: () => setMode('perf') });
+        sub: `${RANGE_NAME[range]}, con tus mismas aportaciones`, onClick: () => setMode('perf'),
+        spark: <VsBars rows={[
+          { label: 'Tú', v: st.mwr, text: pctS(st.mwr), cls: 'vs-me' },
+          { label: world.name, v: world.mwr, text: pctS(world.mwr), cls: 'vs-ix' },
+        ]} /> });
     }
     // El mejor del día (si hay cotización de la sesión) o, si no, el efectivo.
     const movers = a.priced.filter((x) => x.dayPct != null).sort((x, y) => y.dayPct - x.dayPct);
     if (movers.length) {
       const b = movers[0], w = movers.at(-1);
-      out.push({ key: 'best', label: `Lo mejor y lo peor ${dayLabel === 'hoy' ? 'de hoy' : 'de la sesión'}`, value: <><span className="gain">▲</span> {b.p.name}</>,
-        sub: movers.length > 1 ? `${pctS(b.dayPct)} · peor: ${w.p.name} ${pctS(w.dayPct)}` : pctS(b.dayPct), tone: 'name', onClick: () => onOpen(b.p.isin) });
-    } else if (cash) {
+      const up = movers.filter((x) => x.dayPct > 0).length, down = movers.filter((x) => x.dayPct < 0).length;
+      const row = (x, what) => (
+        <button type="button" key={what} className="mv-r" onClick={() => onOpen(x.p.isin)} aria-label={`${what}: ${x.p.name}, ${pctS(x.dayPct)}`}>
+          <Avatar p={x.p} size="mini" /><span className="mv-n">{x.p.name}</span><span className={`mv-p ${sign(x.dayPct)}`}>{pctS(x.dayPct)}</span>
+        </button>
+      );
+      out.push({ key: 'best', label: `Lo mejor y lo peor ${dayLabel === 'hoy' ? 'de hoy' : 'de la sesión'}`, body: (
+        <>
+          <div className="mv">{row(b, 'El mejor')}{movers.length > 1 && row(w, 'El peor')}</div>
+          {movers.length > 1 && (
+            <div className="mv-br" title={`${up} suben · ${down} bajan · ${movers.length - up - down} sin cambios`}>
+              <span className="mv-bar" aria-hidden="true">
+                <i className="gain" style={{ flexGrow: up }} /><i style={{ flexGrow: movers.length - up - down }} /><i className="loss" style={{ flexGrow: down }} />
+              </span>
+              <small>{up} suben · {down} bajan</small>
+            </div>
+          )}
+        </>
+      ) });
+    } else if (cash && flt === 'all') { // el efectivo es de toda la cuenta, no de un tipo de activo
       out.push({ key: 'cash', label: 'Efectivo', value: eur(cash.balance), sub: `${pct((cash.balance / (a.val + cash.balance)) * 100)} del patrimonio`, onClick: () => go('efectivo') });
     }
     return out;
-  }, [none, h, a.total, a.dv, a.priced, a.val, st, range, cash, dayLabel, go, onOpen]);
+  }, [none, h, a.total, a.dv, a.priced, a.val, st, range, cash, flt, dayLabel, go, onOpen]);
 
   // --- gráfica con histórico ---
   let chart = null, legend = null;
@@ -182,7 +209,7 @@ export default function Dashboard({ a, hist, histProgress, flt, cash, meta, onOp
       const bs = st.bench.filter((b) => b.g).map((b, k) => ({ key: b.key, name: b.name, cls: `b${k + 1}`, g: b.g, values: b.g.map(rel) }));
       chart = (
         <Lines x={x} height={280} base={0} label="Resultado acumulado frente a los índices con las mismas aportaciones" onHover={(i) => setHover(i == null ? null : i + from)}
-          series={[{ key: 'me', values: mine, cls: 'me' }, ...bs]}
+          series={[{ key: 'me', values: mine, cls: 'vs-me' }, ...bs]}
           tip={(i) => (
             <>
               <small>{dateLong(x[i])}</small>
@@ -200,7 +227,7 @@ export default function Dashboard({ a, hist, histProgress, flt, cash, meta, onOp
   return (
     <div className="dash dash-one">
       <div className="dash-main">
-        <section className="hero">
+        <section className="hero hero-split hero-dash">
           <span className="eyebrow">{hv ? dateLong(Date.parse(`${hv.d}T00:00:00Z`)) : 'Cartera'}</span>
           {hv
             ? <div className="hero-v">{eur(hv.v)}</div>
@@ -250,13 +277,13 @@ export default function Dashboard({ a, hist, histProgress, flt, cash, meta, onOp
                   ? `Descargando cotizaciones históricas: ${histProgress.done} de ${histProgress.total}…`
                   : 'Reconstruyendo el histórico…'
                 : 'Capital invertido'}</span>}
-            <Seg options={RANGES} value={range} onChange={setRange} label="Periodo" />
+            {/* La leyenda, a la derecha del selector, en la misma fila. */}
+            {legend && (
+              <ul className="legend legend-f">
+                {legend.map(([k, name, cls]) => <li key={k}>{cls === 'ap' ? <i className="dotk buy" /> : <i className={`sw ${cls}`} />}{name}</li>)}
+              </ul>
+            )}
           </div>
-          {legend && (
-            <ul className="legend">
-              {legend.map(([k, name, cls]) => <li key={k}>{cls === 'ap' ? <i className="dotk buy" /> : <i className={`sw ${cls}`} />}{name}</li>)}
-            </ul>
-          )}
           {hist?.unpriced?.length > 0 && flt === 'all' && (
             <p className="callout">
               <Icon name="alert" size={15} />
@@ -266,7 +293,7 @@ export default function Dashboard({ a, hist, histProgress, flt, cash, meta, onOp
         </section>
 
         {kpis.length > 0 && (
-          <div className="kpis-row">
+          <div className="kpis-row kpis-fit" style={{ '--n': Math.max(2, kpis.length) }}>
             {kpis.map(({ key, ...k }) => <Kpi key={key} {...k} />)}
           </div>
         )}
@@ -284,7 +311,7 @@ export default function Dashboard({ a, hist, histProgress, flt, cash, meta, onOp
                     <Asset p={x.p}>{qty(x.p.sh)} uds.</Asset>
                     <span className="row-r">
                       <Flash value={x.v} className="row-v">{x.has ? eur(x.v) : '—'}</Flash>
-                      {x.has ? <Pill n={n} /> : <small className="mu">sin precio</small>}
+                      {x.has ? <small className={`row-p ${n == null ? 'mu' : sign(n)}`}>{n == null ? '—' : pctS(n)}</small> : <small className="mu">sin precio</small>}
                     </span>
                   </button>
                 </li>
@@ -422,7 +449,7 @@ export default function Dashboard({ a, hist, histProgress, flt, cash, meta, onOp
               <Line label="Dividendos netos" value={eur(per.div)} onClick={() => go('dividendos')} />
               <Line label="Comisiones pagadas" value={eur(per.fees)} onClick={() => go('operaciones')} />
             </div>
-            {flt !== 'all' && <p className="note">La rentabilidad por periodo y la gráfica de valor se calculan sobre toda la cartera: elige «Todo» para verlas.</p>}
+            {flt !== 'all' && !h && hist && <p className="note">La rentabilidad por periodo y la gráfica de valor se calculan sobre toda la cartera: elige «Todo» para verlas.</p>}
           </Card>
         )}
 

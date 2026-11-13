@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
-import { Asset, Card, Empty, Icon, Seg, Tabs } from '../components/ui.jsx';
+import { Asset, Card, Empty, Icon, Seg, Sticky, Tabs } from '../components/ui.jsx';
 import { Columns } from '../charts.jsx';
+import { useParam } from '../router.js';
 import { taxYears, splitWithholding, TREATY_RATE, SAVINGS_BRACKETS } from '../lib/calc.js';
 import { country, classLabel } from '../lib/countries.js';
 import { eur, eurS, num, qty, sign, date, pct, isMasked, compact } from '../lib/format.js';
@@ -27,8 +28,8 @@ function exportYear(y) {
 
 export default function Tax({ a, income, onOpen }) {
   const years = useMemo(() => taxYears(a.sl, a.dv, income), [a.sl, a.dv, income]);
-  const [sel, setSel] = useState(null);
-  const [tab, setTab] = useState('resumen');
+  const [sel, setSel] = useParam('ejercicio', null);
+  const [tab, setTab] = useParam('ver', 'resumen', { resumen: 'resumen', ventas: 'ventas', dividendos: 'dividendos', renta: 'renta' });
   const [steps, setSteps] = useState(false);
   const [copied, setCopied] = useState(null);
   // Fuera de la pestaña elegida no se ven, pero siguen ahí para el informe en PDF.
@@ -84,9 +85,9 @@ export default function Tax({ a, income, onOpen }) {
         <h1>Informe fiscal {y.year}</h1>
         <p>Generado el {date(new Date().toISOString())} a partir de tus operaciones. Orientativo: no es asesoramiento fiscal.</p>
       </header>
-      <div className="tax-tabs">
+      <Sticky className="tax-tabs">
         <Tabs label="Apartado" value={tab} onChange={setTab} items={[['resumen', 'Resumen'], ['ventas', `Ventas · ${y.sales.length}`], ['dividendos', `Dividendos · ${y.divs.length}`], ['renta', 'Renta Web']]} />
-      </div>
+      </Sticky>
       <div className={pane('resumen')}>
       <section className="card tax-hero">
         <div className="tax-top">

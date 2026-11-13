@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import * as api from '../api.js';
-import { Asset, Empty, Icon, Kind, Search, Seg } from '../components/ui.jsx';
+import { Asset, Empty, Icon, Kind, Search, Seg, Sticky } from '../components/ui.jsx';
 import { Kpi } from '../components/Kpi.jsx';
+import { useParam } from '../router.js';
 import { sum } from '../lib/calc.js';
 import { eur, eurS, qty, sign, date } from '../lib/format.js';
 
@@ -29,9 +30,9 @@ function download(rows) {
 export default function Ledger({ a, meta, onOpen, onAddOp, onRestoreOp }) {
   const [removed, setRemoved] = useState([]);
   useEffect(() => { api.getRemoved().then((r) => setRemoved(r.removed)).catch(() => {}); }, [meta?.rows]);
-  const [kind, setKind] = useState('all');
-  const [year, setYear] = useState('all');
-  const [q, setQ] = useState('');
+  const [kind, setKind] = useParam('tipo', 'all', { B: 'compras', S: 'ventas', D: 'dividendos' });
+  const [year, setYear] = useParam('año', 'all');
+  const [q, setQ] = useParam('q', '');
   const [limit, setLimit] = useState(PAGE);
   const years = useMemo(() => [...new Set(a.ops.map((x) => x.d.slice(0, 4)))].sort().reverse(), [a.ops]);
   const rows = useMemo(() => {
@@ -40,6 +41,15 @@ export default function Ledger({ a, meta, onOpen, onAddOp, onRestoreOp }) {
       (kind === 'all' || x.k === kind) && (year === 'all' || x.d.startsWith(year)) &&
       (!s || `${x.p.name} ${x.p.isin} ${(x.ids ?? [x.id]).join(' ')}`.toLowerCase().includes(s)));
   }, [a.ops, kind, year, q]);
+  // Al acercarse al final se cargan las siguientes (el botón sigue ahí para el teclado).
+  const more = useRef(null);
+  const hasMore = rows.length > limit;
+  useEffect(() => {
+    if (!hasMore || !more.current || !('IntersectionObserver' in window)) return undefined;
+    const io = new IntersectionObserver(([e]) => { if (e.isIntersecting) setLimit((l) => l + PAGE); }, { rootMargin: '600px 0px' });
+    io.observe(more.current);
+    return () => io.disconnect();
+  }, [hasMore, limit]);
   const B = rows.filter((x) => x.k === 'B'), S = rows.filter((x) => x.k === 'S'), D = rows.filter((x) => x.k === 'D');
   // Por meses, como en el extracto del banco.
   const groups = useMemo(() => {
@@ -54,15 +64,17 @@ export default function Ledger({ a, meta, onOpen, onAddOp, onRestoreOp }) {
 
   return (
     <div className="stack">
-      <div className="toolbar">
+      <Sticky>
         <Seg label="Tipo de operación" options={KINDS} value={kind} onChange={(k) => { setKind(k); setLimit(PAGE); }} />
+      </Sticky>
+      <div className="toolbar">
         <select aria-label="Año" value={year} onChange={(ev) => { setYear(ev.target.value); setLimit(PAGE); }}>
           <option value="all">Todos los años</option>
           {years.map((y) => <option key={y}>{y}</option>)}
         </select>
         <Search value={q} onChange={(v) => { setQ(v); setLimit(PAGE); }} placeholder="Buscar activo, ISIN o ID" label="Buscar operación" />
-        <button type="button" className="btn" disabled={!rows.length} onClick={() => download(rows)}><Icon name="download" size={16} />Exportar CSV</button>
-        <button type="button" className="btn pri" onClick={() => onAddOp({})}><Icon name="plus" size={16} />Añadir operación</button>
+        <button type="button" className="btn btn-ic-s" disabled={!rows.length} onClick={() => download(rows)} aria-label="Exportar CSV"><Icon name="download" size={16} /><span className="btn-l">Exportar CSV</span></button>
+        <button type="button" className="btn pri btn-ic-s" onClick={() => onAddOp({})} aria-label="Añadir operación"><Icon name="plus" size={16} /><span className="btn-l">Añadir operación</span></button>
       </div>
 
       <div className="kpis-row">
@@ -74,7 +86,7 @@ export default function Ledger({ a, meta, onOpen, onAddOp, onRestoreOp }) {
 
       {!rows.length && <div className="card"><Empty>Ninguna operación coincide con los filtros.</Empty></div>}
       {groups.map((gr) => (
-        <section key={gr.m} className="card ops-m">
+        <section key={gr.m} className="card ops-m" style={{ '--n': gr.items.length }}>
           <header className="ops-mh">
             <h2>{monthLong(gr.m)}</h2>
             <span className="mu">{gr.items.length} {gr.items.length === 1 ? 'operación' : 'operaciones'}</span>
@@ -101,8 +113,8 @@ export default function Ledger({ a, meta, onOpen, onAddOp, onRestoreOp }) {
           </ul>
         </section>
       ))}
-      {rows.length > limit && (
-        <div className="more"><button type="button" className="btn" onClick={() => setLimit((l) => l + PAGE)}>
+      {hasMore && (
+        <div className="more" ref={more}><button type="button" className="btn" onClick={() => setLimit((l) => l + PAGE)}>
           Mostrar más ({rows.length - limit} restantes)</button></div>
       )}
       {removed.length > 0 && (

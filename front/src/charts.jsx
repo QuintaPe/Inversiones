@@ -1,7 +1,44 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { useWidth } from './hooks.js';
 import { compact } from './lib/format.js';
 import { decimate } from './lib/decimate.js';
+
+/**
+ * Recorrido con teclado de una gráfica de n puntos: ← → de uno en uno, RePág/AvPág un 10 %,
+ * Inicio/Fin a los extremos y Esc para salir. Al entrar con Tab se coloca en el último dato
+ * (el más reciente). `set(i | null)` mueve el mismo cursor que el ratón.
+ * Devuelve las props del contenedor y el punto activo con teclado (para anunciarlo).
+ */
+export function useChartKeys(n, hi, set, label) {
+  const [kbd, setKbd] = useState(false);
+  const hint = useId();
+  const clamp = (i) => Math.max(0, Math.min(n - 1, i));
+  const onKeyDown = (ev) => {
+    if (!n) return;
+    if (ev.key === 'Escape') { if (hi != null) { ev.preventDefault(); set(null); } return; }
+    const step = Math.max(1, Math.round(n / 10));
+    const cur = hi ?? n - 1;
+    const to = { ArrowRight: cur + 1, ArrowLeft: cur - 1, PageUp: cur + step, PageDown: cur - step, Home: 0, End: n - 1 }[ev.key];
+    if (to == null) return;
+    ev.preventDefault();
+    setKbd(true);
+    set(hi == null ? n - 1 : clamp(to));
+  };
+  return {
+    kbd: kbd && hi != null,
+    props: {
+      tabIndex: n ? 0 : undefined, role: 'group', 'aria-roledescription': 'gráfica', 'aria-label': label, 'aria-describedby': hint,
+      onKeyDown,
+      // Solo al llegar con el teclado: un clic ya coloca el cursor donde se pulsa.
+      onFocus: (ev) => { if (n && ev.target === ev.currentTarget && ev.currentTarget.matches(':focus-visible')) { setKbd(true); if (hi == null) set(n - 1); } },
+      onBlur: (ev) => { if (ev.target === ev.currentTarget && kbd) { setKbd(false); set(null); } },
+    },
+    hint: <span id={hint} className="sr-only">Usa las flechas para recorrer los datos.</span>,
+  };
+}
+
+/** Lo que dice la gráfica del punto activo, para lectores de pantalla (el tooltip es visual). */
+const Say = ({ children }) => <div className="sr-only" aria-live="polite" aria-atomic="true">{children}</div>;
 
 
 /** Marcas "redondas" para el eje Y que cubren [min, max]. */
@@ -31,6 +68,7 @@ function Tip({ x, y, w, children }) {
 export function StepArea({ points, height = 220, tip, label, bare = false }) {
   const [ref, w] = useWidth();
   const [hi, setHi] = useState(null);
+  const keys = useChartKeys(points.length, hi?.i ?? null, (i) => setHi(i == null ? null : { i, t: points[i].t }), label);
   const m = bare ? { l: 0, r: 0, t: 12, b: 26 } : { l: 46, r: 10, t: 10, b: 24 };
   let body = null;
   if (w > 0 && points.length > 1) {
@@ -65,7 +103,7 @@ export function StepArea({ points, height = 220, tip, label, bare = false }) {
     const hp = hi && points[hi.i];
     body = (
       <>
-        <svg width={w} height={height} role="img" aria-label={label}
+        <svg width={w} height={height} aria-hidden="true"
           onPointerMove={move} onPointerDown={move} onPointerLeave={() => setHi(null)}>
           {!bare && yt.map((v) => (
             <g key={v}>
@@ -94,7 +132,12 @@ export function StepArea({ points, height = 220, tip, label, bare = false }) {
       </>
     );
   }
-  return <div className="chart" ref={ref} style={{ height }}>{body}</div>;
+  return (
+    <div className="chart" ref={ref} style={{ height }} {...keys.props}>
+      {body}{keys.hint}
+      <Say>{keys.kbd && tip({ ...points[hi.i], t: hi.t })}</Say>
+    </div>
+  );
 }
 
 /**
@@ -104,6 +147,7 @@ export function StepArea({ points, height = 220, tip, label, bare = false }) {
 export function Columns({ data, height = 200, tip, label, signed = false }) {
   const [ref, w] = useWidth();
   const [hi, setHi] = useState(null);
+  const keys = useChartKeys(data.length, hi, setHi, label);
   const m = { l: 46, r: 6, t: 10, b: 24 };
   let body = null;
   if (w > 0 && data.length) {
@@ -129,7 +173,7 @@ export function Columns({ data, height = 200, tip, label, signed = false }) {
     const hd = hi != null && data[hi];
     body = (
       <>
-        <svg width={w} height={height} role="img" aria-label={label} onPointerLeave={() => setHi(null)}>
+        <svg width={w} height={height} aria-hidden="true" onPointerLeave={() => setHi(null)}>
           {yt.map((v) => (
             <g key={v}>
               <line className={v === 0 ? 'base' : 'grid'} x1={m.l} x2={w - m.r} y1={Y(v)} y2={Y(v)} />
@@ -150,7 +194,74 @@ export function Columns({ data, height = 200, tip, label, signed = false }) {
       </>
     );
   }
-  return <div className="chart" ref={ref} style={{ height }}>{body}</div>;
+  return (
+    <div className="chart" ref={ref} style={{ height }} {...keys.props}>
+      {body}{keys.hint}
+      <Say>{keys.kbd && tip(data[hi])}</Say>
+    </div>
+  );
+}
+
+/**
+ * Columnas enfrentadas: lo que entra hacia arriba y lo que sale hacia abajo, por periodo.
+ * data: [{ key, label, up, down }] (los dos en positivo). tip: (dato) => contenido.
+ */
+export function Diverge({ data, height = 220, tip, label }) {
+  const [ref, w] = useWidth();
+  const [hi, setHi] = useState(null);
+  const keys = useChartKeys(data.length, hi, setHi, label);
+  const m = { l: 46, r: 6, t: 10, b: 24 };
+  let body = null;
+  if (w > 0 && data.length) {
+    const iw = w - m.l - m.r, ih = height - m.t - m.b;
+    const yt = ticks(-Math.max(1, ...data.map((d) => d.down)), Math.max(1, ...data.map((d) => d.up)));
+    const y0 = yt[0], y1 = yt.at(-1);
+    const Y = (v) => m.t + ih - ((v - y0) / (y1 - y0)) * ih;
+    const band = iw / data.length;
+    const bw = Math.max(2, Math.min(22, band - 3));
+    const every = Math.ceil(data.length / Math.max(1, Math.floor(iw / 52)));
+    // Extremo redondeado hacia fuera del eje, base recta en el cero.
+    const bar = (x, v, cls) => {
+      const h = Math.abs(Y(v) - Y(0));
+      if (h < 0.5) return null;
+      const r = Math.min(4, bw / 2, h);
+      const d = v > 0
+        ? `M${x},${Y(0)}V${Y(v) + r}Q${x},${Y(v)} ${x + r},${Y(v)}H${x + bw - r}Q${x + bw},${Y(v)} ${x + bw},${Y(v) + r}V${Y(0)}Z`
+        : `M${x},${Y(0)}V${Y(v) - r}Q${x},${Y(v)} ${x + r},${Y(v)}H${x + bw - r}Q${x + bw},${Y(v)} ${x + bw},${Y(v) - r}V${Y(0)}Z`;
+      return <path d={d} className={`bar ${cls}`} />;
+    };
+    const hd = hi != null && data[hi];
+    body = (
+      <>
+        <svg width={w} height={height} aria-hidden="true" onPointerLeave={() => setHi(null)}>
+          {yt.map((v) => (
+            <g key={v}>
+              <line className={v === 0 ? 'base' : 'grid'} x1={m.l} x2={w - m.r} y1={Y(v)} y2={Y(v)} />
+              <text className="axis" x={m.l - 8} y={Y(v)} dy="0.32em" textAnchor="end">{compact(v)}</text>
+            </g>
+          ))}
+          {data.map((d, i) => {
+            const x = m.l + band * i + (band - bw) / 2;
+            return <g key={d.key} className={hi === i ? 'hi' : ''}>{bar(x, d.up, 'up')}{bar(x, -d.down, 'down')}</g>;
+          })}
+          {data.map((d, i) => (i % every === 0 || data.length <= 3) && (
+            <text key={d.key} className="axis" x={m.l + band * (i + 0.5)} y={height - 6} textAnchor="middle">{d.label}</text>
+          ))}
+          {data.map((d, i) => (
+            <rect key={d.key} x={m.l + band * i} y={m.t} width={band} height={ih} fill="transparent"
+              onPointerEnter={() => setHi(i)} onPointerDown={() => setHi(i)} />
+          ))}
+        </svg>
+        {hd && <Tip x={m.l + band * (hi + 0.5)} y={Y(hd.up) - 60} w={w}>{tip(hd)}</Tip>}
+      </>
+    );
+  }
+  return (
+    <div className="chart" ref={ref} style={{ height }} {...keys.props}>
+      {body}{keys.hint}
+      <Say>{keys.kbd && tip(data[hi])}</Say>
+    </div>
+  );
 }
 
 /** Ranking horizontal: etiqueta, barra proporcional y valor. rows: [{ label, w, right, sub, onClick }] */
@@ -180,6 +291,7 @@ export function RankBars({ rows }) {
 export function Lines({ x, series, height = 280, tip, label, onHover, base, marks = [] }) {
   const [ref, w] = useWidth();
   const [hi, setHi] = useState(null);
+  const keys = useChartKeys(x.length, hi, (i) => { setHi(i); onHover?.(i); }, label);
   const m = { t: 14, b: 26 };
   let body = null;
   if (w > 0 && x.length > 1) {
@@ -230,7 +342,7 @@ export function Lines({ x, series, height = 280, tip, label, onHover, base, mark
     const d0 = path(main);
     body = (
       <>
-        <svg width={w} height={height} role="img" aria-label={label} onPointerMove={move} onPointerDown={move} onPointerLeave={leave}>
+        <svg width={w} height={height} aria-hidden="true" onPointerMove={move} onPointerDown={move} onPointerLeave={leave}>
           {main.area && (
             <>
               <defs>
@@ -259,7 +371,12 @@ export function Lines({ x, series, height = 280, tip, label, onHover, base, mark
       </>
     );
   }
-  return <div className="chart" ref={ref} style={{ height }}>{body}</div>;
+  return (
+    <div className="chart" ref={ref} style={{ height }} {...keys.props}>
+      {body}{keys.hint}
+      <Say>{keys.kbd && tip?.(hi)}</Say>
+    </div>
+  );
 }
 
 /** Reparto "squarified": rectángulos lo más cuadrados posible, de mayor a menor. */
@@ -308,7 +425,7 @@ export function Treemap({ items, height = 320, cap = 30 }) {
         const Tag = t.onClick ? 'button' : 'div';
         const big = t.w > 74 && t.h > 40;
         return (
-          <Tag key={t.key} type={t.onClick ? 'button' : undefined} className="tile" onClick={t.onClick}
+          <Tag key={t.key} type={t.onClick ? 'button' : undefined} role={t.onClick ? undefined : 'img'} className="tile" onClick={t.onClick}
             onPointerEnter={() => setHi(i)} aria-label={`${t.label}: ${t.w2}`}
             style={{ left: t.x + 1, top: t.y + 1, width: Math.max(0, t.w - 2), height: Math.max(0, t.h - 2), background: tone(t.plp) }}>
             {big && <b>{t.label}</b>}

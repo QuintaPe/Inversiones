@@ -2,7 +2,9 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import * as api from './api.js';
 import { analyze, taxYears, GROUPS } from './lib/calc.js';
 import { time, eur, setMasked } from './lib/format.js';
-import { useHashRoute, useStored } from './hooks.js';
+import { useStored, usePullToRefresh, PULL_AT } from './hooks.js';
+import { useRoute, goBack } from './router.js';
+import { RANGES, useRange } from './lib/periods.js';
 import { Icon, Menu, Seg, Skeleton, Toasts, UploadButton } from './components/ui.jsx';
 import ErrorBoundary from './components/ErrorBoundary.jsx';
 import { Confirm, ImportPreview, Locked } from './components/Dialogs.jsx';
@@ -45,6 +47,8 @@ const NAV = [
   ['efectivo', 'Efectivo'],
 ];
 const TITLES = Object.fromEntries(NAV);
+// Secciones con el título (y sus pestañas o filtros) fijos arriba al hacer scroll.
+const STICKY = new Set(['resumen', 'posiciones', 'operaciones', 'dividendos', 'fiscalidad', 'efectivo']);
 const THEMES = [['auto', 'Auto'], ['light', 'Claro'], ['dark', 'Oscuro']];
 let toastId = 0;
 
@@ -57,7 +61,7 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [flt, setFlt] = useState('all');
   const [over, setOver] = useState(false);
-  const [path, go] = useHashRoute([...NAV.map((n) => n[0]), 'activo'], 'resumen');
+  const [path, go] = useRoute([...NAV.map((n) => n[0]), 'activo'], 'resumen');
   const [route, arg] = path.split('/');
   const openAsset = useCallback((isin) => go(`activo/${isin}`), [go]);
   const [palette, setPalette] = useState(false);
@@ -75,6 +79,12 @@ export default function App() {
   useEffect(() => {
     if (theme === 'auto') delete document.documentElement.dataset.theme;
     else document.documentElement.dataset.theme = theme;
+    // La barra del sistema (móvil, app instalada) toma el fondo del tema elegido; en automático,
+    // cada etiqueta de index.html vale para su tema del sistema.
+    const metas = document.querySelectorAll('meta[name="theme-color"]');
+    metas.forEach((m) => { m.dataset.auto ??= m.content; });
+    const bg = theme === 'auto' ? null : getComputedStyle(document.body).backgroundColor;
+    metas.forEach((m) => { m.content = bg ?? m.dataset.auto; });
   }, [theme]);
   // Se fija durante el render, antes que los hijos, para que ninguno llegue a pintar una cifra.
   setMasked(!!hidden);
@@ -341,6 +351,10 @@ export default function App() {
     try { apply(await api.restoreTx(tid)); notify('ok', 'Operación restaurada.'); } catch (err) { fail(err); }
   }, [apply, notify, fail]);
 
+  // Deslizar hacia abajo: cotiza si hay precios en vivo y, si no, vuelve a pedir la cartera.
+  const reloadAll = useCallback(() => (liveOn ? refreshQuotes() : api.getPortfolio().then(setData).catch(fail)), [liveOn, refreshQuotes, fail]);
+  const ptr = usePullToRefresh(reloadAll, !!user && !!data && !opForm && !palette && !imp && !question);
+
   const positions = data?.positions ?? [];
   const a = useMemo(() => analyze(positions, flt), [positions, flt]);
   // La ficha busca el activo en toda la cartera, sin el filtro de tipo.
@@ -351,7 +365,37 @@ export default function App() {
     // Resultado del año, menos las pérdidas pendientes de años anteriores, y rendimientos (dividendos, intereses, premios).
     return { gains: (y?.gainTax ?? 0) - (y?.carryIn ?? 0), divs: y?.rcm ?? 0 };
   }, [whole.sl, whole.dv, cash?.income]);
-  const back = useCallback(() => (window.history.length > 1 ? window.history.back() : go('posiciones')), [go]);
+  const back = useCallback(() => goBack('posiciones'), []);
+
+  // Título de la pestaña y, al cambiar de sección, foco en el contenido y aviso para lectores
+  // de pantalla (sin esto, el foco se queda en el enlace pulsado y nada anuncia la página nueva).
+  const pageTitle = route === 'activo' ? (assetRow?.p.name ?? 'Activo') : TITLES[route];
+  useEffect(() => { document.title = user ? `${pageTitle} · Cartera` : 'Cartera'; }, [pageTitle, user]);
+  const mainRef = useRef(null);
+  // Cabecera fija: la barra y el título de la sección miden lo que miden (cambia con el ancho y
+  // con el filtro de tipo); lo que se pega debajo (pestañas, filtros) usa esas alturas.
+  const pageH = useRef(null);
+  const [range, setRange] = useRange();
+  useEffect(() => {
+    const root = document.documentElement.style;
+    const ro = new ResizeObserver(() => {
+      root.setProperty('--bar-h', `${document.querySelector('.bar')?.getBoundingClientRect().height ?? 0}px`);
+      root.setProperty('--ph-h', `${pageH.current?.getBoundingClientRect().height ?? 0}px`);
+    });
+    const bar = document.querySelector('.bar');
+    if (bar) ro.observe(bar);
+    if (pageH.current) ro.observe(pageH.current);
+    else root.setProperty('--ph-h', '0px');
+    return () => ro.disconnect();
+  }, [path, !!data, flt]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [said, setSaid] = useState('');
+  const firstPath = useRef(path);
+  useEffect(() => {
+    if (path === firstPath.current) return;
+    firstPath.current = null;
+    mainRef.current?.focus({ preventScroll: true });
+    setSaid(pageTitle);
+  }, [path]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!auth) return <div className="center"><span className="spinner" aria-label="Cargando" /></div>;
   if (!user) {
@@ -370,7 +414,7 @@ export default function App() {
   const nav = (cls, max = NAV.length) => (
     <nav className={cls} aria-label="Secciones">
       {NAV.slice(0, max).map(([k, label]) => (
-        <a key={k} href={`#/${k}`} className={section === k ? 'on' : ''} aria-current={section === k ? 'page' : undefined}>
+        <a key={k} href={`/${k}`} className={section === k ? 'on' : ''} aria-current={section === k ? 'page' : undefined}>
           <Icon name={k} /><span>{label}</span>
         </a>
       ))}
@@ -407,9 +451,10 @@ export default function App() {
 
   return (
     <div className="shell">
+      <a className="skip" href="#main" onClick={(ev) => { ev.preventDefault(); mainRef.current?.focus(); }}>Saltar al contenido</a>
       <header className="bar">
         <div className="bar-in">
-          <a className="brand" href="#/resumen">cartera<i aria-hidden="true">.</i></a>
+          <a className="brand" href="/resumen">cartera<i aria-hidden="true">.</i></a>
           {nav('nav')}
           <div className="bar-a">
             {offline && <span className="live off" title="Sin conexión: ves los últimos datos guardados"><span className="live-dot" aria-hidden="true" />Sin conexión</span>}
@@ -434,11 +479,14 @@ export default function App() {
         </div>
       </header>
 
-      <main className="main">
-        {data && !empty && route !== 'activo' && (route !== 'resumen' || groups.length > 2) && (
-          <div className="page-h">
+      <main className="main" id="main" ref={mainRef} tabIndex={-1}>
+        {data && !empty && route !== 'activo' && (
+          <div className={`page-h ${STICKY.has(route) ? 'sticky-h' : ''}`} ref={pageH}>
             {route !== 'resumen' && <h1>{TITLES[route]}</h1>}
-            {groups.length > 2 && route !== 'efectivo' && <Seg label="Tipo de activo" options={groups} value={flt} onChange={setFlt} />}
+            {/* En el resumen, el periodo afecta a toda la página: va arriba, fijo, donde las demás
+                secciones tienen el título; el tipo de activo, a la derecha como en todas. */}
+            {route === 'resumen' && <Seg label="Periodo" options={RANGES} value={range} onChange={setRange} />}
+            {groups.length > 2 && route !== 'efectivo' && <span className="page-h-r"><Seg label="Tipo de activo" options={groups} value={flt} onChange={setFlt} /></span>}
           </div>
         )}
 
@@ -492,7 +540,7 @@ export default function App() {
             {route === 'operaciones' && <Ledger {...view} />}
             {route === 'dividendos' && <Dividends {...view} />}
             {route === 'fiscalidad' && <Tax {...view} />}
-            {route === 'efectivo' && <Cash cash={cash?.cash} labels={cash?.labels ?? {}} portfolioValue={whole.val} />}
+            {route === 'efectivo' && <Cash cash={cash?.cash} labels={cash?.labels ?? {}} cats={cash?.cats ?? {}} onCats={(cats) => setCash((c) => ({ ...c, cats }))} fail={fail} portfolioValue={whole.val} />}
           </div>
           </Suspense>
           </ErrorBoundary>
@@ -510,6 +558,13 @@ export default function App() {
       </Suspense>
       {imp && <ImportPreview preview={imp.preview} hasData={!empty} onImport={runImport} onClose={() => setImp(null)} />}
       {question && <Confirm {...question} onAnswer={answer} />}
+      <p className="sr-only" aria-live="polite">{said}</p>
+      {(ptr.pull > 0 || ptr.busy) && (
+        <div className={`ptr ${ptr.busy ? 'busy' : ''} ${ptr.pull >= PULL_AT ? 'ready' : ''}`} style={{ '--pull': `${ptr.pull}px`, '--turn': `${(ptr.pull / PULL_AT) * 270}deg` }}
+          role="status" aria-label={ptr.busy ? 'Actualizando' : ptr.pull >= PULL_AT ? 'Suelta para actualizar' : 'Desliza para actualizar'}>
+          <Icon name="undo" size={18} />
+        </div>
+      )}
       <Toasts items={toasts} onClose={closeToast} />
     </div>
   );

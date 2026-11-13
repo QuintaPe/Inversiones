@@ -168,7 +168,7 @@ test('modo privado: ningún formateador devuelve una cifra', async () => {
   } finally {
     f.setMasked(false);
   }
-  assert.equal(f.eur(1234.5), '1.234,50 €');
+  assert.equal(f.eur(1234.5), '1.234,50\u00a0€'); // espacio de no separación
 });
 
 test('modo privado: las notas del servidor pierden sus cifras, no sus fechas', async () => {

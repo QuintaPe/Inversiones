@@ -79,7 +79,7 @@ export const setPrice = (isin, price) => call(`/api/prices/${encodeURIComponent(
 export const refreshQuotes = () => full(call('/api/quotes/refresh', { method: 'POST' }));
 
 export const getHistory = () => call('/api/history');
-export const getAssetHistory = (isin, from) => call(`/api/assets/${encodeURIComponent(isin)}/history?from=${from}`);
+export const getAssetHistory = (isin, from) => call(`/api/assets/${encodeURIComponent(isin)}/history?from=${from}&bench=world`);
 export const getDividendForecast = () => call('/api/dividends/forecast');
 export const getSparks = () => call('/api/sparks');
 export const getValuations = () => call('/api/valuations');
