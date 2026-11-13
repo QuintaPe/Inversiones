@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Asset, Card, Empty, Icon, Seg } from '../components/ui.jsx';
+import { Asset, Card, Empty, Icon, Seg, Tabs } from '../components/ui.jsx';
 import { Columns } from '../charts.jsx';
 import { taxYears, splitWithholding, TREATY_RATE, SAVINGS_BRACKETS } from '../lib/calc.js';
 import { country, classLabel } from '../lib/countries.js';
@@ -84,10 +84,8 @@ export default function Tax({ a, income, onOpen }) {
         <h1>Informe fiscal {y.year}</h1>
         <p>Generado el {date(new Date().toISOString())} a partir de tus operaciones. Orientativo: no es asesoramiento fiscal.</p>
       </header>
-      <div className="utabs tax-tabs" role="tablist" aria-label="Apartado">
-        {[['resumen', 'Resumen'], ['ventas', `Ventas · ${y.sales.length}`], ['dividendos', `Dividendos · ${y.divs.length}`], ['renta', 'Renta Web']].map(([k, l]) => (
-          <button key={k} type="button" role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{l}</button>
-        ))}
+      <div className="tax-tabs">
+        <Tabs label="Apartado" value={tab} onChange={setTab} items={[['resumen', 'Resumen'], ['ventas', `Ventas · ${y.sales.length}`], ['dividendos', `Dividendos · ${y.divs.length}`], ['renta', 'Renta Web']]} />
       </div>
       <div className={pane('resumen')}>
       <section className="card tax-hero">

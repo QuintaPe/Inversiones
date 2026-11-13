@@ -276,3 +276,28 @@ export const Skeleton = () => (
     <div className="cols"><div className="sk" style={{ height: 320 }} /><div className="sk" style={{ height: 320 }} /></div>
   </div>
 );
+
+/**
+ * Pestañas subrayadas (role=tablist) con teclado: ← → para moverse, Inicio/Fin para ir a
+ * la primera o la última. Solo la elegida entra en el orden de tabulación.
+ * items: [[clave, etiqueta], …]
+ */
+export function Tabs({ items, value, onChange, label }) {
+  const refs = useRef([]);
+  const key = (ev, i) => {
+    const n = items.length;
+    const to = { ArrowRight: (i + 1) % n, ArrowLeft: (i - 1 + n) % n, Home: 0, End: n - 1 }[ev.key];
+    if (to == null) return;
+    ev.preventDefault();
+    onChange(items[to][0]);
+    refs.current[to]?.focus();
+  };
+  return (
+    <div className="utabs" role="tablist" aria-label={label}>
+      {items.map(([k, l], i) => (
+        <button key={k} ref={(el) => { refs.current[i] = el; }} type="button" role="tab" aria-selected={value === k}
+          tabIndex={value === k ? 0 : -1} className={value === k ? 'on' : ''} onClick={() => onChange(k)} onKeyDown={(ev) => key(ev, i)}>{l}</button>
+      ))}
+    </div>
+  );
+}

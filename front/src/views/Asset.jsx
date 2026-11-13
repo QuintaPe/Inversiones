@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import * as api from '../api.js';
-import { Avatar, Card, Empty, Icon, PriceInput, Seg } from '../components/ui.jsx';
+import { Avatar, Card, Empty, Icon, PriceInput, Seg, Tabs } from '../components/ui.jsx';
 import { Kpi } from '../components/Kpi.jsx';
 import { Lines } from '../charts.jsx';
 import { country, classLabel, sector } from '../lib/countries.js';
@@ -485,11 +485,7 @@ export default function Asset({ x, totalVal, yearBase, onBack, onPrice, liveQuot
         </div>
       )}
 
-      <div className="utabs" role="tablist" aria-label="Apartado">
-        {tabs.map(([k, l]) => (
-          <button key={k} type="button" role="tab" aria-selected={cur === k} className={cur === k ? 'on' : ''} onClick={() => setTab(k)}>{l}</button>
-        ))}
-      </div>
+      <Tabs label="Apartado" value={cur} onChange={setTab} items={tabs} />
 
       {cur === 'resumen' && (
         <div className="asset-sum">

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Asset, Avatar, Empty, Flash, Icon, Pill, PriceInput, Search, Th, useSort } from '../components/ui.jsx';
+import { Asset, Avatar, Empty, Flash, Icon, Pill, PriceInput, Search, Tabs, Th, useSort } from '../components/ui.jsx';
 import { Kpi } from '../components/Kpi.jsx';
 import { useStored } from '../hooks.js';
 import { sum } from '../lib/calc.js';
@@ -46,11 +46,7 @@ export default function Positions({ a, onOpen, onPrice, targets, patch, fail }) 
         </>
       )}
 
-      <div className="utabs" role="tablist" aria-label="Estado">
-        {[['open', `Abiertas · ${a.o.length}`], ['closed', `Cerradas · ${a.c.length}`], ['target', 'Cartera objetivo']].map(([k, l]) => (
-          <button key={k} type="button" role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{l}</button>
-        ))}
-      </div>
+      <Tabs label="Estado" value={tab} onChange={setTab} items={[['open', `Abiertas · ${a.o.length}`], ['closed', `Cerradas · ${a.c.length}`], ['target', 'Cartera objetivo']]} />
       {tab !== 'target' && (
         <div className="toolbar">
           <Search value={q} onChange={setQ} placeholder="Buscar por nombre o ISIN" label="Buscar posición" />
