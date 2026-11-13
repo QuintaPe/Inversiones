@@ -69,6 +69,9 @@ export const uploadCsv = (file, replace = false) => full(call(`/api/upload${repl
 /** Qué cambiaría al importar el archivo, sin guardar nada. */
 export const previewCsv = (file) => call('/api/upload?preview=1', csvForm(file));
 export const EXPORT_URL = '/api/export';
+/** Qué trae una copia descargada (sin cambiar nada) y restaurarla: sustituye todos los datos. */
+export const previewBackup = (file) => call('/api/import?preview=1', csvForm(file));
+export const restoreBackup = (file) => full(call('/api/import', csvForm(file)));
 
 export const pushSubscribe = (sub) => call('/api/push/subscribe', json('POST', sub));
 export const pushUnsubscribe = (endpoint) => call('/api/push/unsubscribe', json('POST', { endpoint }));

@@ -84,3 +84,44 @@ export function ImportPreview({ preview: p, hasData, onImport, onClose }) {
     </div>
   );
 }
+
+/** Lo que trae una copia de los datos, antes de restaurarla (sustituye todo lo que hay). */
+export function RestorePreview({ name, preview: p, onRestore, onClose }) {
+  const [busy, setBusy] = useState(false);
+  const run = async () => { setBusy(true); await onRestore(); };
+  const extras = [
+    [p.manual, 'añadida a mano', 'añadidas a mano'], [p.removed, 'quitada por ti', 'quitadas por ti'], [p.prices, 'precio a mano', 'precios a mano'],
+    [p.valuations, 'valoración', 'valoraciones'], [p.alerts, 'alerta', 'alertas'], [p.targets, 'peso objetivo', 'pesos objetivo'],
+    [p.categories, 'categoría de comercio', 'categorías de comercio'],
+  ].filter(([n]) => n > 0).map(([n, one, many]) => plural(n, one, many));
+  return (
+    <div className="scrim top" onClick={busy ? undefined : onClose}>
+      <div className="sheet" role="dialog" aria-modal="true" aria-label="Restaurar una copia" onClick={(ev) => ev.stopPropagation()}>
+        <header className="sheet-h">
+          <h2>Restaurar una copia</h2>
+          <button type="button" className="icon-btn" aria-label="Cerrar" onClick={onClose} disabled={busy}><Icon name="close" /></button>
+        </header>
+        <p className="sheet-p">
+          <b>{name}</b><br />
+          {p.exported_at && <>Descargada el {date(p.exported_at.slice(0, 10))} · </>}
+          {plural(p.transactions, 'operación', 'operaciones')}{p.from && <> · del {date(p.from)} al {date(p.to)}</>}
+        </p>
+        <ul className="imp">
+          <li className="on"><b>{p.transactions.toLocaleString('es-ES')}</b><span>en la copia</span></li>
+          <li><b>{p.current.toLocaleString('es-ES')}</b><span>tienes ahora</span></li>
+        </ul>
+        {extras.length > 0 && <p className="note">También trae {extras.join(', ')}.</p>}
+        <p className="note warn-t">
+          <Icon name="alert" size={15} /> Restaurar sustituye todo lo que hay ahora en tu cuenta por lo que hay en la copia.
+          {p.current > 0 && ' Si quieres conservar lo actual, descarga antes una copia.'}
+        </p>
+        <div className="sheet-a">
+          <button type="button" className="btn" onClick={onClose} disabled={busy}>Cancelar</button>
+          <button type="button" className={`btn ${p.current > 0 ? 'bad' : 'pri'}`} onClick={run} disabled={busy}>
+            {busy ? 'Restaurando…' : 'Restaurar la copia'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

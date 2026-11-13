@@ -744,6 +744,30 @@ function makeRepo(client, url, { cache = true } = {}) {
       for (const id of ids) { users.delete(id); touchRows(id); }
     },
 
+    /**
+     * Sustituye todos los datos del usuario por los de una copia ya validada (backup.js), en una
+     * sola transacción: o entra entera o no cambia nada.
+     */
+    async restoreUser(userId, b) {
+      const del = ['transactions', 'prices', 'imports', 'valuations', 'alerts', 'targets', 'history_cache', 'merchant_categories']
+        .map((t) => ({ sql: `DELETE FROM ${t} WHERE user_id = ?`, args: [userId] }));
+      const txSql = `INSERT INTO transactions (user_id, ${ROW_COLS.join(', ')}, source, deleted_at) VALUES (?, ${ROW_COLS.map(() => '?').join(', ')}, ?, ?)`;
+      try {
+        await client.batch([
+          ...del,
+          ...b.transactions.map((t) => ({ sql: txSql, args: [userId, ...ROW_COLS.map((k) => t[k] ?? ''), t.source, t.deleted_at] })),
+          ...b.prices.map((x) => ({ sql: "INSERT INTO prices (user_id, isin, price, updated_at, source, info) VALUES (?, ?, ?, ?, 'manual', NULL)", args: [userId, x.isin, x.price, x.updated_at] })),
+          ...b.valuations.map((x) => ({ sql: 'INSERT INTO valuations (user_id, isin, d, price) VALUES (?, ?, ?, ?)', args: [userId, x.isin, x.d, x.price] })),
+          ...b.alerts.map((x) => ({ sql: 'INSERT INTO alerts (user_id, isin, dir, price, created_at, triggered_at) VALUES (?, ?, ?, ?, ?, ?)', args: [userId, x.isin, x.dir, x.price, x.created_at, x.triggered_at] })),
+          ...b.targets.map((x) => ({ sql: 'INSERT INTO targets (user_id, isin, weight) VALUES (?, ?, ?)', args: [userId, x.isin, x.weight] })),
+          ...b.imports.map((x) => ({ sql: 'INSERT INTO imports (user_id, name, uploaded_at, total, relevant, added, sha256) VALUES (?, ?, ?, ?, ?, ?, ?)', args: [userId, x.name, x.uploaded_at, x.total, x.relevant, x.added, x.sha256] })),
+          ...b.merchant_categories.map((x) => ({ sql: 'INSERT INTO merchant_categories (user_id, merchant, category) VALUES (?, ?, ?)', args: [userId, x.merchant, x.category] })),
+        ], 'write');
+      } finally {
+        touchRows(userId);
+      }
+    },
+
     async clearUserData(userId) {
       await client.batch(
         ['transactions', 'prices', 'imports', 'valuations', 'alerts', 'targets', 'history_cache', 'merchant_categories'].map((t) => ({ sql: `DELETE FROM ${t} WHERE user_id = ?`, args: [userId] })),

@@ -7,7 +7,7 @@ import { useRoute, goBack } from './router.js';
 import { RANGES, useRange } from './lib/periods.js';
 import { Icon, Menu, Seg, Skeleton, Toasts, UploadButton } from './components/ui.jsx';
 import ErrorBoundary from './components/ErrorBoundary.jsx';
-import { Confirm, ImportPreview, Locked } from './components/Dialogs.jsx';
+import { Confirm, ImportPreview, Locked, RestorePreview } from './components/Dialogs.jsx';
 import { pushSupported, pushEnabled, enablePush, disablePush } from './lib/push.js';
 
 // Cada sección se descarga al abrirla (y las demás en cuanto la app queda libre).
@@ -219,6 +219,31 @@ export default function App() {
     }
   };
 
+  // Restaurar una copia descargada: igual, primero se enseña qué trae y qué sustituye.
+  const [bak, setBak] = useState(null); // { file, preview }
+  const bakInput = useRef(null);
+  const pickBackup = async (file) => {
+    try {
+      setBak({ file, preview: (await api.previewBackup(file)).preview });
+    } catch (err) {
+      fail(err);
+    }
+  };
+  const runRestore = async () => {
+    try {
+      const res = await api.restoreBackup(bak.file);
+      setData({ positions: res.positions, meta: res.meta, alerts: res.alerts, targets: res.targets });
+      api.getCash().then(setCash).catch(() => {}); // el número de operaciones puede coincidir: se pide a mano
+      reloadHistory();
+      go('resumen');
+      notify('ok', `Copia restaurada: ${res.restored.transactions} ${res.restored.transactions === 1 ? 'operación' : 'operaciones'}.`);
+    } catch (err) {
+      fail(err);
+    } finally {
+      setBak(null);
+    }
+  };
+
   // ---------- cotización en vivo ----------
   const [live, setLive] = useState({ at: null, failed: [], busy: false, error: null });
   const liveBusy = useRef(false);
@@ -353,7 +378,7 @@ export default function App() {
 
   // Deslizar hacia abajo: cotiza si hay precios en vivo y, si no, vuelve a pedir la cartera.
   const reloadAll = useCallback(() => (liveOn ? refreshQuotes() : api.getPortfolio().then(setData).catch(fail)), [liveOn, refreshQuotes, fail]);
-  const ptr = usePullToRefresh(reloadAll, !!user && !!data && !opForm && !palette && !imp && !question);
+  const ptr = usePullToRefresh(reloadAll, !!user && !!data && !opForm && !palette && !imp && !bak && !question);
 
   const positions = data?.positions ?? [];
   const a = useMemo(() => analyze(positions, flt), [positions, flt]);
@@ -442,6 +467,7 @@ export default function App() {
             </button>
           )}
           <a role="menuitem" href={api.EXPORT_URL} download onClick={close}><Icon name="download" size={17} />Descargar una copia</a>
+          <button type="button" role="menuitem" onClick={() => { close(); bakInput.current?.click(); }}><Icon name="undo" size={17} />Restaurar una copia</button>
           <button type="button" role="menuitem" onClick={() => { close(); wipe(); }} className="danger"><Icon name="trash" size={17} />Borrar mis datos</button>
           <button type="button" role="menuitem" onClick={logout}><Icon name="logout" size={17} />Cerrar sesión</button>
         </>
@@ -557,6 +583,9 @@ export default function App() {
         )}
       </Suspense>
       {imp && <ImportPreview preview={imp.preview} hasData={!empty} onImport={runImport} onClose={() => setImp(null)} />}
+      {bak && <RestorePreview name={bak.file.name} preview={bak.preview} onRestore={runRestore} onClose={() => setBak(null)} />}
+      <input ref={bakInput} type="file" accept=".json,application/json" hidden aria-label="Archivo de la copia"
+        onChange={(ev) => { const f = ev.target.files[0]; ev.target.value = ''; if (f) pickBackup(f); }} />
       {question && <Confirm {...question} onAnswer={answer} />}
       <p className="sr-only" aria-live="polite">{said}</p>
       {(ptr.pull > 0 || ptr.busy) && (

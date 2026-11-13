@@ -8,6 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CsvError } from './engine.js';
+import { BackupError } from './backup.js';
 import { createAlertWatcher } from './alerts.js';
 import { sessions, AuthError } from './auth.js';
 import { createHistory } from './history.js';
@@ -72,6 +73,7 @@ export function createApp({ db: rawDb, verifyGoogle, googleClientId, sessionSecr
   app.use('/api', limit(60_000, 600));
   app.use('/api/auth', limit(15 * 60_000, 30));
   app.use('/api/upload', limit(60 * 60_000, 40));
+  app.use('/api/import', limit(60 * 60_000, 20));
   app.get('/api/health', (_req, res) => res.json({ ok: true }));
   app.use(express.json({ limit: '1mb' }));
   app.use(cookieParser());
@@ -132,7 +134,7 @@ export function createApp({ db: rawDb, verifyGoogle, googleClientId, sessionSecr
 
   app.use((err, _req, res, _next) => {
     if (err instanceof AuthError) return res.status(401).json({ error: err.message });
-    if (err instanceof CsvError) return res.status(400).json({ error: err.message });
+    if (err instanceof CsvError || err instanceof BackupError) return res.status(400).json({ error: err.message });
     if (err instanceof multer.MulterError) return res.status(400).json({ error: `Archivo no válido: ${err.message}` });
     console.error(err);
     res.status(500).json({ error: 'Error interno del servidor.' });

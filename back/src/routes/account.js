@@ -1,6 +1,10 @@
 // Alertas, cartera objetivo, efectivo y categorías, copia de los datos, avisos y borrado.
 import { buildCash, buildIncome, CASH_LABEL } from '../engine.js';
+import multer from 'multer';
 import { parsePrice } from '../lib/validate.js';
+import { readBackup, backupSummary } from '../backup.js';
+
+const backupFile = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
 export default function accountRoutes(api, { db, push, pf }) {
   const { portfolio } = pf;
@@ -51,6 +55,19 @@ export default function accountRoutes(api, { db, push, pf }) {
     const day = new Date().toISOString().slice(0, 10);
     res.set('Content-Disposition', `attachment; filename="cartera-${day}.json"`)
       .json({ app: 'cartera', version: 2, exported_at: new Date().toISOString(), ...(await db.exportUser(req.userId)) });
+  });
+
+  // Restaura una copia descargada con /export: sustituye todos los datos de la cuenta.
+  // ?preview=1 solo cuenta qué trae la copia y qué hay ahora, sin cambiar nada.
+  api.post('/import', backupFile.single('file'), async (req, res) => {
+    if (!req.file) return res.status(400).json({ error: 'No se ha recibido ningún archivo.' });
+    const backup = readBackup(req.file.buffer.toString('utf8'));
+    if (req.query.preview === '1') {
+      const now = await db.exportUser(req.userId);
+      return res.json({ preview: { ...backupSummary(backup), current: now.transactions.filter((t) => !t.deleted_at).length } });
+    }
+    await db.restoreUser(req.userId, backup);
+    res.json({ restored: backupSummary(backup), ...(await portfolio(req.userId)) });
   });
 
   api.post('/push/subscribe', async (req, res) => {
