@@ -1,6 +1,11 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
+// Navegadores que se soportan (los de Vite por defecto): Lightning CSS traduce para ellos lo que
+// aún no entienden, como light-dark() de los temas (Safari 16 y 17.0–17.4).
+const v = (major, minor = 0) => (major << 16) | (minor << 8);
+const TARGETS = { chrome: v(107), edge: v(107), firefox: v(104), safari: v(16), ios_saf: v(16) };
+
 /**
  * - Precarga la fuente principal, que si no se descubre tarde (al leer el CSS).
  * - Escribe asset-manifest.json con todos los JS y CSS del build: el service worker los
@@ -26,6 +31,8 @@ function shell() {
 }
 
 export default defineConfig({
+  css: { transformer: 'lightningcss', lightningcss: { targets: TARGETS } },
+  build: { cssMinify: 'lightningcss' },
   // React Compiler: memoriza componentes y cálculos sin useMemo/useCallback a mano, para que
   // un cambio de precio no vuelva a pintar lo que no depende de él.
   plugins: [react(process.env.REACT_COMPILER === '0' ? {} : { babel: { plugins: ['babel-plugin-react-compiler'] } }), shell()],

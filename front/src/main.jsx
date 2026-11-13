@@ -4,8 +4,6 @@ import App from './App.jsx';
 import ErrorBoundary from './components/ErrorBoundary.jsx';
 import './fonts.css';
 import './styles.css';
-// Rediseño: quita esta línea para volver al diseño anterior.
-import './redesign.css';
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
