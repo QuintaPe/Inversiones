@@ -3,3 +3,6 @@ front/dist/
 back/data/
 .env
 *.log
+e2e/.snapshots/
+test-results/
+playwright-report/

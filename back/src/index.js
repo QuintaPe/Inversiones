@@ -39,6 +39,7 @@ const app = createApp({
   trustProxy: process.env.TRUST_PROXY === '1',
   slowMs: Number(process.env.SLOW_MS ?? 1000),
   demo: process.env.DEMO !== '0',
+  rateLimits: process.env.RATE_LIMIT !== '0',
 });
 app.listen(PORT, HOST, () => console.log(`API en http://${HOST}:${PORT}`));
 

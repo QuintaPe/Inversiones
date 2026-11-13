@@ -73,10 +73,11 @@ export function createApp({ db: rawDb, verifyGoogle, googleClientId, sessionSecr
   app.use(helmet({ contentSecurityPolicy: csp ? CSP : false, crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' } }));
   // Sin comprimir el canal de cotizaciones: el compresor retendría los eventos.
   app.use(compression({ filter: (req, res) => req.path !== '/api/stream' && compression.filter(req, res) }));
-  const limit = (windowMs, max) => rateLimit({
+  // rateLimits=false (RATE_LIMIT=0) solo para pruebas de carga o de extremo a extremo.
+  const limit = (windowMs, max) => (!rateLimits ? (_req, _res, next) => next() : rateLimit({
     windowMs, limit: max, standardHeaders: 'draft-7', legacyHeaders: false,
     message: { error: 'Demasiadas peticiones. Espera un momento y vuelve a intentarlo.' },
-  });
+  }));
   app.use('/api', limit(60_000, 600));
   app.use('/api/auth', limit(15 * 60_000, 30));
   app.use('/api/upload', limit(60 * 60_000, 40));
