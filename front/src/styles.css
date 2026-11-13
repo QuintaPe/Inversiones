@@ -310,6 +310,36 @@ button.kv:hover svg{transform:translateX(3px);color:var(--tx)}
 .tl-d .op-b{margin-top:0}
 @media(max-width:640px){.tl-t{white-space:normal}.tl-b{grid-template-columns:20px minmax(0,1fr) auto}.tl-b>svg{display:none}.tl::before{left:17px}.tl-d{margin-left:36px}}
 
+/* ficha de activo: simulador de venta y alertas */
+.sim{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr);gap:var(--sp-5);align-items:start}
+.sim-r{width:100%;margin:var(--sp-4) 0 var(--sp-2);accent-color:var(--chart)}
+.sim-q{display:flex;flex-wrap:wrap;gap:var(--sp-2);margin:var(--sp-2) 0 0}
+.sim-v{font-size:clamp(32px,4vw,44px);font-weight:700;letter-spacing:-.04em;font-variant-numeric:tabular-nums;margin:2px 0}
+.sim-s{color:var(--tx-2);font-size:14px;font-variant-numeric:tabular-nums}
+.sim-s span{font-weight:650}
+.sim-cost{background:var(--surface-3)}.sim-gain{background:var(--gain)}.sim-tax{background:var(--loss)}
+.sim .stackbar{margin-top:var(--sp-4)}
+.lots-l{list-style:none;padding:0;margin:0}
+.lots-l li{display:flex;justify-content:space-between;align-items:center;gap:var(--sp-3);padding:9px 0;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums}
+.lots-l li:last-child{border-bottom:0}
+.lots-l span{font-weight:600}.lots-l small{display:block;color:var(--mu);font-size:var(--fs-xs);font-weight:400}
+.lots-l b{font-weight:650}
+.al-now{color:var(--tx-2);margin-bottom:var(--sp-3);font-variant-numeric:tabular-nums}
+.al-now b{color:var(--tx)}
+.al-q{display:flex;align-items:center;flex-wrap:wrap;gap:var(--sp-2);font-size:var(--fs-sm)}
+.al-q .btn{padding:6px 12px;font-size:var(--fs-sm)}
+.al-l{list-style:none;padding:0;margin:0}
+.al-l li{display:flex;align-items:center;gap:var(--sp-3);padding:10px 0;border-bottom:1px solid var(--line)}
+.al-l li:last-child{border-bottom:0}
+.al-l li.fired{opacity:.6}
+.al-i{display:grid;place-items:center;width:32px;height:32px;border-radius:50%;flex:none;background:var(--surface-2);color:var(--tx-2)}
+.al-i.above{color:var(--gain);background:color-mix(in srgb,var(--gain) 14%,transparent)}
+.al-i.below{color:var(--loss);background:color-mix(in srgb,var(--loss) 14%,transparent)}
+.al-t{flex:1;min-width:0;color:var(--tx-2);font-variant-numeric:tabular-nums}
+.al-t b{color:var(--tx)}
+.al-t small{display:block;color:var(--mu);font-size:var(--fs-xs)}
+@media(max-width:960px){.sim{grid-template-columns:minmax(0,1fr)}}
+
 /* avatar diminuto (calendario de dividendos) */
 .av.xs{width:22px;height:22px;font-size:8.5px;margin-left:-6px;box-shadow:0 0 0 2px var(--surface)}
 .av.xs:first-child{margin-left:0}

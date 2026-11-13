@@ -139,37 +139,98 @@ const Hidden = ({ title }) => (
 function Simulator({ p, yearBase }) {
   const [sh, setSh] = useState(String(+p.sh.toFixed(6)));
   const [price, setPrice] = useState(p.price > 0 ? String(+p.price.toFixed(4)) : '');
+  const [steps, setSteps] = useState(false);
   const n = Math.min(p.sh, parseFloat(sh.replace(',', '.')) || 0), px = parseFloat(price.replace(',', '.')) || 0;
   const sim = n > 0 && px > 0 ? simulateSale(p.lots, n, px) : null;
   // Impuesto marginal: lo que sube la cuota del año al añadir esta ganancia (o lo que baja con una pérdida).
   const tax = sim ? savingsTax(saleBase(yearBase, sim.gain)) - savingsTax(saleBase(yearBase, 0)) : 0;
+  const keep = sim ? sim.proceeds - tax : 0;
+  const setPx = (v) => setPrice(String(+v.toFixed(4)));
+  // Reparto de lo cobrado: lo que pagaste, lo que ganas y lo que se lleva Hacienda.
+  const bar = sim && sim.proceeds > 0 && [
+    ['cost', 'Coste recuperado', Math.min(sim.cost, sim.proceeds)],
+    ['gain', 'Ganancia neta', Math.max(0, sim.gain - Math.max(0, tax))],
+    ['tax', 'Impuesto', Math.max(0, tax)],
+  ].filter(([, , v]) => v > 0.005);
   return (
-    <Card title="Simular una venta" sub="Resultado fiscal por FIFO si vendieras ahora">
-      <div className="sim-f">
-        <label><span>Unidades</span>
-          <input type="text" inputMode="decimal" value={sh} onChange={(ev) => setSh(ev.target.value)} aria-label="Unidades a vender" /></label>
-        <label><span>Precio (€)</span>
-          <input type="text" inputMode="decimal" value={price} onChange={(ev) => setPrice(ev.target.value)} aria-label="Precio de venta en euros" /></label>
-      </div>
-      <div className="seg sim-q" role="group" aria-label="Fracción de la posición">
-        {[25, 50, 75, 100].map((f) => <button type="button" key={f} onClick={() => setSh(String(+((p.sh * f) / 100).toFixed(6)))}>{f} %</button>)}
-      </div>
-      {sim ? (
-        <>
-          <div className="calc">
-            <div><span>Cobrarías ({qty(n)} × {num(px)} − 1 € de comisión)</span><b>{eur(sim.proceeds)}</b></div>
-            <div><span>− Coste de adquisición FIFO ({sim.used.length} {sim.used.length === 1 ? 'lote' : 'lotes'})</span><b>−{eur(sim.cost)}</b></div>
-            <div className="t"><span>= Resultado</span><b className={sign(sim.gain)}>{eurS(sim.gain)}</b></div>
-            <div><span>{tax >= 0 ? 'Impuesto estimado' : 'Ahorro fiscal estimado'}</span><b>{eur(Math.abs(tax))}</b></div>
-            <div className="t"><span>Te quedaría tras impuestos</span><b>{eur(sim.proceeds - tax)}</b></div>
-          </div>
-          <p className="note">
-            Lotes que se consumirían: {sim.used.map((l) => `${date(l.d)} (${qty(l.sh)} a ${num(l.unit)})`).join(', ')}. El impuesto es
-            el efecto sobre tu base del ahorro de este año ({eur(saleBase(yearBase, 0))} hasta ahora); orientativo.
-          </p>
-        </>
-      ) : <Empty>Indica unidades y precio.</Empty>}
-    </Card>
+    <div className="sim">
+      <Card title="Simular una venta" sub="Qué te quedaría si vendieras ahora (criterio FIFO)">
+        <div className="sim-f">
+          <label><span>Unidades</span>
+            <input type="text" inputMode="decimal" value={sh} onChange={(ev) => setSh(ev.target.value)} aria-label="Unidades a vender" /></label>
+          <label><span>Precio de venta (€)</span>
+            <input type="text" inputMode="decimal" value={price} onChange={(ev) => setPrice(ev.target.value)} aria-label="Precio de venta en euros" /></label>
+        </div>
+        <input type="range" className="sim-r" min="0" max={p.sh} step={p.sh / 100} value={n}
+          onChange={(ev) => setSh(String(+Number(ev.target.value).toFixed(6)))} aria-label="Parte de la posición a vender" />
+        <div className="sim-q">
+          <span className="seg" role="group" aria-label="Fracción de la posición">
+            {[25, 50, 75, 100].map((f) => <button type="button" key={f} className={Math.abs(n - (p.sh * f) / 100) < 1e-6 ? 'on' : ''}
+              onClick={() => setSh(String(+((p.sh * f) / 100).toFixed(6)))}>{f} %</button>)}
+          </span>
+          {p.price > 0 && (
+            <span className="seg" role="group" aria-label="Precio de venta">
+              {[[-10, '−10 %'], [0, 'Actual'], [10, '+10 %']].map(([d, l]) => (
+                <button type="button" key={d} className={Math.abs(px - p.price * (1 + d / 100)) < 0.0001 ? 'on' : ''} onClick={() => setPx(p.price * (1 + d / 100))}>{l}</button>
+              ))}
+            </span>
+          )}
+        </div>
+      </Card>
+
+      <Card title="Resultado">
+        {sim ? (
+          <>
+            <span className="eyebrow">Te quedarías con</span>
+            <div className="sim-v">{eur(keep)}</div>
+            <p className="sim-s">
+              <span className={sign(sim.gain)}>{eurS(sim.gain)}</span> de {sim.gain >= 0 ? 'ganancia' : 'pérdida'} ·{' '}
+              {tax >= 0 ? `${eur(tax)} de impuesto estimado` : `${eur(-tax)} de ahorro fiscal`}
+            </p>
+            {bar?.length > 0 && (
+              <>
+                <div className="stackbar" role="img" aria-label="Reparto de lo cobrado">
+                  {bar.map(([k, l, v]) => <i key={k} className={`sim-${k}`} style={{ flexGrow: v }} title={`${l}: ${eur(v)}`} />)}
+                </div>
+                <ul className="legend flat">
+                  {bar.map(([k, l, v]) => <li key={k}><i className={`dotk sim-${k}`} />{l} <b>{eur(v)}</b></li>)}
+                </ul>
+              </>
+            )}
+            <h3 className="kv-h">Lotes que vendes (los más antiguos primero)</h3>
+            <ul className="lots-l">
+              {sim.used.map((l, i) => {
+                const g = (px - l.unit) * l.sh;
+                return (
+                  <li key={i}>
+                    <span>{date(l.d)}<small>{qty(l.sh)} uds. compradas a {eur(l.unit)}</small></span>
+                    <b className={sign(g)}>{eurS(g)}</b>
+                  </li>
+                );
+              })}
+            </ul>
+            <button type="button" className="fold" aria-expanded={steps} onClick={() => setSteps((v) => !v)}>
+              {steps ? 'Ocultar el cálculo' : 'Ver el cálculo'}
+            </button>
+            {steps && (
+              <>
+                <div className="calc">
+                  <div><span>Cobrarías ({qty(n)} × {num(px)} − 1 € de comisión)</span><b>{eur(sim.proceeds)}</b></div>
+                  <div><span>− Coste de adquisición FIFO ({sim.used.length} {sim.used.length === 1 ? 'lote' : 'lotes'})</span><b>−{eur(sim.cost)}</b></div>
+                  <div className="t"><span>= Resultado</span><b className={sign(sim.gain)}>{eurS(sim.gain)}</b></div>
+                  <div><span>{tax >= 0 ? 'Impuesto estimado' : 'Ahorro fiscal estimado'}</span><b>{eur(Math.abs(tax))}</b></div>
+                  <div className="t"><span>Te quedaría tras impuestos</span><b>{eur(keep)}</b></div>
+                </div>
+                <p className="note">
+                  El impuesto es el efecto sobre tu base del ahorro de este año ({eur(saleBase(yearBase, 0))} hasta ahora); orientativo.
+                  La ganancia de cada lote no descuenta la comisión.
+                </p>
+              </>
+            )}
+          </>
+        ) : <Empty>Indica unidades y precio.</Empty>}
+      </Card>
+    </div>
   );
 }
 
@@ -188,25 +249,43 @@ function Alerts({ p, alerts, patch, fail }) {
     } catch (e) { fail(e); }
   };
   const del = async (id) => { try { patch(await api.deleteAlert(id)); } catch (e) { fail(e); } };
+  const quick = (d) => { setDir(d < 0 ? 'below' : 'above'); setPrice(String(+(p.price * (1 + d / 100)).toFixed(2))); };
+  const pending = alerts.filter((al) => !al.triggered_at), fired = alerts.filter((al) => al.triggered_at);
+  const item = (al) => {
+    const dist = p.price > 0 ? (al.price / p.price - 1) * 100 : null;
+    return (
+      <li key={al.id} className={al.triggered_at ? 'fired' : ''}>
+        <span className={`al-i ${al.dir}`} aria-hidden="true"><Icon name="bell" size={15} /></span>
+        <span className="al-t">
+          {al.dir === 'above' ? 'Si sube de' : 'Si baja de'} <b>{eur(al.price)}</b>
+          <small>{al.triggered_at ? `Saltó el ${date(al.triggered_at)}` : dist != null ? `a ${pctS(dist)} del precio actual` : 'pendiente'}</small>
+        </span>
+        <button type="button" className="icon" aria-label="Borrar alerta" onClick={() => del(al.id)}><Icon name="trash" size={16} /></button>
+      </li>
+    );
+  };
   return (
-    <Card title="Alertas de precio" sub="Te avisa cuando la cotización cruza el nivel. Con los avisos activados en el menú de tu cuenta, también con la app cerrada">
-      <form className="val-f" onSubmit={add}>
-        <Seg label="Sentido de la alerta" options={[['below', 'Baja de'], ['above', 'Sube de']]} value={dir} onChange={setDir} />
-        <input type="text" inputMode="decimal" placeholder={p.price > 0 ? `p. ej. ${num(p.price * (dir === 'below' ? 0.9 : 1.1))}` : 'Precio €'}
-          value={price} onChange={(ev) => setPrice(ev.target.value)} aria-label="Precio de la alerta en euros" required />
-        <button type="submit" className="btn pri">Crear</button>
-      </form>
-      {alerts.length > 0 && (
-        <ul className="vals">
-          {alerts.map((al) => (
-            <li key={al.id}>
-              <span>{al.dir === 'above' ? 'Si sube de' : 'Si baja de'} <b>{eur(al.price)}</b>{al.triggered_at && <em className="fired"> · saltó el {date(al.triggered_at)}</em>}</span>
-              <button type="button" className="icon" aria-label="Borrar alerta" onClick={() => del(al.id)}><Icon name="trash" size={16} /></button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </Card>
+    <div className="cols">
+      <Card title="Nueva alerta" sub="Te avisa cuando la cotización cruza el nivel. Con los avisos activados en el menú de tu cuenta, también con la app cerrada">
+        {p.price > 0 && <p className="al-now">Precio actual <b>{eur(p.price)}</b></p>}
+        <form className="val-f" onSubmit={add}>
+          <Seg label="Sentido de la alerta" options={[['below', 'Baja de'], ['above', 'Sube de']]} value={dir} onChange={setDir} />
+          <input type="text" inputMode="decimal" placeholder="Precio €" value={price} onChange={(ev) => setPrice(ev.target.value)} aria-label="Precio de la alerta en euros" required />
+          <button type="submit" className="btn pri">Crear</button>
+        </form>
+        {p.price > 0 && (
+          <div className="al-q">
+            <span className="mu">Rápido:</span>
+            {[-10, -5, 5, 10].map((d) => <button key={d} type="button" className="btn soft" onClick={() => quick(d)}>{d > 0 ? '+' : '−'}{Math.abs(d)} %</button>)}
+          </div>
+        )}
+      </Card>
+      <Card title="Tus alertas" sub={pending.length ? `${pending.length} pendiente${pending.length === 1 ? '' : 's'}` : 'Ninguna pendiente'}>
+        {alerts.length ? (
+          <ul className="al-l">{pending.map(item)}{fired.map(item)}</ul>
+        ) : <Empty>Crea una alerta para que te avisemos cuando el precio llegue a un nivel.</Empty>}
+      </Card>
+    </div>
   );
 }
 
@@ -302,6 +381,20 @@ export default function Asset({ x, totalVal, yearBase, onBack, onPrice, liveQuot
     p.open && p.priceSource === 'live' && ['alerts', `Alertas${alerts.filter((al) => !al.triggered_at).length ? ` · ${alerts.filter((al) => !al.triggered_at).length}` : ''}`],
   ].filter(Boolean);
   const cur = tabs.some(([k]) => k === tab) ? tab : 'resumen';
+  // Tu historia con el valor: desde cuándo, cuántas operaciones y a qué precios compraste.
+  const story = (() => {
+    const first = x.B[0]?.d;
+    if (!first) return null;
+    const days = (Date.now() - Date.parse(`${first}T00:00:00Z`)) / 86400000;
+    const held = days >= 730 ? `${Math.floor(days / 365)} años` : days >= 60 ? `${Math.floor(days / 30.44)} meses` : `${Math.max(1, Math.round(days))} días`;
+    const pxs = x.B.map((b) => b.px).filter((v) => v > 0);
+    const n = (k, one, many) => { const c = x.ops.filter((o) => o.k === k).length; return c ? `${c} ${c === 1 ? one : many}` : null; };
+    return {
+      first, held: p.open ? held : `${held} desde entonces`,
+      ops: [n('B', 'compra', 'compras'), n('S', 'venta', 'ventas'), n('D', 'dividendo', 'dividendos')].filter(Boolean).join(' · '),
+      min: pxs.length ? Math.min(...pxs) : null, max: pxs.length ? Math.max(...pxs) : null,
+    };
+  })();
   const addOp = () => onAddOp({ isin: p.isin, name: p.name, asset_class: p.cls });
 
   return (
@@ -430,7 +523,7 @@ export default function Asset({ x, totalVal, yearBase, onBack, onPrice, liveQuot
                   </p>
                 ) : p.priceSource === 'live' && p.priceInfo ? (
                   <p className="note">
-                    <span className="live-dot" aria-hidden="true" /> En vivo · {p.priceInfo.symbol} · {p.priceInfo.exchange}.{' '}
+                    <span className="live-dot" aria-hidden="true" /> {['En vivo', p.priceInfo.symbol, p.priceInfo.exchange].filter(Boolean).join(' · ')}.{' '}
                     {p.priceInfo.currency !== 'EUR' && <>{num(p.priceInfo.raw)} {p.priceInfo.currency} × {isMasked() ? MASK : p.priceInfo.rate.toFixed(4)}. </>}
                     {p.priceInfo.time && <>Cotización del {date(p.priceInfo.time)} a las {time(p.priceInfo.time)}.</>}
                   </p>
@@ -446,6 +539,21 @@ export default function Asset({ x, totalVal, yearBase, onBack, onPrice, liveQuot
             )}
             {p.open && hist === null && (isMasked() ? <Hidden title="Valoraciones" /> : <Valuations p={p} onPrice={onPrice} onChange={onHistoryChange} />)}
             {!p.open && <Card title="Posición cerrada"><p className="note">Ya no tienes acciones de este valor: su resultado quedó realizado en las ventas.</p></Card>}
+            {story && (
+              <Card title="Tu historia con este valor">
+                <div className="kvs">
+                  <div className="kv"><span>Primera compra<small>{dateLong(Date.parse(`${story.first}T00:00:00Z`))}</small></span><b>{story.held}</b></div>
+                  <div className="kv"><span>Operaciones</span><b>{story.ops}</b></div>
+                  {story.min != null && (
+                    <div className="kv"><span>Precio de compra<small>{story.min === story.max ? 'siempre el mismo' : 'el más bajo y el más alto'}</small></span>
+                      <b>{story.min === story.max ? eur(story.min) : `${eur(story.min)} – ${eur(story.max)}`}</b></div>
+                  )}
+                  {p.open && p.price > 0 && story.min != null && (
+                    <div className="kv"><span>Precio actual frente a tu medio</span><b className={sign(p.price - x.avg)}>{pctS((p.price / x.avg - 1) * 100)}</b></div>
+                  )}
+                </div>
+              </Card>
+            )}
           </div>
         </div>
       )}
