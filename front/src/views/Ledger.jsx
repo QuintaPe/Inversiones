@@ -1,8 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import * as api from '../api.js';
-import { Asset, Empty, Icon, Kind, Search, Seg, Stat } from '../components/ui.jsx';
+import { Asset, Empty, Icon, Kind, Search, Seg } from '../components/ui.jsx';
+import { Kpi } from '../components/Kpi.jsx';
 import { sum } from '../lib/calc.js';
-import { eur, eurS, num, qty, sign, date } from '../lib/format.js';
+import { eur, eurS, qty, sign, date } from '../lib/format.js';
+
+const MONTHS = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+const monthLong = (ym) => { const m = MONTHS[+ym.slice(5, 7) - 1]; return `${m[0].toUpperCase()}${m.slice(1)} de ${ym.slice(0, 4)}`; };
 
 const KINDS = [['all', 'Todas'], ['B', 'Compras'], ['S', 'Ventas'], ['D', 'Dividendos']];
 const PAGE = 100;
@@ -37,6 +41,16 @@ export default function Ledger({ a, meta, onOpen, onAddOp, onRestoreOp }) {
       (!s || `${x.p.name} ${x.p.isin} ${(x.ids ?? [x.id]).join(' ')}`.toLowerCase().includes(s)));
   }, [a.ops, kind, year, q]);
   const B = rows.filter((x) => x.k === 'B'), S = rows.filter((x) => x.k === 'S'), D = rows.filter((x) => x.k === 'D');
+  // Por meses, como en el extracto del banco.
+  const groups = useMemo(() => {
+    const out = [];
+    for (const x of rows.slice(0, limit)) {
+      const m = x.d.slice(0, 7);
+      if (out.at(-1)?.m !== m) out.push({ m, items: [] });
+      out.at(-1).items.push(x);
+    }
+    return out;
+  }, [rows, limit]);
 
   return (
     <div className="stack">
@@ -51,49 +65,46 @@ export default function Ledger({ a, meta, onOpen, onAddOp, onRestoreOp }) {
         <button type="button" className="btn pri" onClick={() => onAddOp({})}><Icon name="plus" size={16} />Añadir operación</button>
       </div>
 
-      <div className="card stats five">
-        <Stat label="Operaciones" value={rows.length} />
-        <Stat label="Compras" value={eur(sum(B, (x) => x.net))} hint={`${B.length} · con comisiones`} />
-        <Stat label="Ventas" value={eur(sum(S, (x) => x.net))} hint={`${S.length} · neto de comisión`} />
-        <Stat label="Dividendos netos" value={eur(sum(D, (x) => x.net))} hint={`${D.length} cobros`} />
-        <Stat label="Comisiones" value={eur(sum(rows, (x) => x.fee || 0))} hint={`${rows.filter((x) => x.fee).length} operaciones con comisión`} />
+      <div className="kpis-row">
+        <Kpi label="Compras" value={eur(sum(B, (x) => x.net))} sub={`${B.length} · con comisiones`} />
+        <Kpi label="Ventas" value={eur(sum(S, (x) => x.net))} sub={`${S.length} · neto de comisión`} />
+        <Kpi label="Dividendos netos" value={eur(sum(D, (x) => x.net))} sub={`${D.length} cobros`} tone={D.length ? 'gain' : ''} />
+        <Kpi label="Comisiones" value={eur(sum(rows, (x) => x.fee || 0))} sub={`${rows.filter((x) => x.fee).length} de ${rows.length} operaciones`} />
       </div>
 
-      <div className="card table-card">
-        <table className="tbl">
-          <thead>
-            <tr>
-              <th className="l hide-s">Fecha</th><th className="l">Tipo</th><th className="l">Activo</th>
-              <th className="hide-s">Cantidad</th><th className="hide-s">Precio</th>
-              <th className="hide-m hide-l">Bruto</th><th className="hide-m">Comisión</th><th className="hide-m">Imp. / ret.</th>
-              <th>Neto</th><th className="hide-s">Resultado</th><th className="hide-m hide-l l">ID</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.slice(0, limit).map((x) => (
-              <tr key={x.id + x.k} onClick={() => onOpen(x.p.isin)} tabIndex={0} onKeyDown={(ev) => ev.key === 'Enter' && onOpen(x.p.isin)}>
-                <td className="l nowrap hide-s">{date(x.d)}</td>
-                <td className="l"><Kind k={x.k} /></td>
-                <td className="l"><Asset p={x.p} size="sm">
-                  <span className="only-s">{date(x.d)} · {x.k !== 'D' ? `${qty(x.sh)} × ${eur(x.px)}` : `${qty(x.sh)} uds.`}</span></Asset></td>
-                <td className="hide-s">{qty(x.sh)}{x.parts && <small>{x.parts.length} ejecuciones</small>}</td>
-                <td className="hide-s">{x.k === 'D' ? <span className="mu">—</span> : eur(x.px)}</td>
-                <td className="hide-m hide-l">{num(x.g)}</td>
-                <td className="hide-m">{x.fee ? num(x.fee) : <span className="mu">—</span>}</td>
-                <td className="hide-m">{x.tax ? num(x.tax) : <span className="mu">—</span>}</td>
-                <td>{x.k === 'B' ? `−${eur(x.net)}` : eurS(x.net)}</td>
-                <td className={`hide-s ${x.k === 'S' ? sign(x.re) : ''}`}>{x.k === 'S' ? eurS(x.re) : <span className="mu">—</span>}</td>
-                <td className="hide-m hide-l l mono">{x.id}</td>
-              </tr>
+      {!rows.length && <div className="card"><Empty>Ninguna operación coincide con los filtros.</Empty></div>}
+      {groups.map((gr) => (
+        <section key={gr.m} className="card ops-m">
+          <header className="ops-mh">
+            <h2>{monthLong(gr.m)}</h2>
+            <span className="mu">{gr.items.length} {gr.items.length === 1 ? 'operación' : 'operaciones'}</span>
+          </header>
+          <ul className="ops-l">
+            {gr.items.map((x) => (
+              <li key={x.id + x.k}>
+                <button type="button" onClick={() => onOpen(x.p.isin)} title={`ID ${(x.ids ?? [x.id]).join(', ')}`}>
+                  <Asset p={x.p} size="sm">
+                    {date(x.d)} · {x.k === 'D' ? `${qty(x.sh)} uds.` : `${qty(x.sh)} × ${eur(x.px)}`}
+                    {x.fee ? ` · comisión ${eur(x.fee)}` : ''}{x.tax ? ` · ${x.k === 'D' ? 'retención' : 'impuesto'} ${eur(x.tax)}` : ''}
+                    {x.parts ? ` · ${x.parts.length} ejecuciones` : ''}
+                  </Asset>
+                  <span className="row-r">
+                    <span className={`row-v ${x.k === 'B' ? '' : 'gain'}`}>{x.k === 'B' ? `−${eur(x.net)}` : eurS(x.net)}</span>
+                    <span className="ops-k">
+                      {x.k === 'S' && <small className={sign(x.re)}>{eurS(x.re)}</small>}
+                      <Kind k={x.k} />
+                    </span>
+                  </span>
+                </button>
+              </li>
             ))}
-          </tbody>
-        </table>
-        {!rows.length && <Empty>Ninguna operación coincide con los filtros.</Empty>}
-        {rows.length > limit && (
-          <div className="more"><button type="button" className="btn" onClick={() => setLimit((l) => l + PAGE)}>
-            Mostrar más ({rows.length - limit} restantes)</button></div>
-        )}
-      </div>
+          </ul>
+        </section>
+      ))}
+      {rows.length > limit && (
+        <div className="more"><button type="button" className="btn" onClick={() => setLimit((l) => l + PAGE)}>
+          Mostrar más ({rows.length - limit} restantes)</button></div>
+      )}
       {removed.length > 0 && (
         <div className="card">
           <header className="card-h"><div><h2>Operaciones quitadas ({removed.length})</h2><p>No cuentan en ningún cálculo ni vuelven al resubir el CSV</p></div></header>

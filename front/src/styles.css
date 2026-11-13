@@ -260,6 +260,44 @@ button.kv:hover svg{transform:translateX(3px);color:var(--tx)}
 .pad-x{padding:0 24px 16px}
 @media(max-width:640px){.flow-r{grid-template-columns:minmax(0,1fr) 64px auto}.flow-l{white-space:normal}.flow-r b{min-width:0}.pad-x{padding:0 18px 14px}}
 
+/* avatar diminuto (calendario de dividendos) */
+.av.xs{width:22px;height:22px;font-size:8.5px;margin-left:-6px;box-shadow:0 0 0 2px var(--surface)}
+.av.xs:first-child{margin-left:0}
+
+/* dividendos: calendario de 12 meses y ranking por activo */
+.divcal{list-style:none;padding:0;margin:0;display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:var(--sp-2)}
+.divcal li{display:flex;flex-direction:column;gap:2px;min-width:0;border-radius:var(--r-sm);padding:var(--sp-3);background:var(--surface-2);opacity:.55}
+.divcal li.has{opacity:1}
+.divcal li.now{box-shadow:inset 0 0 0 1.5px var(--chart)}
+.divcal-m{color:var(--mu);font-size:var(--fs-xs);font-weight:600;text-transform:capitalize}
+.divcal-v{font-size:var(--fs-md);font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.divcal-w{display:flex;align-items:center;min-height:22px;margin-top:var(--sp-1)}
+.divcal-w small{color:var(--mu);font-size:11px;margin-left:4px}
+.rank-l{list-style:none;padding:0;margin:0 -10px}
+.rank-l button{display:grid;grid-template-columns:minmax(0,1fr) 72px auto;align-items:center;gap:var(--sp-3);width:100%;background:none;border:0;border-radius:16px;padding:10px;text-align:left;transition:background var(--dur-1)}
+.rank-l button:hover{background:var(--surface-2)}
+.rank-l-b{height:6px;border-radius:3px;background:var(--surface-2);overflow:hidden}
+.rank-l-b i{display:block;height:100%;border-radius:3px;background:var(--chart)}
+
+/* operaciones: extracto por meses */
+.ops-m{padding-top:var(--sp-4);padding-bottom:var(--sp-3)}
+.ops-mh{display:flex;justify-content:space-between;align-items:baseline;gap:var(--sp-3);margin-bottom:var(--sp-2)}
+.ops-mh h2{font-size:var(--fs-lg);font-weight:700;letter-spacing:-.02em}
+.ops-mh span{font-size:var(--fs-xs)}
+.ops-l{list-style:none;padding:0;margin:0 -10px}
+.ops-l button{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-3);width:100%;background:none;border:0;border-radius:14px;padding:9px 10px;text-align:left;transition:background var(--dur-1)}
+.ops-l button:hover{background:var(--surface-2)}
+.ops-l .asset small{white-space:normal}
+.ops-k{display:flex;align-items:center;gap:var(--sp-2)}
+.ops-k small{font-size:var(--fs-xs);font-weight:650;font-variant-numeric:tabular-nums}
+
+@media(max-width:960px){.divcal{grid-template-columns:repeat(4,minmax(0,1fr))}}
+@media(max-width:640px){
+  .divcal{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .rank-l button{grid-template-columns:minmax(0,1fr) auto}
+  .rank-l-b{display:none}
+}
+
 /* indicadores bajo la gráfica */
 .kpis-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:var(--sp-3)}
 .kpi{display:flex;flex-direction:column;gap:2px;min-width:0;text-align:left;background:var(--surface);border:0;border-radius:18px;padding:var(--sp-4) var(--sp-4) var(--sp-3);color:var(--tx);transition:background var(--dur-1),transform var(--dur-1)}

@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
-import { Asset, Empty, Flash, Pill, PriceInput, Search, Seg, Th, useSort } from '../components/ui.jsx';
+import { Asset, Empty, Flash, Pill, PriceInput, Search, Th, useSort } from '../components/ui.jsx';
+import { Kpi } from '../components/Kpi.jsx';
 import { sum } from '../lib/calc.js';
 import Targets from './Targets.jsx';
 import { eur, eurS, pct, pctS, qty, sign, date } from '../lib/format.js';
@@ -22,11 +23,26 @@ export default function Positions({ a, onOpen, onPrice, targets, patch, fail }) 
 
   return (
     <div className="stack">
-      <div className="toolbar">
-        <Seg label="Estado" value={tab} onChange={setTab}
-          options={[['open', `Abiertas (${a.o.length})`], ['closed', `Cerradas (${a.c.length})`], ['target', 'Objetivo']]} />
-        <Search value={q} onChange={setQ} placeholder="Buscar por nombre o ISIN" label="Buscar posición" />
+      {a.priced.length > 0 && (
+        <div className="kpis-row">
+          <Kpi label="Valor" value={eur(a.val)} sub={`${a.priced.length} de ${a.o.length} con precio`} />
+          <Kpi label="Coste" value={eur(a.costPriced)} sub="lo que pagaste por ellas" />
+          <Kpi label="Resultado latente" value={eurS(a.pl)} tone={sign(a.pl)} sub={`${pctS(a.plp)} sobre el coste`} />
+          <Kpi label={a.day != null ? 'Hoy' : 'Realizado'} value={a.day != null ? eurS(a.day) : eurS(a.real)}
+            tone={sign(a.day ?? a.real)} sub={a.day != null ? `${pctS(a.dayPct)} en la sesión` : 'en ventas, desde el inicio'} />
+        </div>
+      )}
+
+      <div className="utabs" role="tablist" aria-label="Estado">
+        {[['open', `Abiertas · ${a.o.length}`], ['closed', `Cerradas · ${a.c.length}`], ['target', 'Cartera objetivo']].map(([k, l]) => (
+          <button key={k} type="button" role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{l}</button>
+        ))}
       </div>
+      {tab !== 'target' && (
+        <div className="toolbar">
+          <Search value={q} onChange={setQ} placeholder="Buscar por nombre o ISIN" label="Buscar posición" />
+        </div>
+      )}
 
       {tab === 'target' ? <Targets a={a} targets={targets} patch={patch} fail={fail} onOpen={onOpen} /> : tab === 'open' ? (
         <div className="card table-card">
