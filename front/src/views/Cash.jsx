@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Card, Empty, Icon, Seg } from '../components/ui.jsx';
+import { Card, Empty, Seg } from '../components/ui.jsx';
 import { Kpi, Spark } from '../components/Kpi.jsx';
 import { Lines, Columns } from '../charts.jsx';
 import { eur, eurS, pct, sign, dateLong, month } from '../lib/format.js';
@@ -71,15 +71,6 @@ export default function Cash({ cash, labels, portfolioValue }) {
           )}
           <span className="chg"><em>Movimientos del CSV hasta el {dateLong(series.t.at(-1))}</em></span>
         </div>
-        {cash.roundUps && (
-          <p className="callout">
-            <Icon name="alert" size={15} />
-            <span>
-              {eur(cash.ledger)} en movimientos − {eur(cash.roundUps.amount)} de redondeos de {cash.roundUps.n === 1 ? '1 pago' : `${cash.roundUps.n} pagos`} con
-              tarjeta, reservados para la próxima inversión semanal.
-            </span>
-          </p>
-        )}
       </section>
 
       <section className="chart-block">
