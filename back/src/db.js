@@ -144,6 +144,17 @@ const MIGRATIONS = [
       ], 'write');
     },
   },
+  {
+    v: 3,
+    name: 'histórico calculado de cada usuario',
+    async up(c) {
+      // Serie diaria ya reconstruida: sobrevive a los reinicios y se enseña al instante
+      // mientras se calcula la nueva. k = huella de todo lo que la determina.
+      await c.execute(`CREATE TABLE IF NOT EXISTS history_cache (
+         user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+         k TEXT NOT NULL, value TEXT NOT NULL, built_at TEXT NOT NULL)`);
+    },
+  },
 ];
 export const SCHEMA_VERSION = MIGRATIONS.at(-1).v;
 
@@ -157,22 +168,84 @@ async function migrate(client) {
   }
 }
 
-export async function openDb({ url = process.env.TURSO_DATABASE_URL, authToken = process.env.TURSO_AUTH_TOKEN } = {}) {
-  if (!url) {
+/**
+ * @param replica  ruta de un fichero local para usar Turso como réplica embebida: las
+ *                 lecturas se hacen en local (sin viaje de red) y las escrituras van a
+ *                 Turso, que devuelve los cambios a la réplica.
+ * @param cache    cachés en memoria (usuarios, operaciones, símbolos y splits). Suponen
+ *                 un solo proceso escribiendo; DB_CACHE=0 las desactiva.
+ * @param wrap     (cliente) => cliente; para los benchmarks (simular la latencia de red)
+ */
+export async function openDb({
+  url = process.env.TURSO_DATABASE_URL, authToken = process.env.TURSO_AUTH_TOKEN,
+  replica = process.env.TURSO_REPLICA, syncSeconds = Number(process.env.TURSO_SYNC_SEC ?? 60),
+  cache = process.env.DB_CACHE !== '0', wrap = (c) => c,
+} = {}) {
+  const dataDir = () => {
     const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'data');
     fs.mkdirSync(dir, { recursive: true });
-    url = `file:${path.join(dir, 'local.db')}`;
+    return dir;
+  };
+  let client, label = url;
+  if (!url) {
+    label = url = `file:${path.join(dataDir(), 'local.db')}`;
+    client = createClient({ url });
+  } else if (replica && !url.startsWith('file:') && url !== ':memory:') {
+    const file = path.isAbsolute(replica) ? replica : path.join(dataDir(), replica);
+    client = createClient({ url: `file:${file}`, syncUrl: url, authToken, syncInterval: syncSeconds > 0 ? syncSeconds : undefined });
+    await client.sync();
+    label = `${url} (réplica local en ${file})`;
+  } else {
+    client = createClient({ url, authToken });
   }
-  const client = createClient({ url, authToken });
+  client = wrap(client);
   await migrate(client);
-  return makeRepo(client, url);
+  return makeRepo(client, label, { cache });
 }
 
-function makeRepo(client, url) {
+/** Caché con caducidad y tamaño máximo (los más antiguos salen primero). */
+function ttlCache(ttlMs, max = 500) {
+  const m = new Map();
+  return {
+    get(k) {
+      const e = m.get(k);
+      if (!e) return undefined;
+      if (Date.now() - e.at > ttlMs) { m.delete(k); return undefined; }
+      return e.v;
+    },
+    set(k, v) {
+      m.delete(k);
+      m.set(k, { v, at: Date.now() });
+      if (m.size > max) m.delete(m.keys().next().value);
+      return v;
+    },
+    delete: (k) => m.delete(k),
+    clear: () => m.clear(),
+  };
+}
+
+function makeRepo(client, url, { cache = true } = {}) {
   const now = () => new Date().toISOString();
+  // Cachés en memoria. Las de usuario se invalidan en cada escritura de ese usuario; las
+  // globales (símbolos, splits) también caducan solas por si escribe otro proceso.
+  const off = !cache;
+  const users = ttlCache(off ? -1 : 60_000, 1000);
+  const rowsCache = ttlCache(off ? -1 : 30 * 60_000, 200);
+  const globals = ttlCache(off ? -1 : 5 * 60_000, 10);
+  // Versión de las operaciones de cada usuario y de los splits: sirven de clave de caché
+  // para lo que se calcula a partir de ellas (posiciones, histórico).
+  let seq = 0;
+  const rowsVer = new Map();
+  let splitsVer = 0;
+  const touchRows = (userId) => { rowsCache.delete(userId); rowsVer.set(userId, ++seq); };
   return {
     url,
+    cached: cache,
     close: () => client.close(),
+    /** Número que cambia cada vez que cambian las operaciones del usuario. */
+    rowsVersion: (userId) => rowsVer.get(userId) ?? 0,
+    /** Número que cambia cada vez que se descubren splits nuevos. */
+    splitsVersion: () => splitsVer,
 
     async upsertUser({ id, email, name, picture }) {
       const t = now();
@@ -182,19 +255,31 @@ function makeRepo(client, url) {
                 picture = excluded.picture, last_login = excluded.last_login`,
         args: [id, email, name ?? null, picture ?? null, t, t],
       });
+      users.delete(id);
     },
 
     async getUser(id) {
+      const hit = users.get(id);
+      if (hit !== undefined) return hit && { ...hit };
       const r = await client.execute({ sql: 'SELECT id, email, name, picture FROM users WHERE id = ?', args: [id] });
-      return r.rows[0] ? { ...r.rows[0] } : null;
+      const user = r.rows[0] ? { ...r.rows[0] } : null;
+      if (user) users.set(id, user);
+      return user && { ...user };
     },
 
+    /** Operaciones vigentes. La lista se comparte entre llamadas: no se debe modificar. */
     async getRows(userId) {
+      const hit = rowsCache.get(userId);
+      if (hit) return hit;
+      const ver = rowsVer.get(userId);
       const r = await client.execute({
         sql: `SELECT ${ROW_COLS.join(', ')} FROM transactions WHERE user_id = ? AND deleted_at IS NULL`,
         args: [userId],
       });
-      return r.rows.map((x) => ({ ...x }));
+      const rows = Object.freeze(r.rows.map((x) => Object.freeze({ ...x })));
+      // Si alguien escribió mientras se leía, esta lectura puede ser vieja: no se guarda.
+      if (rowsVer.get(userId) === ver) rowsCache.set(userId, rows);
+      return rows;
     },
 
     /** Qué pasaría al subir estas filas, sin guardar nada: { added, known, removed }. */
@@ -233,6 +318,8 @@ function makeRepo(client, url) {
       } catch (err) {
         await client.execute({ sql: 'DELETE FROM imports WHERE id = ?', args: [importId] }).catch(() => {});
         throw err;
+      } finally {
+        touchRows(userId);
       }
       return info;
     },
@@ -247,12 +334,14 @@ function makeRepo(client, url) {
         sql: `INSERT OR REPLACE INTO transactions (user_id, ${ROW_COLS.join(', ')}, source) VALUES (?, ${ROW_COLS.map(() => '?').join(', ')}, 'manual')`,
         args: [userId, ...ROW_COLS.map((k) => row[k] ?? '')],
       });
+      touchRows(userId);
     },
     /** Quita una operación. Las del CSV se conservan marcadas para no reaparecer al resubirlo. */
     async removeRow(userId, row, remember) {
       await client.execute(remember
         ? { sql: 'UPDATE transactions SET deleted_at = ? WHERE user_id = ? AND transaction_id = ?', args: [now(), userId, row.transaction_id] }
         : { sql: 'DELETE FROM transactions WHERE user_id = ? AND transaction_id = ?', args: [userId, row.transaction_id] });
+      touchRows(userId);
     },
     async getRemoved(userId) {
       const r = await client.execute({
@@ -266,6 +355,7 @@ function makeRepo(client, url) {
         sql: 'UPDATE transactions SET deleted_at = NULL WHERE user_id = ? AND transaction_id = ? AND deleted_at IS NOT NULL',
         args: [userId, tid],
       });
+      touchRows(userId);
       return r.rowsAffected > 0;
     },
 
@@ -301,6 +391,32 @@ function makeRepo(client, url) {
       for (const x of live.rows) out[x.isin] = { price: x.price, at: x.updated_at, source: 'live', info: x.info ? JSON.parse(x.info) : null };
       for (const x of manual.rows) out[x.isin] = { price: x.price, at: x.updated_at, source: 'manual', info: null };
       return out;
+    },
+    /**
+     * Todo lo que acompaña a las posiciones, en una sola ida y vuelta a la base de datos:
+     * { prices, lastUpload, alerts, targets }.
+     */
+    async getUserState(userId) {
+      const [live, manual, last, alerts, targets] = await client.batch([
+        {
+          sql: `SELECT isin, price, updated_at, info FROM quotes
+                WHERE isin IN (SELECT DISTINCT symbol FROM transactions WHERE user_id = ? AND deleted_at IS NULL)`,
+          args: [userId],
+        },
+        { sql: 'SELECT isin, price, updated_at FROM prices WHERE user_id = ?', args: [userId] },
+        { sql: 'SELECT name, uploaded_at AS at, total, relevant, added FROM imports WHERE user_id = ? ORDER BY id DESC LIMIT 1', args: [userId] },
+        { sql: 'SELECT id, isin, dir, price, created_at, triggered_at FROM alerts WHERE user_id = ? ORDER BY id DESC', args: [userId] },
+        { sql: 'SELECT isin, weight FROM targets WHERE user_id = ?', args: [userId] },
+      ], 'read');
+      const prices = {};
+      for (const x of live.rows) prices[x.isin] = { price: x.price, at: x.updated_at, source: 'live', info: x.info ? JSON.parse(x.info) : null };
+      for (const x of manual.rows) prices[x.isin] = { price: x.price, at: x.updated_at, source: 'manual', info: null };
+      return {
+        prices,
+        lastUpload: last.rows[0] ? { ...last.rows[0] } : null,
+        alerts: alerts.rows.map((x) => ({ ...x, id: Number(x.id) })),
+        targets: Object.fromEntries(targets.rows.map((x) => [x.isin, x.weight])),
+      };
     },
     async getManualPrices(userId) {
       const r = await client.execute({ sql: 'SELECT isin, price, updated_at FROM prices WHERE user_id = ?', args: [userId] });
@@ -347,9 +463,10 @@ function makeRepo(client, url) {
 
     /** Símbolos ya resueltos: { ISIN: { symbol, exchange, sector, industry } | null }. Los ausentes hay que buscarlos. */
     async getSymbols() {
-      const r = await client.execute({ sql: 'SELECT isin, symbol, exchange, sector, industry, resolved_at FROM symbols WHERE v >= ?', args: [SYMBOL_V] });
+      const rows = globals.get('symbols')
+        ?? globals.set('symbols', (await client.execute({ sql: 'SELECT isin, symbol, exchange, sector, industry, resolved_at FROM symbols WHERE v >= ?', args: [SYMBOL_V] })).rows);
       const out = {};
-      for (const x of r.rows) {
+      for (const x of rows) {
         if (x.symbol) out[x.isin] = { symbol: x.symbol, exchange: x.exchange ?? '', sector: x.sector, industry: x.industry };
         else if (Date.now() - Date.parse(x.resolved_at) < RETRY_UNKNOWN_MS) out[x.isin] = null;
       }
@@ -365,6 +482,7 @@ function makeRepo(client, url) {
         args: [isin, s?.symbol ?? null, s?.exchange ?? null, s?.sector ?? null, s?.industry ?? null, at, SYMBOL_V],
       }));
       if (stmts.length) await client.batch(stmts, 'write');
+      globals.delete('symbols');
     },
 
     // ---------- alertas y objetivos ----------
@@ -474,12 +592,27 @@ function makeRepo(client, url) {
 
     /** Guarda cierres, dividendos y splits de un símbolo (por lotes) y actualiza su estado. */
     async saveHistory(symbol, { currency, from, rows, divs = [], splits = [] }) {
-      const stmts = [
-        ...rows.map(([d, c]) => ({ sql: 'INSERT OR REPLACE INTO price_history (symbol, d, c) VALUES (?, ?, ?)', args: [symbol, d, c] })),
-        ...divs.map(([d, a]) => ({ sql: 'INSERT OR REPLACE INTO symbol_divs (symbol, d, amount) VALUES (?, ?, ?)', args: [symbol, d, a] })),
-        ...splits.map(([d, r]) => ({ sql: 'INSERT OR REPLACE INTO symbol_splits (symbol, d, ratio) VALUES (?, ?, ?)', args: [symbol, d, r] })),
-      ];
-      for (let i = 0; i < stmts.length; i += 400) await client.batch(stmts.slice(i, i + 400), 'write');
+      // Varias filas por sentencia: un histórico de años son miles de cierres.
+      const multi = (table, cols, list) => {
+        const out = [];
+        for (let i = 0; i < list.length; i += 200) {
+          const part = list.slice(i, i + 200);
+          out.push({
+            sql: `INSERT OR REPLACE INTO ${table} (symbol, ${cols}) VALUES ${part.map(() => '(?, ?, ?)').join(', ')}`,
+            args: part.flatMap(([d, v]) => [symbol, d, v]),
+          });
+        }
+        return out;
+      };
+      const known = splits.length
+        ? new Set((await client.execute({ sql: 'SELECT d, ratio FROM symbol_splits WHERE symbol = ?', args: [symbol] })).rows.map((x) => `${x.d}|${x.ratio}`))
+        : null;
+      const stmts = [...multi('price_history', 'd, c', rows), ...multi('symbol_divs', 'd, amount', divs), ...multi('symbol_splits', 'd, ratio', splits)];
+      for (let i = 0; i < stmts.length; i += 50) await client.batch(stmts.slice(i, i + 50), 'write');
+      if (known && splits.some(([d, r]) => !known.has(`${d}|${r}`))) {
+        globals.delete('splits');
+        splitsVer++;
+      }
       await client.execute({
         sql: `INSERT INTO history_meta (symbol, currency, from_d, last_d, fetched_at, v) VALUES (?, ?, ?, ?, ?, ?)
               ON CONFLICT(symbol) DO UPDATE SET currency = excluded.currency, from_d = min(history_meta.from_d, excluded.from_d),
@@ -504,10 +637,12 @@ function makeRepo(client, url) {
 
     /** Todos los splits conocidos: { símbolo: [[fecha, ratio], …] } ordenado por fecha. */
     async getSplits() {
+      const hit = globals.get('splits');
+      if (hit) return hit;
       const r = await client.execute('SELECT symbol, d, ratio FROM symbol_splits ORDER BY symbol, d');
       const out = {};
       for (const x of r.rows) (out[x.symbol] ??= []).push([x.d, x.ratio]);
-      return out;
+      return globals.set('splits', out);
     },
 
     async getSymbolDivs(symbols) {
@@ -519,6 +654,20 @@ function makeRepo(client, url) {
       const out = {};
       for (const x of r.rows) (out[x.symbol] ??= []).push([x.d, x.amount]);
       return out;
+    },
+
+    // ---------- histórico calculado de cada usuario ----------
+    async getHistoryCache(userId) {
+      const r = await client.execute({ sql: 'SELECT k, value, built_at FROM history_cache WHERE user_id = ?', args: [userId] });
+      const x = r.rows[0];
+      return x ? { key: x.k, value: JSON.parse(x.value), at: Date.parse(x.built_at) } : null;
+    },
+    async saveHistoryCache(userId, key, value) {
+      await client.execute({
+        sql: `INSERT INTO history_cache (user_id, k, value, built_at) VALUES (?, ?, ?, ?)
+              ON CONFLICT(user_id) DO UPDATE SET k = excluded.k, value = excluded.value, built_at = excluded.built_at`,
+        args: [userId, key, JSON.stringify(value), now()],
+      });
     },
 
     // ---------- valoraciones manuales con fecha ----------
@@ -541,9 +690,10 @@ function makeRepo(client, url) {
 
     async clearUserData(userId) {
       await client.batch(
-        ['transactions', 'prices', 'imports', 'valuations', 'alerts', 'targets'].map((t) => ({ sql: `DELETE FROM ${t} WHERE user_id = ?`, args: [userId] })),
+        ['transactions', 'prices', 'imports', 'valuations', 'alerts', 'targets', 'history_cache'].map((t) => ({ sql: `DELETE FROM ${t} WHERE user_id = ?`, args: [userId] })),
         'write',
       );
+      touchRows(userId);
     },
   };
 }

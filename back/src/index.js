@@ -37,9 +37,14 @@ const app = createApp({
   csp: process.env.CSP !== '0',
   logos: process.env.LOGOS === '0' ? null : createLogos({ db }),
   trustProxy: process.env.TRUST_PROXY === '1',
+  slowMs: Number(process.env.SLOW_MS ?? 1000),
 });
 app.listen(PORT, HOST, () => console.log(`API en http://${HOST}:${PORT}`));
 
 // Vigilante de alertas: cotiza los valores con alertas pendientes aunque nadie tenga la app abierta.
 const sweepMin = Number(process.env.ALERT_SWEEP_MIN ?? 5);
 if (quotes && sweepMin > 0) app.locals.watcher.start(sweepMin);
+
+// Cotizaciones para las pestañas abiertas: una sola consulta por valor para todos los usuarios.
+const streamSec = Number(process.env.QUOTE_STREAM_SEC ?? 60);
+if (app.locals.stream && streamSec > 0) app.locals.stream.start(streamSec);

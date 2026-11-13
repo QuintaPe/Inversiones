@@ -62,6 +62,28 @@ y avisa por Web Push a los dispositivos donde el usuario lo haya activado, aunqu
 esté cerrada. Las claves VAPID se generan solas y se guardan en la base de datos. Los avisos
 necesitan HTTPS y la versión compilada (service worker); en iOS, además, la app instalada.
 
+## Rendimiento
+
+- Cada respuesta lleva `Server-Timing` (pestaña Red del navegador) con el tiempo de base de
+  datos, cálculo y proveedores externos. Las peticiones de más de `SLOW_MS` (1000 ms) salen en
+  el registro.
+- `npm run bench --prefix back` mide el motor y la API con una cartera sintética;
+  `-- --latency 40` simula la ida y vuelta a Turso y `-- --rows 50000` cambia el tamaño.
+- `npm run build` falla si el front supera su presupuesto de tamaño (`front/scripts/budget.js`).
+- Cachés en memoria de usuarios, operaciones, símbolos, splits y posiciones calculadas; se
+  invalidan en cada escritura. Suponen un solo proceso (`DB_CACHE=0` las desactiva).
+- `TURSO_REPLICA=replica.db` usa Turso como réplica embebida: las lecturas no cruzan la red.
+- Las pestañas abiertas reciben las cotizaciones por `GET /api/stream` (Server-Sent Events):
+  el servidor cotiza cada `QUOTE_STREAM_SEC` segundos una sola vez para todos los conectados,
+  y avisa a las demás pestañas cuando cambian las operaciones.
+- La cartera viaja sin los eventos de cada posición; van en `GET /api/events`, con `ETag`, y el
+  cliente solo los pide cuando cambia su huella (`meta.ev`).
+- El histórico calculado se guarda en `history_cache`. Si hay que reconstruirlo y tarda,
+  `GET /api/history` responde enseguida con `{ pending, progress }` y la última serie guardada.
+- Front: secciones bajo demanda (`React.lazy`) precargadas en reposo, React Compiler, solo las
+  fuentes latinas, gráficas reducidas a los puntos visibles y el service worker guarda de
+  antemano todo lo que lista `asset-manifest.json`.
+
 ## Publicar
 
 La imagen sirve el front compilado desde el back en un solo puerto:

@@ -39,14 +39,19 @@ export function createHistory({ db, quotes, now = () => Date.now() }) {
   let running = null;
 
   /** Descarga lo que falte: needs = { símbolo: fecha desde la que hace falta }. */
-  async function ensure(needs) {
+  async function ensure(needs, progress = null) {
     const meta = await db.getHistoryMeta();
     const known = await db.getSplits();
-    for (const [symbol, from] of Object.entries(needs)) {
+    const todo = Object.entries(needs).filter(([symbol, from]) => {
       const m = meta[symbol];
       const current = m && (m.v ?? 1) >= HISTORY_V; // guardado con la versión actual (con splits)
+      return !(current && m.from_d <= from && now() - Date.parse(m.fetched_at) < STALE_MS);
+    });
+    if (progress) progress.total += todo.length;
+    for (const [symbol, from] of todo) {
+      const m = meta[symbol];
+      const current = m && (m.v ?? 1) >= HISTORY_V;
       const covered = current && m.from_d <= from;
-      if (covered && now() - Date.parse(m.fetched_at) < STALE_MS) continue;
       const full = m && m.from_d < from ? m.from_d : from;
       // Si ya hay histórico desde esa fecha, solo se piden los últimos días.
       const since = covered && m.last_d ? iso(ms(m.last_d) - 5 * DAY) : full;
@@ -57,6 +62,7 @@ export function createHistory({ db, quotes, now = () => Date.now() }) {
         if (fresh && since !== full) h = await quotes.history(symbol, full);
         await db.saveHistory(symbol, { ...h, from: full });
       } catch { /* sin histórico para este símbolo: se valorará a coste */ }
+      if (progress) progress.done++;
     }
     return db.getHistoryMeta();
   }
@@ -66,8 +72,9 @@ export function createHistory({ db, quotes, now = () => Date.now() }) {
    * @param prices     precios actuales del usuario { isin: { price, at, source } }
    * @param valuations valoraciones manuales { isin: [{ d, price }] }
    * @param rebuild    opcional: vuelve a calcular las posiciones una vez descargados los splits
+   * @param progress   opcional: { done, total } que se va actualizando con las descargas
    */
-  async function build({ positions, prices, valuations, rebuild }) {
+  async function build({ positions, prices, valuations, rebuild, progress = null }) {
     const firstDate = positions.flatMap((p) => p.evs.map((e) => e.d)).sort()[0];
     if (!firstDate) return null;
     const today = iso(now());
@@ -87,13 +94,13 @@ export function createHistory({ db, quotes, now = () => Date.now() }) {
       if (s) needs[s] = p.evs[0].d;
     }
     for (const b of BENCHMARKS) needs[b.symbol] = firstDate;
-    let meta = await ensure(needs);
+    let meta = await ensure(needs, progress);
     const fx = {};
     for (const [symbol, from] of Object.entries(needs)) {
       const cur = meta[symbol]?.currency;
       if (cur && cur !== 'EUR') fx[`${cur}EUR=X`] = [fx[`${cur}EUR=X`], from].filter(Boolean).sort()[0];
     }
-    meta = await ensure(fx);
+    meta = await ensure(fx, progress);
     const hist = await db.getHistory([...Object.keys(needs), ...Object.keys(fx)]);
     // Con los splits ya descargados, las posiciones se recalculan para que los apliquen.
     if (rebuild) positions = await rebuild();

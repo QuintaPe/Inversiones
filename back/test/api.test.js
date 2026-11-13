@@ -130,7 +130,9 @@ test('operaciones a mano: añadir, validar, borrar y restaurar', async () => {
   assert.equal(r.status, 200);
   const beta = r.body.positions.find((p) => p.isin === 'YY0000000002');
   assert.deepEqual([beta.sh, beta.cost], [5, 103.5]);
-  const tid = beta.evs[0].tid;
+  assert.equal(beta.evs, undefined, 'los eventos van aparte');
+  const events = (await ana('/api/events')).body;
+  const tid = events.evs.YY0000000002[0].tid;
   assert.match(tid, /^manual-/);
 
   r = await ana('/api/transactions', json('POST', { ...op, type: 'SELL', shares: 9 }));

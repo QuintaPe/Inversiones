@@ -13,6 +13,8 @@ import { createAlertWatcher } from './alerts.js';
 import { sessions, AuthError } from './auth.js';
 import { createHistory } from './history.js';
 import { createLogos } from './logos.js';
+import { timing, instrument, measure } from './timing.js';
+import { createStream } from './stream.js';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 
@@ -51,8 +53,11 @@ const HISTORY_TTL = 10 * 60_000;
  * @param push   servicio de push.js (o null: sin avisos con la app cerrada)
  * @param csp    false desactiva la política de contenido (CSP=0)
  */
-export function createApp({ db, verifyGoogle, googleClientId, sessionSecret, quotes = null, logos = null, push = null, trustProxy = false, csp = true }) {
+export function createApp({ db: rawDb, verifyGoogle, googleClientId, sessionSecret, quotes: rawQuotes = null, logos = null, push = null, trustProxy = false, csp = true, slowMs = 1000, historyWaitMs = 1500 }) {
   const app = express();
+  // Todo acceso a la base de datos y a los proveedores de precios se mide (Server-Timing).
+  const db = instrument(rawDb, 'db');
+  const quotes = instrument(rawQuotes, 'ext', ['quoteIsins', 'resolveIsins', 'history']);
   const session = sessions(sessionSecret);
   const history = quotes?.history ? createHistory({ db, quotes }) : null;
   const watcher = createAlertWatcher({ db, quotes, push });
@@ -60,8 +65,10 @@ export function createApp({ db, verifyGoogle, googleClientId, sessionSecret, quo
   const isDate = (d) => /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(d));
   if (trustProxy) app.set('trust proxy', 1);
   // Cabeceras de seguridad, con la política de ventanas que necesita la ventana emergente de Google.
+  app.use(timing({ slowMs }));
   app.use(helmet({ contentSecurityPolicy: csp ? CSP : false, crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' } }));
-  app.use(compression());
+  // Sin comprimir el canal de cotizaciones: el compresor retendría los eventos.
+  app.use(compression({ filter: (req, res) => req.path !== '/api/stream' && compression.filter(req, res) }));
   const limit = (windowMs, max) => rateLimit({
     windowMs, limit: max, standardHeaders: 'draft-7', legacyHeaders: false,
     message: { error: 'Demasiadas peticiones. Espera un momento y vuelve a intentarlo.' },
@@ -74,6 +81,7 @@ export function createApp({ db, verifyGoogle, googleClientId, sessionSecret, quo
   app.use(cookieParser());
 
   const historyCache = new Map(); // usuario → { key, at, value }
+  const historyJobs = new Map(); // usuario → { key, progress, promise }: reconstrucción en marcha
 
   /** Splits conocidos de cada ISIN ({ ISIN: [[fecha, ratio]] }), para que el motor ajuste las acciones. */
   async function loadSplits(symbols) {
@@ -83,24 +91,114 @@ export function createApp({ db, verifyGoogle, googleClientId, sessionSecret, quo
     return out;
   }
 
-  async function portfolio(userId) {
-    const [rows, prices, lastUpload, symbols, alerts, targets] = await Promise.all([
-      db.getRows(userId), db.getPrices(userId), db.lastUpload(userId), db.getSymbols(), db.getAlerts(userId), db.getTargets(userId),
-    ]);
-    const { positions, lastDate, firstDate } = buildPortfolio(rows, await loadSplits(symbols));
-    for (const p of positions) {
-      const px = prices[p.isin];
-      p.price = px?.price ?? null;
-      p.priceAt = px?.at ?? null;
-      p.priceSource = px?.source ?? null; // 'manual' | 'live'
-      p.priceInfo = px?.info ?? null; // símbolo, bolsa, divisa y cambio de la cotización en vivo
-      p.quotable = !!symbols[p.isin]?.symbol; // hay una fuente de precio, aunque ahora mande uno a mano
-      p.sector = symbols[p.isin]?.sector ?? null;
-      p.industry = symbols[p.isin]?.industry ?? null;
-    }
-    const splits = positions.reduce((n, p) => n + p.evs.filter((e) => e.k === 'X').length, 0);
-    return { positions, alerts, targets, meta: { lastDate, firstDate, rows: rows.filter(isInvestRow).length, lastUpload, liveQuotes: !!quotes, history: !!history, splits, unknown: unknownTypes(rows) } };
+  // Posiciones calculadas de cada usuario, mientras no cambien sus operaciones ni los splits.
+  const builtCache = new Map(); // usuario → { key, value }
+  async function built(userId, rows, symbols) {
+    const splits = await loadSplits(symbols);
+    const key = `${db.rowsVersion?.(userId)}|${JSON.stringify(splits)}`;
+    const hit = builtCache.get(userId);
+    if (hit?.key === key && hit.rows === rows) return hit.value;
+    const value = measure('calc', () => {
+      const b = buildPortfolio(rows, splits);
+      // Los eventos y lotes de cada posición son casi todo el peso de la cartera: viajan
+      // aparte (/api/events), ya serializados, con una huella que solo cambia con ellos.
+      const events = JSON.stringify({
+        evs: Object.fromEntries(b.positions.map((p) => [p.isin, p.evs])),
+        lots: Object.fromEntries(b.positions.map((p) => [p.isin, p.lots])),
+      });
+      return {
+        ...b, events, etag: `"${crypto.createHash('sha1').update(events).digest('base64url')}"`,
+        invest: rows.filter(isInvestRow).length, unknown: unknownTypes(rows),
+        splits: b.positions.reduce((n, p) => n + p.evs.filter((e) => e.k === 'X').length, 0),
+      };
+    });
+    builtCache.delete(userId);
+    builtCache.set(userId, { key, rows, value });
+    if (builtCache.size > 200) builtCache.delete(builtCache.keys().next().value);
+    return value;
   }
+
+  async function portfolio(userId) {
+    const [rows, symbols, { prices, lastUpload, alerts, targets }] = await Promise.all([db.getRows(userId), db.getSymbols(), db.getUserState(userId)]);
+    const b = await built(userId, rows, symbols);
+    // Copias: las posiciones calculadas se comparten entre peticiones.
+    const positions = b.positions.map(({ evs: _e, lots: _l, ...p }) => {
+      const px = prices[p.isin];
+      return {
+        ...p,
+        nev: _e.length, // cuántos eventos tiene (los eventos van en /api/events)
+        price: px?.price ?? null,
+        priceAt: px?.at ?? null,
+        priceSource: px?.source ?? null, // 'manual' | 'live'
+        priceInfo: px?.info ?? null, // símbolo, bolsa, divisa y cambio de la cotización en vivo
+        quotable: !!symbols[p.isin]?.symbol, // hay una fuente de precio, aunque ahora mande uno a mano
+        sector: symbols[p.isin]?.sector ?? null,
+        industry: symbols[p.isin]?.industry ?? null,
+      };
+    });
+    return {
+      positions, alerts, targets,
+      meta: {
+        lastDate: b.lastDate, firstDate: b.firstDate, rows: b.invest, lastUpload, liveQuotes: !!quotes, history: !!history,
+        splits: b.splits, unknown: b.unknown, v: db.rowsVersion?.(userId) ?? 0, stream: !!quotes,
+        ev: b.etag, // huella de /api/events: si no cambia, los eventos que ya tiene el cliente valen
+      },
+    };
+  }
+
+  /**
+   * Cotiza de una vez las posiciones abiertas de varios usuarios (las que no tienen precio a
+   * mano), guarda las cotizaciones (son de todos) y marca las alertas que se cumplen.
+   * Devuelve Map(usuario → { pf, at, prices, updated, failed, fired }).
+   */
+  async function quoteUsers(userIds) {
+    const pfs = new Map();
+    for (const id of userIds) pfs.set(id, await portfolio(id));
+    const wanted = new Set(), manual = new Set(), names = {};
+    for (const pf of pfs.values()) {
+      for (const p of pf.positions) {
+        if (!p.open) continue;
+        names[p.isin] ??= p.name;
+        (p.priceSource === 'manual' ? manual : wanted).add(p.isin);
+      }
+    }
+    const known = await db.getSymbols();
+    const { quotes: found, resolved, failed } = await quotes.quoteIsins([...wanted], known);
+    // Las que tienen precio a mano también se buscan, para poder ofrecer la vuelta a la cotización.
+    const pending = [...manual].filter((isin) => !wanted.has(isin));
+    if (quotes.resolveIsins && pending.length) Object.assign(resolved, await quotes.resolveIsins(pending, { ...known, ...resolved }));
+    await db.saveSymbols(resolved);
+    const at = await db.setLivePrices(found);
+    const out = new Map();
+    for (const [id, pf] of pfs) {
+      const mine = pf.positions.filter((p) => p.open && p.priceSource !== 'manual').map((p) => p.isin);
+      const got = Object.fromEntries(mine.filter((isin) => found[isin]).map((isin) => [isin, found[isin]]));
+      // Alertas de precio que se cumplen con las cotizaciones nuevas: saltan una sola vez.
+      // La app está abierta y las enseña ella; no hace falta el aviso al dispositivo.
+      const fired = await watcher.fire(id, pf.alerts, got, names, false);
+      out.set(id, {
+        pf, at, fired, resolved: Object.keys(resolved).length,
+        prices: Object.fromEntries(Object.entries(got).map(([isin, q]) => [isin, { price: q.price, at, info: q.info ?? null }])),
+        updated: Object.keys(got).length,
+        // Solo cuentan como fallo los que tienen ISIN cotizable (no cripto, etc.).
+        failed: failed.filter((isin) => mine.includes(isin)).map((isin) => names[isin]),
+      });
+    }
+    return out;
+  }
+
+  // Canal de cotizaciones: el servidor cotiza para todos los conectados y envía a cada uno lo suyo.
+  const stream = quotes ? createStream({
+    refresh: async (ids) => {
+      const out = new Map();
+      for (const [id, r] of await quoteUsers(ids)) {
+        const alerts = r.fired.length ? (await db.getAlerts(id)) : undefined;
+        out.set(id, { at: r.at, prices: r.prices, updated: r.updated, failed: r.failed, fired: r.fired, alerts });
+      }
+      return out;
+    },
+  }) : null;
+  app.locals.stream = stream;
 
   // ---------- sesión ----------
   app.get('/api/config', (_req, res) => res.json({ googleClientId: googleClientId ?? null, pushKey: push?.publicKey ?? null }));
@@ -132,10 +230,32 @@ export function createApp({ db, verifyGoogle, googleClientId, sessionSecret, quo
     const user = id && (await db.getUser(id));
     if (!user) return res.status(401).json({ error: 'Inicia sesión para continuar.' });
     req.userId = user.id;
+    // Tras cualquier cambio en sus operaciones, las demás pestañas del usuario se enteran.
+    if (stream && req.method !== 'GET') {
+      const v = db.rowsVersion?.(user.id);
+      res.on('finish', () => {
+        const now = db.rowsVersion?.(user.id);
+        if (res.statusCode < 400 && now !== v) stream.changed(user.id, { v: now });
+      });
+    }
     next();
   });
 
+  api.get('/stream', (req, res) => {
+    if (!stream) return res.status(503).json({ error: 'Las cotizaciones en vivo están desactivadas.' });
+    return stream.connect(req, res, req.userId);
+  });
+
   api.get('/portfolio', async (req, res) => res.json(await portfolio(req.userId)));
+
+  // Eventos (compras, ventas, dividendos, splits) y lotes de cada posición: { evs: { ISIN: […] }, lots: { ISIN: […] } }.
+  // El navegador los revalida con If-None-Match y casi siempre recibe un 304 vacío.
+  api.get('/events', async (req, res) => {
+    const b = await built(req.userId, await db.getRows(req.userId));
+    res.set({ ETag: b.etag, 'Cache-Control': 'private, no-cache' });
+    if (req.fresh) return res.status(304).end();
+    res.type('json').send(b.events);
+  });
 
   // Sube un CSV de Trade Republic. Por defecto se fusiona por transaction_id
   // (subir dos veces el mismo archivo no duplica nada); ?replace=1 sustituye todo.
@@ -204,7 +324,10 @@ export function createApp({ db, verifyGoogle, googleClientId, sessionSecret, quo
     return op.shares > 0 && op.price > 0 ? op : 'Indica cantidad y precio.';
   }
   // Una operación no puede dejar una posición en negativo (vender más de lo que hay).
-  const oversold = async (rows) => buildPortfolio(rows, await loadSplits()).positions.find((p) => p.sh < -1e-6 || p.evs.some((e) => e.sa < -1e-6));
+  const oversold = async (rows) => {
+    const splits = await loadSplits();
+    return measure('calc', () => buildPortfolio(rows, splits).positions.find((p) => p.sh < -1e-6 || p.evs.some((e) => e.sa < -1e-6)));
+  };
 
   api.post('/transactions', async (req, res) => {
     const op = readOp(req.body);
@@ -261,56 +384,69 @@ export function createApp({ db, verifyGoogle, googleClientId, sessionSecret, quo
   // a mano. Los fondos no cotizados (Private Markets) reciben su último valor liquidativo.
   api.post('/quotes/refresh', async (req, res) => {
     if (!quotes) return res.status(503).json({ error: 'Las cotizaciones en vivo están desactivadas.' });
-    const before = await portfolio(req.userId);
-    const targets = before.positions.filter((p) => p.open && p.priceSource !== 'manual');
-    const known = await db.getSymbols();
-    const { quotes: found, resolved, failed } = await quotes.quoteIsins(targets.map((p) => p.isin), known);
-    // Las que tienen precio a mano también se buscan, para poder ofrecer la vuelta a la cotización.
-    const manual = before.positions.filter((p) => p.open && p.priceSource === 'manual').map((p) => p.isin);
-    if (quotes.resolveIsins && manual.length) Object.assign(resolved, await quotes.resolveIsins(manual, { ...known, ...resolved }));
-    await db.saveSymbols(resolved);
-    const at = await db.setLivePrices(found);
-    const names = Object.fromEntries(targets.map((p) => [p.isin, p.name]));
-    // Alertas de precio que se cumplen con las cotizaciones nuevas: saltan una sola vez.
-    // La app está abierta y las enseña ella; no hace falta el aviso al dispositivo.
-    const fired = await watcher.fire(req.userId, before.alerts, found, names, false);
-    res.json({
-      ...(await portfolio(req.userId)),
-      fired,
-      refresh: {
-        at, updated: Object.keys(found).length,
-        // Solo cuentan como fallo los que tienen ISIN cotizable (no cripto, etc.).
-        failed: failed.map((isin) => names[isin]),
-      },
-    });
+    const r = (await quoteUsers([req.userId])).get(req.userId);
+    // Símbolos nuevos traen sector e industria: entonces sí se vuelve a leer la cartera.
+    if (r.resolved) return res.json({ ...(await portfolio(req.userId)), fired: r.fired, refresh: { at: r.at, updated: r.updated, failed: r.failed } });
+    // La cartera ya leída, con los precios recién cotizados y las alertas que han saltado:
+    // no hace falta volver a la base de datos.
+    const fired = new Set(r.fired.map((al) => al.id));
+    const positions = r.pf.positions.map((p) => (r.prices[p.isin]
+      ? { ...p, price: r.prices[p.isin].price, priceAt: r.at, priceSource: 'live', priceInfo: r.prices[p.isin].info }
+      : p));
+    const alerts = r.pf.alerts.map((al) => (fired.has(al.id) ? { ...al, triggered_at: r.at } : al));
+    res.json({ ...r.pf, positions, alerts, fired: r.fired, refresh: { at: r.at, updated: r.updated, failed: r.failed } });
   });
 
   // Valor diario de la cartera, índice de rentabilidad e índices de referencia.
-  // La primera vez descarga el histórico de cada valor y puede tardar medio minuto.
+  // La serie calculada se guarda en la base de datos. Si hay que reconstruirla y tarda (la
+  // primera vez descarga el histórico de cada valor), se responde enseguida con la última
+  // guardada y { pending, progress }; el cliente vuelve a preguntar hasta tenerla.
   api.get('/history', async (req, res) => {
     if (!history) return res.status(503).json({ error: 'El histórico está desactivado.' });
-    const [rows, prices, valuations] = await Promise.all([db.getRows(req.userId), db.getPrices(req.userId), db.getValuations(req.userId)]);
-    // Reconstruirlo lee miles de cierres: se reutiliza unos minutos mientras no cambien las
-    // operaciones, los precios a mano ni las valoraciones.
+    const userId = req.userId;
+    const [rows, prices, valuations] = await Promise.all([db.getRows(userId), db.getPrices(userId), db.getValuations(userId)]);
+    const b = await built(userId, rows);
+    // Depende de las operaciones y splits (huella de los eventos), del día, de los precios a
+    // mano y de las valoraciones. Las cotizaciones del día cambian el último punto: por eso
+    // además caduca a los pocos minutos.
     const manual = Object.entries(prices).filter(([, p]) => p.source === 'manual').map(([isin, p]) => [isin, p.price]);
     const key = crypto.createHash('sha1')
-      .update(JSON.stringify([new Date().toISOString().slice(0, 10), rows, manual, valuations])).digest('hex');
-    const hit = historyCache.get(req.userId);
-    if (hit && hit.key === key && Date.now() - hit.at < HISTORY_TTL) return res.json({ history: hit.value });
-    const value = await history.build({
-      positions: buildPortfolio(rows, await loadSplits()).positions, prices, valuations,
-      rebuild: async () => buildPortfolio(rows, await loadSplits()).positions,
-    });
-    historyCache.set(req.userId, { key, at: Date.now(), value });
-    if (historyCache.size > 500) historyCache.delete(historyCache.keys().next().value);
-    res.json({ history: value });
+      .update(JSON.stringify([new Date().toISOString().slice(0, 10), b.etag, manual, valuations])).digest('base64url');
+
+    let saved = historyCache.get(userId);
+    if (!saved) {
+      saved = await db.getHistoryCache(userId);
+      if (saved) historyCache.set(userId, saved);
+    }
+    if (saved?.key === key && Date.now() - saved.at < HISTORY_TTL) return res.json({ history: saved.value });
+
+    let job = historyJobs.get(userId);
+    if (job?.key !== key) {
+      const progress = { done: 0, total: 0 };
+      const promise = history.build({
+        positions: b.positions, prices, valuations, progress,
+        rebuild: async () => (await built(userId, await db.getRows(userId))).positions,
+      }).then(async (value) => {
+        const entry = { key, at: Date.now(), value };
+        historyCache.set(userId, entry);
+        if (historyCache.size > 500) historyCache.delete(historyCache.keys().next().value);
+        await db.saveHistoryCache(userId, key, value).catch((err) => console.error('Histórico:', err.message));
+        return entry;
+      }).finally(() => { if (historyJobs.get(userId)?.promise === promise) historyJobs.delete(userId); });
+      promise.catch(() => {}); // si nadie la espera, que no quede como rechazo sin tratar
+      job = { key, progress, promise };
+      historyJobs.set(userId, job);
+    }
+    const waited = await Promise.race([job.promise, new Promise((r) => { setTimeout(r, historyWaitMs).unref?.(); })]);
+    if (waited) return res.json({ history: waited.value });
+    res.json({ history: saved?.value ?? null, pending: true, progress: { ...job.progress } });
   });
 
   // Previsión de dividendos de los próximos 12 meses.
   api.get('/dividends/forecast', async (req, res) => {
     if (!history) return res.status(503).json({ error: 'El histórico está desactivado.' });
     const rows = await db.getRows(req.userId);
-    res.json({ forecast: await history.dividends(buildPortfolio(rows, await loadSplits()).positions) });
+    res.json({ forecast: await history.dividends((await built(req.userId, rows)).positions) });
   });
 
   // Cierres en euros de un valor desde una fecha, para la ficha.
