@@ -8,7 +8,7 @@ import zlib from 'node:zlib';
 const BUDGET_KB = {
   initial: 95, // JS que pide la página al abrir (React y react-dom ya son ~60 KB)
   js: 150, // todo el JavaScript, con las secciones que se cargan bajo demanda
-  css: 10,
+  css: 12, // con el rediseño (redesign.css)
   fonts: 140, // woff2 ya comprimido: se cuenta tal cual
 };
 
