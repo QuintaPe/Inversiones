@@ -275,6 +275,8 @@ button.kv:hover svg{transform:translateX(3px);color:var(--tx)}
 .pos-card-h{display:flex;align-items:center;gap:var(--sp-3);min-width:0;margin-bottom:var(--sp-2)}
 .pos-card-h .name{display:block;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pos-card-h small{color:var(--mu);font-size:var(--fs-xs)}
+.pos-card-m{display:flex;align-items:flex-end;justify-content:space-between;gap:var(--sp-3)}
+.pos-card-m .spark{width:84px;height:30px;flex:none;padding:0;margin:0}
 .pos-card-v{font-size:22px;font-weight:700;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
 .pos-card-r{display:flex;align-items:center;gap:var(--sp-2);font-weight:650;font-size:14px;font-variant-numeric:tabular-nums}
 .pos-card-f{display:flex;align-items:center;gap:var(--sp-2);margin-top:auto;padding-top:var(--sp-3)}

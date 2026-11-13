@@ -214,6 +214,35 @@ export function createHistory({ db, quotes, now = () => Date.now() }) {
       return { items, byPos };
     },
 
+    /**
+     * Cierres en euros de los últimos `days` días de varios ISIN, con lo que ya está guardado
+     * (no descarga nada): { ISIN: [precio, …] }. Para las mini-gráficas de las posiciones.
+     */
+    async sparks(isins, days = 30) {
+      const symbols = await db.getSymbols();
+      const bySym = {};
+      for (const isin of isins) {
+        const s = symbols[isin]?.symbol;
+        if (s && !s.startsWith('NAV:')) (bySym[s] ??= []).push(isin);
+      }
+      const syms = Object.keys(bySym);
+      if (!syms.length) return {};
+      const meta = await db.getHistoryMeta();
+      const fxs = [...new Set(syms.map((s) => meta[s]?.currency).filter((c) => c && c !== 'EUR'))].map((c) => `${c}EUR=X`);
+      const from = iso(now() - days * DAY);
+      // El tipo de cambio desde más atrás: vale el último conocido aunque sea anterior al periodo.
+      const hist = { ...(await db.getHistorySince(syms, iso(now() - (days + 10) * DAY))), ...(await db.getHistorySince(fxs, iso(now() - 400 * DAY))) };
+      const out = {};
+      for (const s of syms) {
+        const cur = meta[s]?.currency;
+        if (!cur) continue;
+        const rate = cur === 'EUR' ? () => 1 : reader(hist[`${cur}EUR=X`] ?? []);
+        const vals = hist[s].filter(([d]) => d >= from).map(([d, c]) => { const r = rate(d); return r ? +(c * r).toFixed(4) : null; }).filter((v) => v != null);
+        if (vals.length >= 2) for (const isin of bySym[s]) out[isin] = vals;
+      }
+      return out;
+    },
+
     /** Cierres en euros de un ISIN: [[fecha, precio]]. */
     async asset(isin, from) {
       const symbols = await db.getSymbols();

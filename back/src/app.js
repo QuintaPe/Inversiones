@@ -470,6 +470,14 @@ export function createApp({ db: rawDb, verifyGoogle, googleClientId, sessionSecr
     res.json({ forecast: await history.dividends((await built(req.userId, rows)).positions) });
   });
 
+  // Últimos 30 días de cada posición abierta, para las mini-gráficas de las tarjetas.
+  api.get('/sparks', async (req, res) => {
+    if (!history) return res.json({ sparks: {} });
+    const b = await built(req.userId, await db.getRows(req.userId));
+    res.set('Cache-Control', 'private, max-age=300');
+    res.json({ sparks: await history.sparks(b.positions.filter((p) => p.open).map((p) => p.isin)) });
+  });
+
   // Cierres en euros de un valor desde una fecha, para la ficha.
   api.get('/assets/:isin/history', async (req, res) => {
     if (!history) return res.status(503).json({ error: 'El histórico está desactivado.' });

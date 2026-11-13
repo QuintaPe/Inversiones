@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import * as api from '../api.js';
 import { Asset, Avatar, Empty, Flash, Icon, Pill, PriceInput, Search, Tabs, Th, useSort } from '../components/ui.jsx';
-import { Kpi } from '../components/Kpi.jsx';
+import { Kpi, Spark } from '../components/Kpi.jsx';
 import { useStored } from '../hooks.js';
 import { classLabel, sector } from '../lib/countries.js';
 import { sum } from '../lib/calc.js';
@@ -33,6 +34,15 @@ export default function Positions({ a, onOpen, onPrice, targets, patch, fail }) 
   const crow = useMemo(() => closed.apply(a.c.filter(match), (x, k) => GET[k](x)), [a.c, q, closed.sort]);
   const s = open, c = closed;
   const [groupBy, setGroupBy] = useStored('pos-group', 'none');
+  // Mini-gráficas de 30 días: solo se piden al ver las tarjetas.
+  const [sparks, setSparks] = useState(null);
+  const wantSparks = tab === 'open' && view === 'cards';
+  useEffect(() => {
+    if (!wantSparks || sparks) return undefined;
+    let alive = true;
+    api.getSparks().then((r) => alive && setSparks(r.sparks)).catch(() => alive && setSparks({}));
+    return () => { alive = false; };
+  }, [wantSparks, sparks]);
   // Grupos de la lista abierta (tipo de activo o sector), cada uno con su subtotal.
   const groups = useMemo(() => {
     if (groupBy === 'none') return [{ key: 'all', label: null, rows }];
@@ -108,7 +118,10 @@ export default function Positions({ a, onOpen, onPrice, targets, patch, fail }) 
                     <Avatar p={x.p} />
                     <span className="asset-t"><b className="name">{x.p.name}</b><small>{qty(x.p.sh)} uds. a {eur(x.avg)}</small></span>
                   </span>
-                  <Flash value={x.v} className="pos-card-v">{x.has ? eur(x.v) : '—'}</Flash>
+                  <span className="pos-card-m">
+                    <Flash value={x.v} className="pos-card-v">{x.has ? eur(x.v) : '—'}</Flash>
+                    {sparks?.[x.p.isin] && <Spark values={sparks[x.p.isin]} tone={sign(sparks[x.p.isin].at(-1) - sparks[x.p.isin][0])} />}
+                  </span>
                   <span className="pos-card-r">
                     {x.has ? <><span className={sign(x.pl)}>{eurS(x.pl)}</span><Pill n={x.plp} plain /></> : <span className="mu">sin precio</span>}
                   </span>

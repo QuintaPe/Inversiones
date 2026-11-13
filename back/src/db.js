@@ -635,6 +635,20 @@ function makeRepo(client, url, { cache = true } = {}) {
       return out;
     },
 
+    /** Cierres desde una fecha: { símbolo: [[fecha, cierre], …] } (para las mini-gráficas). */
+    async getHistorySince(symbols, from) {
+      const out = Object.fromEntries(symbols.map((x) => [x, []]));
+      for (let i = 0; i < symbols.length; i += 40) {
+        const part = symbols.slice(i, i + 40);
+        const r = await client.execute({
+          sql: `SELECT symbol, d, c FROM price_history WHERE d >= ? AND symbol IN (${part.map(() => '?').join(',')}) ORDER BY symbol, d`,
+          args: [from, ...part],
+        });
+        for (const x of r.rows) out[x.symbol].push([x.d, x.c]);
+      }
+      return out;
+    },
+
     /** Todos los splits conocidos: { símbolo: [[fecha, ratio], …] } ordenado por fecha. */
     async getSplits() {
       const hit = globals.get('splits');

@@ -76,3 +76,14 @@ test('split: los cierres ajustados se valoran con las acciones de cada día', as
   assert.deepEqual(await db.getSplits(), { SPL: [['2025-01-06', 2]] });
   db.close();
 });
+
+test('mini-gráficas: últimos días en euros con lo ya guardado', async () => {
+  const db = await openDb({ url: ':memory:' });
+  const h = createHistory({ db, quotes: fake, now: () => NOW });
+  await db.saveSymbols({ US0000000001: { symbol: 'ACME', exchange: 'X' } });
+  await db.saveHistory('ACME', { currency: 'USD', from: '2025-01-01', rows: [['2024-11-01', 9], ['2025-01-02', 10], ['2025-01-03', 11], ['2025-01-06', 12]] });
+  await db.saveHistory('USDEUR=X', { currency: 'EUR', from: '2025-01-01', rows: [['2024-11-01', 0.5]] });
+  const s = await h.sparks(['US0000000001', 'XX0000000000'], 30);
+  assert.deepEqual(s, { US0000000001: [5, 5.5, 6] });
+  db.close();
+});
