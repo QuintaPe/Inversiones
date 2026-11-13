@@ -227,6 +227,26 @@ input.px::-webkit-outer-spin-button,input.px::-webkit-inner-spin-button{-webkit-
 button.kv:hover svg{transform:translateX(3px);color:var(--tx)}
 .kv:not(button){padding-right:24px}
 
+/* indicadores bajo la gráfica */
+.kpis-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:var(--sp-3)}
+.kpi{display:flex;flex-direction:column;gap:2px;min-width:0;text-align:left;background:var(--surface);border:0;border-radius:18px;padding:var(--sp-4) var(--sp-4) var(--sp-3);color:var(--tx);transition:background var(--dur-1),transform var(--dur-1)}
+button.kpi:hover{background:var(--surface-2)}
+button.kpi:active{transform:scale(.985)}
+.kpi-l{color:var(--mu);font-size:var(--fs-xs);font-weight:600}
+.kpi-v{font-size:20px;font-weight:700;letter-spacing:-.03em;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kpi-v.name{font-size:17px;line-height:1.45}
+.kpi-s{color:var(--mu);font-size:var(--fs-xs);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
+.spark{display:block;width:100%;height:34px;margin-top:auto;padding-top:var(--sp-2);overflow:visible}
+.spark rect{fill:var(--chart);opacity:.85}
+.spark-l{fill:none;stroke:var(--chart);stroke-width:1.6;vector-effect:non-scaling-stroke;stroke-linejoin:round}
+.spark-a{fill:var(--chart);opacity:.12}
+.spark.gain .spark-l{stroke:var(--gain)}.spark.gain .spark-a{fill:var(--gain)}
+.spark.loss .spark-l{stroke:var(--loss)}.spark.loss .spark-a{fill:var(--loss)}
+/* tabla de posiciones: cifra principal y secundaria en la misma celda */
+.tbl-pos td small .pill{margin-top:4px}
+.tbl-pos td small.gain{color:var(--gain)}.tbl-pos td small.loss{color:var(--loss)}
+.tbl-pos td input.px+small{margin-top:4px}
+
 /* identidad de activo */
 .av{flex:none;display:grid;place-items:center;width:42px;height:42px;border-radius:50%;font-size:13.5px;font-weight:700;letter-spacing:-.01em;background:var(--surface-3);color:var(--tx)}
 .av.sm{width:34px;height:34px;font-size:11.5px}
@@ -388,6 +408,7 @@ button.rank-row:hover{background:var(--surface-2)}
   .hide-m{display:none}.only-m{display:inline}
   .stats.five{grid-template-columns:repeat(3,minmax(0,1fr))}
   .dash{grid-template-columns:minmax(0,1fr) 340px;gap:24px}
+  .kpis-row{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 @media(max-width:960px){
   .dash,.cols{grid-template-columns:minmax(0,1fr)}

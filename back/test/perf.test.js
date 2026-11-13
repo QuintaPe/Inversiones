@@ -211,3 +211,12 @@ test('los eventos viajan aparte, con huella y 304 si no han cambiado', async () 
   assert.equal((await r3.json()).evs.XX0000000001.length, 2);
   stop();
 });
+
+test('sin servicio de logotipos el 404 no se guarda en caché', async () => {
+  const { client, stop } = await start();
+  const me = await client('u');
+  const r = await me.raw('/api/logos/US0378331005');
+  assert.equal(r.status, 404);
+  assert.equal(r.headers.get('cache-control'), 'no-store');
+  stop();
+});

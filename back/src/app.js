@@ -323,7 +323,8 @@ export function createApp({ db: rawDb, verifyGoogle, googleClientId, sessionSecr
   // Logotipo de un valor. 404 si no hay: el front enseña las iniciales.
   api.get('/logos/:isin', async (req, res) => {
     const logo = logos ? await logos.get(req.params.isin.toUpperCase()).catch(() => null) : null;
-    if (!logo) return res.status(404).set('Cache-Control', 'private, max-age=86400').end();
+    // Sin servicio de logotipos (LOGOS=0) el 404 no se guarda: al activarlo deben aparecer enseguida.
+    if (!logo) return res.status(404).set('Cache-Control', logos ? 'private, max-age=86400' : 'no-store').end();
     res.set({ 'Content-Type': logo.type, 'Cache-Control': 'private, max-age=604800' }).send(logo.data);
   });
 

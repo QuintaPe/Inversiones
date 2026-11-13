@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Asset, Card, Empty, Flash, Icon, Kind, Pill, Seg } from '../components/ui.jsx';
 import { StepArea, Lines, RankBars, Treemap } from '../charts.jsx';
-import { investedSeries, allocation } from '../lib/calc.js';
+import { investedSeries, allocation, monthlyDividends, sum } from '../lib/calc.js';
 import { prepare, periodStats, gainBetween } from '../lib/perf.js';
 import { useTween } from '../hooks.js';
 import { country, classLabel, region, sector, industry, currency, exchange } from '../lib/countries.js';
@@ -56,6 +56,42 @@ const Line = ({ label, value, tone = '', hint, onClick }) => {
     </Tag>
   );
 };
+/** Mini-gráfica sin ejes: línea (values) o barras (bars). */
+const Spark = ({ values, bars, tone = '' }) => {
+  const w = 120, hgt = 34, vs = bars ?? values ?? [];
+  if (vs.length < 2) return null;
+  let lo = Math.min(...vs), hi = Math.max(...vs);
+  if (bars) lo = Math.min(0, lo);
+  const Y = (v) => hgt - 2 - ((v - lo) / (hi - lo || 1)) * (hgt - 4);
+  if (bars) {
+    const bw = w / vs.length;
+    return (
+      <svg className="spark" viewBox={`0 0 ${w} ${hgt}`} aria-hidden="true">
+        {vs.map((v, i) => <rect key={i} x={i * bw + 1} y={Y(v)} width={Math.max(1, bw - 2)} height={Math.max(1, hgt - 2 - Y(v))} rx="1.5" />)}
+      </svg>
+    );
+  }
+  const d = vs.map((v, i) => `${i ? 'L' : 'M'}${((i / (vs.length - 1)) * w).toFixed(1)},${Y(v).toFixed(1)}`).join('');
+  return (
+    <svg className={`spark ${tone}`} viewBox={`0 0 ${w} ${hgt}`} preserveAspectRatio="none" aria-hidden="true">
+      <path className="spark-a" d={`${d}L${w},${hgt}L0,${hgt}Z`} />
+      <path className="spark-l" d={d} />
+    </svg>
+  );
+};
+/** Indicador compacto: cifra, explicación y mini-gráfica; lleva a su sección. */
+const Kpi = ({ label, value, sub, tone = '', spark, onClick }) => {
+  const Tag = onClick ? 'button' : 'div';
+  return (
+    <Tag className="kpi" type={onClick ? 'button' : undefined} onClick={onClick}>
+      <span className="kpi-l">{label}</span>
+      <b className={`kpi-v ${tone}`}>{value}</b>
+      {sub && <small className="kpi-s">{sub}</small>}
+      {spark}
+    </Tag>
+  );
+};
+
 const Chg = ({ n, p, children }) => (
   <span className={`chg ${sign(n)}`}>
     <span aria-hidden="true">{n >= 0 ? '▲' : '▼'}</span> {eurS(n)}{p != null && <> · {pctS(p)}</>} <em>{children}</em>
@@ -113,6 +149,38 @@ export default function Dashboard({ a, hist, histProgress, flt, cash, meta, onOp
       .filter((x) => Math.abs(x.t) >= 0.005).sort((x, y) => y.t - x.t);
     return all.length <= 6 ? all : [...all.slice(0, 3), ...all.slice(-3)];
   }, [a.o, a.c]);
+
+  // --- indicadores bajo la gráfica ---
+  const kpis = useMemo(() => {
+    if (none) return [];
+    const out = [];
+    // Resultado total: latente + realizado + dividendos, con la evolución del valor de los últimos 6 meses.
+    const tail = h ? h.v.slice(-180).filter((_, i, l) => i % 3 === 0 || i === l.length - 1) : null;
+    out.push({ key: 'total', label: 'Resultado total', value: eurS(a.total), tone: sign(a.total), sub: 'latente + realizado + dividendos',
+      spark: tail && <Spark values={tail} tone={sign(a.total)} />, onClick: () => go('posiciones') });
+    // Dividendos de los últimos 12 meses, por mes.
+    const months = monthlyDividends(a.dv).slice(-12);
+    const cut = new Date(); cut.setFullYear(cut.getFullYear() - 1);
+    const last = a.dv.filter((x) => x.d >= cut.toISOString().slice(0, 10));
+    out.push({ key: 'div', label: 'Dividendos 12 meses', value: eur(sum(last, (x) => x.net)), sub: `${last.length} ${last.length === 1 ? 'cobro' : 'cobros'} netos`,
+      spark: months.length > 1 && <Spark bars={months.map((m) => m.v)} />, onClick: () => go('dividendos') });
+    // Frente al MSCI World en el periodo elegido, con las mismas aportaciones.
+    const world = st?.bench.find((b) => b.mwr != null);
+    if (world && st.mwr != null) {
+      const diff = st.mwr - world.mwr;
+      out.push({ key: 'bench', label: `Frente al ${world.name}`, value: `${diff >= 0 ? '+' : '−'}${num(Math.abs(diff))} p. p.`, tone: sign(diff),
+        sub: `${RANGE_NAME[range]}: tú ${pctS(st.mwr)} · índice ${pctS(world.mwr)}`, onClick: () => setMode('perf') });
+    }
+    // El mejor del día (si hay cotización de la sesión) o, si no, el efectivo.
+    const movers = a.priced.filter((x) => x.dayPct != null).sort((x, y) => y.dayPct - x.dayPct);
+    if (movers.length) {
+      const b = movers[0];
+      out.push({ key: 'best', label: `Mejor ${dayLabel}`, value: b.p.name, sub: `${pctS(b.dayPct)} · ${eurS(b.day)}`, tone: 'name', onClick: () => onOpen(b.p.isin) });
+    } else if (cash) {
+      out.push({ key: 'cash', label: 'Efectivo', value: eur(cash.balance), sub: `${pct((cash.balance / (a.val + cash.balance)) * 100)} del patrimonio`, onClick: () => go('efectivo') });
+    }
+    return out;
+  }, [none, h, a.total, a.dv, a.priced, a.val, st, range, cash, dayLabel, go, onOpen]);
 
   // --- gráfica con histórico ---
   let chart = null, legend = null;
@@ -208,6 +276,12 @@ export default function Dashboard({ a, hist, histProgress, flt, cash, meta, onOp
             </ul>
           )}
         </section>
+
+        {kpis.length > 0 && (
+          <div className="kpis-row">
+            {kpis.map(({ key, ...k }) => <Kpi key={key} {...k} />)}
+          </div>
+        )}
 
         {st ? (
           <Card title={`Rentabilidad ${RANGE_NAME[range]}`}

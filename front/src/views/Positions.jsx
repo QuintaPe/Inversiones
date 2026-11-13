@@ -30,16 +30,13 @@ export default function Positions({ a, onOpen, onPrice, targets, patch, fail }) 
 
       {tab === 'target' ? <Targets a={a} targets={targets} patch={patch} fail={fail} onOpen={onOpen} /> : tab === 'open' ? (
         <div className="card table-card">
-          <table className="tbl">
+          <table className="tbl tbl-pos">
             <thead>
               <tr>
                 <Th id="name" sort={s.sort} onSort={s.onSort} className="l">Activo</Th>
-                <Th id="price" sort={s.sort} onSort={s.onSort} className="hide-s">Precio actual</Th>
-                <Th id="cost" sort={s.sort} onSort={s.onSort} className="hide-m">Coste</Th>
-                <Th id="day" sort={s.sort} onSort={s.onSort} className="hide-m">Día</Th>
+                <Th id="day" sort={s.sort} onSort={s.onSort} className="hide-s">Precio · día</Th>
                 <Th id="v" sort={s.sort} onSort={s.onSort}>Valor</Th>
-                <Th id="pl" sort={s.sort} onSort={s.onSort} className="hide-s">P&amp;L</Th>
-                <Th id="plp" sort={s.sort} onSort={s.onSort} className="hide-s">P&amp;L %</Th>
+                <Th id="plp" sort={s.sort} onSort={s.onSort} className="hide-s">Resultado</Th>
                 <Th id="w" sort={s.sort} onSort={s.onSort} className="hide-m">Peso</Th>
                 <Th id="div" sort={s.sort} onSort={s.onSort} className="hide-m hide-l">Dividendos</Th>
               </tr>
@@ -51,15 +48,19 @@ export default function Positions({ a, onOpen, onPrice, targets, patch, fail }) 
                   <td className="l">
                     <Asset p={x.p}>{qty(x.p.sh)} uds. a {eur(x.avg)}</Asset>
                   </td>
-                  <td className="hide-s"><PriceInput p={x.p} onPrice={onPrice} /></td>
-                  <td className="hide-m">{eur(x.p.cost)}</td>
-                  <td className="hide-m"><Pill n={x.dayPct} plain /></td>
+                  <td className="hide-s">
+                    <PriceInput p={x.p} onPrice={onPrice} />
+                    {x.dayPct != null && <small className={sign(x.dayPct)}>{pctS(x.dayPct)} hoy</small>}
+                  </td>
                   <td>
                     {x.has ? <Flash value={x.v}>{eur(x.v)}</Flash> : <span className="mu">—</span>}
+                    <small className="hide-s">coste {eur(x.p.cost)}</small>
                     <small className="only-s">{x.has ? <Pill n={x.plp} plain /> : 'sin precio'}</small>
                   </td>
-                  <td className={`hide-s ${sign(x.pl)}`}>{x.has ? eurS(x.pl) : <span className="mu">—</span>}</td>
-                  <td className="hide-s"><Pill n={x.has ? x.plp : null} plain /></td>
+                  <td className="hide-s">
+                    {x.has ? <span className={sign(x.pl)}>{eurS(x.pl)}</span> : <span className="mu">—</span>}
+                    {x.has && <small><Pill n={x.plp} plain /></small>}
+                  </td>
                   <td className="hide-m">
                     {x.w != null
                       ? <span className="wt"><span className="wt-b"><i style={{ width: `${Math.min(100, x.w * 4)}%` }} /></span>{pct(x.w)}</span>
@@ -69,28 +70,24 @@ export default function Positions({ a, onOpen, onPrice, targets, patch, fail }) 
                 </tr>
               ))}
             </tbody>
-            {rows.length > 1 && (
-              <tfoot>
-                <tr>
-                  <td className="l">Total ({rows.length})</td>
-                  <td className="hide-s" />
-                  <td className="hide-m">{eur(sum(rows, (x) => x.p.cost))}</td>
-                  <td className="hide-m" />
-                  <td>{eur(sum(rows, (x) => x.v ?? 0))}</td>
-                  {(() => {
-                    const pr = rows.filter((x) => x.has), pl = sum(pr, (x) => x.pl), cost = sum(pr, (x) => x.p.cost);
-                    return (
-                      <>
-                        <td className={`hide-s ${sign(pl)}`}>{pr.length ? eurS(pl) : '—'}</td>
-                        <td className={`hide-s ${sign(pl)}`}>{pr.length ? pctS((pl / cost) * 100) : '—'}</td>
-                      </>
-                    );
-                  })()}
-                  <td className="hide-m" />
-                  <td className="hide-m hide-l">{eur(sum(rows, (x) => x.div))}</td>
-                </tr>
-              </tfoot>
-            )}
+            {rows.length > 1 && (() => {
+              const pr = rows.filter((x) => x.has), pl = sum(pr, (x) => x.pl), cost = sum(pr, (x) => x.p.cost);
+              return (
+                <tfoot>
+                  <tr>
+                    <td className="l">Total ({rows.length})</td>
+                    <td className="hide-s" />
+                    <td>{eur(sum(rows, (x) => x.v ?? 0))}<small className="hide-s">coste {eur(sum(rows, (x) => x.p.cost))}</small></td>
+                    <td className="hide-s">
+                      <span className={sign(pl)}>{pr.length ? eurS(pl) : '—'}</span>
+                      {pr.length > 0 && <small><Pill n={(pl / cost) * 100} plain /></small>}
+                    </td>
+                    <td className="hide-m" />
+                    <td className="hide-m hide-l">{eur(sum(rows, (x) => x.div))}</td>
+                  </tr>
+                </tfoot>
+              );
+            })()}
           </table>
           {!rows.length && <Empty>{q ? 'Ninguna posición coincide con la búsqueda.' : 'No hay posiciones abiertas en esta vista.'}</Empty>}
         </div>
