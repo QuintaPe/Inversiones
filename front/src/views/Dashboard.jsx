@@ -141,8 +141,9 @@ export default function Dashboard({ a, hist, histProgress, flt, cash, meta, onOp
     // El mejor del día (si hay cotización de la sesión) o, si no, el efectivo.
     const movers = a.priced.filter((x) => x.dayPct != null).sort((x, y) => y.dayPct - x.dayPct);
     if (movers.length) {
-      const b = movers[0];
-      out.push({ key: 'best', label: `Mejor ${dayLabel}`, value: b.p.name, sub: `${pctS(b.dayPct)} · ${eurS(b.day)}`, tone: 'name', onClick: () => onOpen(b.p.isin) });
+      const b = movers[0], w = movers.at(-1);
+      out.push({ key: 'best', label: `Lo mejor y lo peor ${dayLabel === 'hoy' ? 'de hoy' : 'de la sesión'}`, value: <><span className="gain">▲</span> {b.p.name}</>,
+        sub: movers.length > 1 ? `${pctS(b.dayPct)} · peor: ${w.p.name} ${pctS(w.dayPct)}` : pctS(b.dayPct), tone: 'name', onClick: () => onOpen(b.p.isin) });
     } else if (cash) {
       out.push({ key: 'cash', label: 'Efectivo', value: eur(cash.balance), sub: `${pct((cash.balance / (a.val + cash.balance)) * 100)} del patrimonio`, onClick: () => go('efectivo') });
     }
@@ -154,15 +155,24 @@ export default function Dashboard({ a, hist, histProgress, flt, cash, meta, onOp
   if (h && st) {
     const from = st.first, x = h.t.slice(from);
     if (mode === 'value') {
+      // Las aportaciones más grandes del periodo, como puntos sobre la línea de valor.
+      const net = (i) => (h.buy?.[i] ?? 0) - (h.sell?.[i] ?? 0);
+      const marks = x.map((_, i) => ({ i, a: net(i + from) })).filter((m) => m.a >= 1)
+        .sort((p, q) => q.a - p.a).slice(0, 12).map((m) => ({ key: `ap-${m.i}`, i: m.i, cls: 'buy' }));
       chart = (
-        <Lines x={x} height={280} label="Valor de la cartera" onHover={(i) => setHover(i == null ? null : i + from)}
+        <Lines x={x} height={280} label="Valor de la cartera" onHover={(i) => setHover(i == null ? null : i + from)} marks={marks}
           series={[
             { key: 'v', values: h.v.slice(from), cls: st.gain >= 0 ? 'up' : 'down', area: true },
             { key: 'c', values: h.cost.slice(from), cls: 'muted', step: true },
           ]}
-          tip={(i) => <><small>{dateLong(x[i])}</small><b>{eur(h.v[i + from])}</b><small>invertido {eur(h.cost[i + from])}</small></>} />
+          tip={(i) => (
+            <>
+              <small>{dateLong(x[i])}</small><b>{eur(h.v[i + from])}</b><small>invertido {eur(h.cost[i + from])}</small>
+              {net(i + from) >= 1 && <small className="tip-ap">aportaste {eur(net(i + from))}</small>}
+            </>
+          )} />
       );
-      legend = [['up', 'Valor', st.gain >= 0 ? 'up' : 'down'], ['muted', 'Capital invertido', 'muted']];
+      legend = [['up', 'Valor', st.gain >= 0 ? 'up' : 'down'], ['muted', 'Capital invertido', 'muted'], ...(marks.length ? [['ap', 'Aportaciones', 'ap']] : [])];
     } else {
       // Resultado acumulado sobre el capital medio del periodo, para ti y para cada índice con tus mismas
       // aportaciones: el último punto de cada línea es la rentabilidad de la tarjeta de abajo.
@@ -244,8 +254,14 @@ export default function Dashboard({ a, hist, histProgress, flt, cash, meta, onOp
           </div>
           {legend && (
             <ul className="legend">
-              {legend.map(([k, name, cls]) => <li key={k}><i className={`sw ${cls}`} />{name}</li>)}
+              {legend.map(([k, name, cls]) => <li key={k}>{cls === 'ap' ? <i className="dotk buy" /> : <i className={`sw ${cls}`} />}{name}</li>)}
             </ul>
+          )}
+          {hist?.unpriced?.length > 0 && flt === 'all' && (
+            <p className="callout">
+              <Icon name="alert" size={15} />
+              <span>{hist.unpriced.join(', ')} no {hist.unpriced.length === 1 ? 'tiene' : 'tienen'} cotización histórica: su valor pasado se estima en línea recta entre la compra y las valoraciones que anotes en su ficha.</span>
+            </p>
           )}
         </section>
 
@@ -365,9 +381,6 @@ export default function Dashboard({ a, hist, histProgress, flt, cash, meta, onOp
               </>
             )}
 
-            {hist.unpriced.length > 0 && (
-              <p className="note">{hist.unpriced.join(', ')} no cotiza: su valor pasado se estima en línea recta entre la compra y las valoraciones que anotes en su ficha.</p>
-            )}
             <details className="how">
               <summary>Cómo se calcula</summary>
               <p className="note">

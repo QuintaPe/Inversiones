@@ -512,7 +512,8 @@ button.kpi:active{transform:scale(.985)}
 .chart .bar.up{fill:var(--gain)}.chart .bar.down{fill:var(--loss)}
 .chart svg:hover .bar:not(.hi){opacity:.4}
 .tip{position:absolute;pointer-events:none;background:var(--surface-3);border-radius:12px;padding:8px 12px;box-shadow:var(--shadow);white-space:nowrap;z-index:2;display:flex;flex-direction:column;gap:1px}
-.tip small{color:var(--tx-2);font-size:12px}.tip b{font-size:15px;font-variant-numeric:tabular-nums}
+.tip small{color:var(--tx-2);font-size:12px}
+.tip small.tip-ap{color:var(--s1);font-weight:600}.tip b{font-size:15px;font-variant-numeric:tabular-nums}
 .rank{display:flex;flex-direction:column;gap:2px;margin:0 -8px}
 .rank-row{display:grid;grid-template-columns:minmax(0,36%) 1fr auto;align-items:center;gap:14px;padding:9px 8px;border-radius:12px;background:none;border:0;text-align:left;width:100%}
 button.rank-row:hover{background:var(--surface-2)}
