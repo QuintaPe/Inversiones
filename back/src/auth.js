@@ -28,8 +28,9 @@ export function googleVerifier(clientId) {
 
 export function sessions(secret) {
   return {
-    issue(res, req, userId) {
-      const token = jwt.sign({ sub: userId }, secret, { algorithm: 'HS256', expiresIn: MAX_AGE_S });
+    /** v: versión de sesión del usuario (users.session_v) con la que se emite. */
+    issue(res, req, userId, v = 0) {
+      const token = jwt.sign({ sub: userId, v }, secret, { algorithm: 'HS256', expiresIn: MAX_AGE_S });
       res.cookie(COOKIE, token, {
         httpOnly: true, sameSite: 'lax', secure: req.secure, maxAge: MAX_AGE_S * 1000, path: '/',
       });
@@ -37,15 +38,27 @@ export function sessions(secret) {
     clear(res) {
       res.clearCookie(COOKIE, { path: '/' });
     },
-    /** Id del usuario de la cookie, o null. */
+    /** { id, v } de la cookie, o null. Las cookies anteriores a las versiones cuentan como v = 0. */
     read(req) {
       const token = req.cookies?.[COOKIE];
       if (!token) return null;
       try {
-        return jwt.verify(token, secret, { algorithms: ['HS256'] }).sub ?? null;
+        const p = jwt.verify(token, secret, { algorithms: ['HS256'] });
+        return p.sub ? { id: p.sub, v: p.v ?? 0 } : null;
       } catch {
         return null;
       }
+    },
+    /**
+     * Usuario de la sesión (sin datos internos), o null si no hay cookie válida, la cuenta ya
+     * no existe o la sesión se cerró desde otro dispositivo.
+     */
+    async user(req, db) {
+      const s = this.read(req);
+      const u = s && (await db.getUser(s.id));
+      if (!u || (u.session_v ?? 0) !== s.v) return null;
+      const { session_v: _v, ...profile } = u;
+      return profile;
     },
   };
 }

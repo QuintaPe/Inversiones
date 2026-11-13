@@ -168,6 +168,15 @@ const MIGRATIONS = [
          PRIMARY KEY (user_id, merchant))`);
     },
   },
+  {
+    v: 5,
+    name: 'versión de sesión de cada usuario',
+    async up(c) {
+      // Las cookies de sesión llevan este número: al subirlo dejan de valer todas las anteriores
+      // («cerrar sesión en los demás dispositivos»).
+      await addColumn(c, 'ALTER TABLE users ADD COLUMN session_v INTEGER NOT NULL DEFAULT 0');
+    },
+  },
 ];
 export const SCHEMA_VERSION = MIGRATIONS.at(-1).v;
 
@@ -276,10 +285,17 @@ function makeRepo(client, url, { cache = true } = {}) {
     async getUser(id) {
       const hit = users.get(id);
       if (hit !== undefined) return hit && { ...hit };
-      const r = await client.execute({ sql: 'SELECT id, email, name, picture FROM users WHERE id = ?', args: [id] });
+      const r = await client.execute({ sql: 'SELECT id, email, name, picture, session_v FROM users WHERE id = ?', args: [id] });
       const user = r.rows[0] ? { ...r.rows[0] } : null;
       if (user) users.set(id, user);
       return user && { ...user };
+    },
+
+    /** Invalida todas las sesiones abiertas del usuario. Devuelve la versión nueva. */
+    async bumpSession(id) {
+      const r = await client.execute({ sql: 'UPDATE users SET session_v = session_v + 1 WHERE id = ? RETURNING session_v', args: [id] });
+      users.delete(id);
+      return r.rows[0]?.session_v ?? 0;
     },
 
     /** Operaciones vigentes. La lista se comparte entre llamadas: no se debe modificar. */

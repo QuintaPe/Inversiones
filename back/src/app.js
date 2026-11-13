@@ -111,8 +111,7 @@ export function createApp({ db: rawDb, verifyGoogle, googleClientId, sessionSecr
   // ---------- todo lo demás requiere sesión ----------
   const api = express.Router();
   api.use(async (req, res, next) => {
-    const id = session.read(req);
-    const user = id && (await db.getUser(id));
+    const user = await session.user(req, db);
     if (!user) return res.status(401).json({ error: 'Inicia sesión para continuar.' });
     req.userId = user.id;
     // Tras cualquier cambio en sus operaciones, las demás pestañas del usuario se enteran.
@@ -134,7 +133,7 @@ export function createApp({ db: rawDb, verifyGoogle, googleClientId, sessionSecr
 
   // Las rutas de sesión van antes que el router: no exigen estar dentro.
   const forget = (userId) => { pf.forget(userId); hist.forget(userId); };
-  app.locals.cleanDemo = sessionRoutes(app, { db, session, verifyGoogle, googleClientId, push, demo, forget }).cleanDemo;
+  app.locals.cleanDemo = sessionRoutes(app, { db, session, verifyGoogle, googleClientId, push, demo, forget, stream }).cleanDemo;
 
   app.use('/api', api);
   app.use('/api', (_req, res) => res.status(404).json({ error: 'Ruta no encontrada.' }));

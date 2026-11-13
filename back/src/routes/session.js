@@ -4,7 +4,7 @@ import { AuthError } from '../auth.js';
 import { demoRows, DEMO_PREFIX, DEMO_TTL_DAYS } from '../demo.js';
 
 /** Se montan en la app (no en el router con sesión). Devuelve { cleanDemo }. */
-export default function sessionRoutes(app, { db, session, verifyGoogle, googleClientId, push, demo, forget }) {
+export default function sessionRoutes(app, { db, session, verifyGoogle, googleClientId, push, demo, forget, stream = null }) {
   app.get('/api/config', (_req, res) => res.json({ googleClientId: googleClientId ?? null, pushKey: push?.publicKey ?? null, demo }));
 
   app.post('/api/auth/google', async (req, res) => {
@@ -13,7 +13,7 @@ export default function sessionRoutes(app, { db, session, verifyGoogle, googleCl
     if (typeof credential !== 'string' || !credential) throw new AuthError('Falta la credencial de Google.');
     const profile = await verifyGoogle(credential);
     await db.upsertUser(profile);
-    session.issue(res, req, profile.id);
+    session.issue(res, req, profile.id, (await db.getUser(profile.id)).session_v ?? 0);
     res.json({ user: profile });
   });
 
@@ -41,8 +41,16 @@ export default function sessionRoutes(app, { db, session, verifyGoogle, googleCl
   });
 
   app.get('/api/me', async (req, res) => {
-    const id = session.read(req);
-    res.json({ user: id ? await db.getUser(id) : null });
+    res.json({ user: await session.user(req, db) });
+  });
+
+  // Cierra la sesión en todos los demás dispositivos: sus cookies dejan de valer y este recibe una nueva.
+  app.post('/api/auth/logout-others', async (req, res) => {
+    const user = await session.user(req, db);
+    if (!user) return res.status(401).json({ error: 'Inicia sesión para continuar.' });
+    session.issue(res, req, user.id, await db.bumpSession(user.id));
+    stream?.drop(user.id); // sus canales de cotizaciones abiertos se cortan; el de esta pestaña reconecta solo
+    res.json({ ok: true });
   });
 
   return { cleanDemo };

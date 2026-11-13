@@ -194,6 +194,11 @@ export default function App() {
     setToasts([]);
   };
 
+  const logoutOthers = async () => {
+    if (!(await confirm({ title: '¿Cerrar sesión en los demás dispositivos?', text: 'Cualquier otro navegador o móvil donde hayas entrado tendrá que volver a iniciar sesión. Aquí sigues dentro.', action: 'Cerrar las demás' }))) return;
+    try { await api.logoutOthers(); notify('ok', 'Sesión cerrada en los demás dispositivos.'); } catch (err) { fail(err); }
+  };
+
   // Subir un CSV: primero se enseña qué va a cambiar; solo se guarda al confirmar.
   const [imp, setImp] = useState(null); // { file, preview }
   const upload = async (file) => {
@@ -469,6 +474,9 @@ export default function App() {
           <a role="menuitem" href={api.EXPORT_URL} download onClick={close}><Icon name="download" size={17} />Descargar una copia</a>
           <button type="button" role="menuitem" onClick={() => { close(); bakInput.current?.click(); }}><Icon name="undo" size={17} />Restaurar una copia</button>
           <button type="button" role="menuitem" onClick={() => { close(); wipe(); }} className="danger"><Icon name="trash" size={17} />Borrar mis datos</button>
+          {!user.id.startsWith('demo-') && (
+            <button type="button" role="menuitem" onClick={() => { close(); logoutOthers(); }}><Icon name="logout" size={17} />Cerrar en otros dispositivos</button>
+          )}
           <button type="button" role="menuitem" onClick={logout}><Icon name="logout" size={17} />Cerrar sesión</button>
         </>
       )}

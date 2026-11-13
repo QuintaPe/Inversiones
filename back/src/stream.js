@@ -60,6 +60,10 @@ export function createStream({ refresh, log = console }) {
     changed(userId, data = {}) {
       for (const res of clients.get(userId) ?? []) send(res, 'changed', data);
     },
+    /** Corta los canales abiertos de un usuario (su sesión ya no vale en otros dispositivos). */
+    drop(userId) {
+      for (const res of [...(clients.get(userId) ?? [])]) res.end();
+    },
     /** Cotiza cada `seconds` segundos mientras haya alguien conectado. */
     start(seconds) {
       const id = setInterval(() => tick().catch((err) => log.error('Cotizaciones:', err.message)), seconds * 1000);
