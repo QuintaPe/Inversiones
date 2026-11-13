@@ -229,7 +229,11 @@ button.kv:hover svg{transform:translateX(3px);color:var(--tx)}
 
 /* Resumen a una columna: lo esencial arriba, el detalle plegado */
 .dash-one{grid-template-columns:minmax(0,1fr)}
-.dash-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--sp-5);align-items:start}
+.dash-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--sp-5);align-items:stretch}
+/* las dos tarjetas a la misma altura; las barras de distribución se reparten el alto */
+.dash-pair>.card{display:flex;flex-direction:column}
+.dash-pair>.card>.rank{flex:1;justify-content:space-around}
+.dash-pair>.card>.btn.wide{margin-top:auto}
 .hero-x{background:none;border:0;padding:0;margin-top:2px;color:var(--tx-2);font-size:14px;font-weight:550;text-align:left;width:max-content;font-variant-numeric:tabular-nums}
 .hero-x:hover{color:var(--tx)}
 .fold{display:block;width:100%;margin-top:var(--sp-4);background:var(--surface-2);border:0;border-radius:var(--r-sm);padding:11px;color:var(--tx-2);font-size:var(--fs-sm);font-weight:600;transition:background var(--dur-1),color var(--dur-1)}
