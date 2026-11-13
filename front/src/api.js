@@ -92,6 +92,8 @@ export const deleteTx = (tid) => full(call(`/api/transactions/${encodeURICompone
 export const getRemoved = () => call('/api/transactions/removed');
 export const restoreTx = (tid) => full(call(`/api/transactions/${encodeURIComponent(tid)}/restore`, { method: 'POST' }));
 export const getCash = () => call('/api/cash');
+/** Categoría de un comercio para todos sus pagos (category null = la automática). */
+export const setCategory = (merchant, category) => call('/api/categories', json('PUT', { merchant, category }));
 
 export const addAlert = (alert) => call('/api/alerts', json('POST', alert));
 export const deleteAlert = (id) => call(`/api/alerts/${id}`, { method: 'DELETE' });
