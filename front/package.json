@@ -4,8 +4,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build && node scripts/budget.js",
+    "build": "node scripts/contrast.js && vite build && node scripts/budget.js",
     "budget": "node scripts/budget.js",
+    "contrast": "node scripts/contrast.js",
     "preview": "vite preview"
   },
   "dependencies": {

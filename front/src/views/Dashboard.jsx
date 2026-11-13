@@ -3,6 +3,7 @@ import { Asset, Card, Empty, Flash, Icon, Kind, Pill, Seg } from '../components/
 import { StepArea, Lines, RankBars, Treemap } from '../charts.jsx';
 import { investedSeries, allocation } from '../lib/calc.js';
 import { prepare, periodStats, gainBetween } from '../lib/perf.js';
+import { useTween } from '../hooks.js';
 import { country, classLabel, region, sector, industry, currency, exchange } from '../lib/countries.js';
 import { eur, eurS, pct, pctS, sign, date, dateLong, qty, num } from '../lib/format.js';
 
@@ -70,6 +71,7 @@ export default function Dashboard({ a, hist, histProgress, flt, cash, meta, onOp
   const [hover, setHover] = useState(null); // índice del día bajo el cursor (en el histórico completo)
   const start = rangeStart(range);
   const none = a.priced.length === 0;
+  const heroVal = useTween(none ? null : a.val);
 
   // El histórico es de toda la cartera: solo se usa sin filtro de tipo de activo.
   const h = useMemo(() => (hist && flt === 'all' ? prepare(hist) : null), [hist, flt]);
@@ -157,7 +159,7 @@ export default function Dashboard({ a, hist, histProgress, flt, cash, meta, onOp
           <span className="eyebrow">{hv ? dateLong(Date.parse(`${hv.d}T00:00:00Z`)) : 'Cartera'}</span>
           {hv
             ? <div className="hero-v">{eur(hv.v)}</div>
-            : <Flash value={none ? null : a.val} as="div" className="hero-v">{none ? '—' : eur(a.val)}</Flash>}
+            : <Flash value={none ? null : a.val} as="div" className="hero-v">{none ? '—' : eur(heroVal)}</Flash>}
           {/* Al señalar un día de la gráfica la cabecera conserva su altura: lo de siempre se
               oculta sin quitarlo y la línea de ese día se pinta encima. Si cambiara de altura,
               la gráfica se movería bajo el cursor. */}
@@ -215,34 +217,69 @@ export default function Dashboard({ a, hist, histProgress, flt, cash, meta, onOp
               <div><span className="stat-l">Rentabilidad</span><b className={`stat-v ${sign(st.gain)}`}>{st.mwr != null ? pctS(st.mwr) : '—'}</b></div>
               <div><span className="stat-l">Caída máxima</span><b className="stat-v">{pct(st.mdd)}</b></div>
             </div>
+            <h3 className="kv-h">Movimientos</h3>
             <div className="kvs">
               <Line label="Valor al inicio" value={eur(st.v0)} />
               <Line label="Aportaciones netas" hint="compras − ventas" value={eurS(st.contrib)} onClick={() => go('operaciones')} />
               <Line label="Dividendos cobrados" value={eur(st.divs)} onClick={() => go('dividendos')} />
-              <Line label="Valor al final" value={eur(st.v1)} />
               <Line label="Realizado en ventas" value={eurS(per.real)} tone={sign(per.real)} onClick={() => go('fiscalidad')} />
               <Line label="Comisiones pagadas" value={eur(per.fees)} onClick={() => go('operaciones')} />
-              {st.bench.map((b) => b.mwr != null && (
-                <Line key={b.key} label={`${b.name} con tus mismas aportaciones`}
-                  hint={`habrías ganado ${eurS(b.gain)}: ${st.gain >= b.gain ? 'lo bates por' : 'te bate por'} ${eur(Math.abs(st.gain - b.gain))}`}
-                  value={pctS(b.mwr)} tone={sign(b.mwr)} />
-              ))}
-              {st.vol != null && <Line label="Volatilidad anualizada" hint="cuánto se mueve tu cartera de un día a otro" value={pct(st.vol)} />}
-              {st.ratio != null && <Line label="Rentabilidad por unidad de riesgo" hint="rentabilidad anualizada ÷ volatilidad; por encima de 1 es buena" value={num(st.ratio)} tone={sign(st.ratio)} />}
-              {st.best && <Line label="Mejor y peor día" hint={`${date(st.best.d)} y ${date(st.worst.d)}`} value={`${pctS(st.best.r)} / ${pctS(st.worst.r)}`} />}
-              <Line label="Rentabilidad ponderada por tiempo" hint="cada día pesa igual, hubiera 100 € o 100.000 €" value={pctS(st.twr)} tone={sign(st.twr)} />
-              {st.bench.map((b) => b.r != null && (
-                <Line key={`${b.key}-t`} label={`${b.name} ponderada por tiempo`} value={pctS(b.r)} />
-              ))}
+              <Line label="Valor al final" value={eur(st.v1)} />
             </div>
-            <p className="note">
-              Resultado = valor final − valor inicial − aportaciones + dividendos. La rentabilidad divide ese resultado
-              entre el capital medio que has tenido invertido, y la de cada índice se calcula igual: invirtiendo en él el
-              mismo dinero los mismos días; la gráfica de rentabilidad dibuja ese resultado acumulado, tuyo y de los
-              índices, sobre el capital medio del periodo. La ponderada por tiempo ignora cuánto dinero había en cada momento, así que
-              una mala racha con poco capital la hunde aunque apenas te costara euros.
-              {hist.unpriced.length > 0 && ` ${hist.unpriced.join(', ')} no cotiza: su valor pasado se estima en línea recta entre la compra y las valoraciones que anotes en su ficha.`}
-            </p>
+
+            {st.bench.some((b) => b.mwr != null || b.r != null) && (
+              <>
+                <h3 className="kv-h">Frente a los índices</h3>
+                <table className="cmp">
+                  <thead>
+                    <tr><th scope="col"><span className="sr">Cartera o índice</span></th><th scope="col">Con tus aportaciones</th><th scope="col">Por tiempo</th></tr>
+                  </thead>
+                  <tbody>
+                    <tr className="cmp-me">
+                      <th scope="row">Tu cartera</th>
+                      <td className={sign(st.mwr ?? 0)}>{st.mwr != null ? pctS(st.mwr) : '—'}</td>
+                      <td className={sign(st.twr)}>{pctS(st.twr)}</td>
+                    </tr>
+                    {st.bench.map((b) => (
+                      <tr key={b.key}>
+                        <th scope="row">
+                          {b.name}
+                          {b.mwr != null && <small>{st.gain >= b.gain ? 'Lo bates por' : 'Te bate por'} {eur(Math.abs(st.gain - b.gain))}</small>}
+                        </th>
+                        <td>{b.mwr != null ? pctS(b.mwr) : '—'}</td>
+                        <td>{b.r != null ? pctS(b.r) : '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </>
+            )}
+
+            {(st.vol != null || st.best) && (
+              <>
+                <h3 className="kv-h">Riesgo</h3>
+                <div className="kvs">
+                  {st.vol != null && <Line label="Volatilidad anualizada" hint="cuánto se mueve tu cartera de un día a otro" value={pct(st.vol)} />}
+                  {st.ratio != null && <Line label="Rentabilidad por unidad de riesgo" hint="por encima de 1 es buena" value={num(st.ratio)} tone={sign(st.ratio)} />}
+                  {st.best && <Line label="Mejor y peor día" hint={`${date(st.best.d)} y ${date(st.worst.d)}`} value={`${pctS(st.best.r)} / ${pctS(st.worst.r)}`} />}
+                </div>
+              </>
+            )}
+
+            {hist.unpriced.length > 0 && (
+              <p className="note">{hist.unpriced.join(', ')} no cotiza: su valor pasado se estima en línea recta entre la compra y las valoraciones que anotes en su ficha.</p>
+            )}
+            <details className="how">
+              <summary>Cómo se calcula</summary>
+              <p className="note">
+                Resultado = valor final − valor inicial − aportaciones + dividendos. «Con tus aportaciones» divide ese resultado
+                entre el capital medio que has tenido invertido, y la de cada índice se calcula igual: invirtiendo en él el
+                mismo dinero los mismos días; la gráfica de rentabilidad dibuja ese resultado acumulado. «Por tiempo»
+                (ponderada por tiempo) hace que cada día pese igual, hubiera 100 € o 100.000 €: una mala racha con poco
+                capital la hunde aunque apenas te costara euros. La rentabilidad por unidad de riesgo es la anualizada
+                dividida entre la volatilidad.
+              </p>
+            </details>
           </Card>
         ) : (
           <Card title={start ? `Periodo: ${RANGE_NAME[range]}` : 'Resultado'}

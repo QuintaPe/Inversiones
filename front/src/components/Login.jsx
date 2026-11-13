@@ -13,7 +13,8 @@ const loadGis = () =>
   }));
 
 /** Pantalla de acceso con el botón oficial de Google Identity Services. */
-export default function Login({ clientId, onCredential, error }) {
+export default function Login({ clientId, onCredential, error, demo = false, onDemo }) {
+  const [trying, setTrying] = useState(false);
   const ref = useRef(null);
   const [loadErr, setLoadErr] = useState(null);
   const cb = useRef(onCredential);
@@ -56,6 +57,16 @@ export default function Login({ clientId, onCredential, error }) {
           <div className="note">
             Falta configurar el acceso con Google en el servidor: define <code>GOOGLE_CLIENT_ID</code> en{' '}
             <code>back/.env</code> (pasos en <code>back/.env.example</code>) y reinicia el back.
+          </div>
+        )}
+        {demo && (
+          <div className="login-demo">
+            <span>o</span>
+            <button type="button" className="btn wide" disabled={trying}
+              onClick={async () => { setTrying(true); try { await onDemo(); } finally { setTrying(false); } }}>
+              {trying ? 'Preparando el ejemplo…' : 'Probar con una cartera de ejemplo'}
+            </button>
+            <small>Datos inventados con valores reales. Se borran solos en una semana.</small>
           </div>
         )}
       </section>

@@ -99,7 +99,7 @@ export default function App() {
 
   useEffect(() => {
     Promise.all([api.getConfig(), api.getMe()])
-      .then(([cfg, me]) => setAuth({ user: me.user, clientId: cfg.googleClientId, pushKey: cfg.pushKey ?? null }))
+      .then(([cfg, me]) => setAuth({ user: me.user, clientId: cfg.googleClientId, pushKey: cfg.pushKey ?? null, demo: !!cfg.demo }))
       .catch((err) => { setAuth({ user: null, clientId: null }); setLoginErr(err.message); });
   }, []);
 
@@ -141,6 +141,16 @@ export default function App() {
     setLoginErr(null);
     try {
       const { user: u } = await api.loginGoogle(credential);
+      setAuth((a) => ({ ...a, user: u }));
+    } catch (err) {
+      setLoginErr(err.message);
+    }
+  };
+
+  const loginDemo = async () => {
+    setLoginErr(null);
+    try {
+      const { user: u } = await api.loginDemo();
       setAuth((a) => ({ ...a, user: u }));
     } catch (err) {
       setLoginErr(err.message);
@@ -347,7 +357,7 @@ export default function App() {
   if (!user) {
     return (
       <Suspense fallback={<div className="center"><span className="spinner" aria-label="Cargando" /></div>}>
-        <Login clientId={auth.clientId} onCredential={login} error={loginErr} />
+        <Login clientId={auth.clientId} onCredential={login} error={loginErr} demo={auth.demo} onDemo={loginDemo} />
       </Suspense>
     );
   }
@@ -425,11 +435,19 @@ export default function App() {
       </header>
 
       <main className="main">
-        {data && !empty && route !== 'activo' && (
+        {data && !empty && route !== 'activo' && (route !== 'resumen' || groups.length > 2) && (
           <div className="page-h">
             {route !== 'resumen' && <h1>{TITLES[route]}</h1>}
             {groups.length > 2 && route !== 'efectivo' && <Seg label="Tipo de activo" options={groups} value={flt} onChange={setFlt} />}
           </div>
+        )}
+
+        {user.id.startsWith('demo-') && (
+          <p className="banner info" role="status">
+            <Icon name="eye" size={16} />
+            <span>Cartera de ejemplo con datos inventados<span className="hide-s">: prueba lo que quieras</span>.</span>
+            <button type="button" className="link" onClick={logout}>Salir del ejemplo</button>
+          </p>
         )}
 
         {unknownRows > 0 && route !== 'activo' && (
@@ -481,7 +499,7 @@ export default function App() {
         )}
       </main>
 
-      {nav('tabs', 5)}
+      {nav('tabs')}
       {opForm && hidden && <Locked title="Importes ocultos" onClose={() => setOpForm(null)} />}
       <Suspense fallback={null}>
         {opForm && !hidden && <OpForm initial={opForm} positions={positions} onSubmit={saveOp} onClose={() => setOpForm(null)} />}

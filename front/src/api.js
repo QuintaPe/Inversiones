@@ -25,6 +25,7 @@ export const getConfig = () => call('/api/config');
 export const getMe = () => call('/api/me');
 export const loginGoogle = (credential) => call('/api/auth/google', json('POST', { credential }));
 export const logout = () => call('/api/auth/logout', { method: 'POST' });
+export const loginDemo = () => call('/api/auth/demo', { method: 'POST' });
 
 // Los eventos y lotes de cada posición llegan aparte (/api/events) y solo cuando cambia su
 // huella (meta.ev): las cotizaciones y demás cambios no los vuelven a traer.

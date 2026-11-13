@@ -38,6 +38,7 @@ const app = createApp({
   logos: process.env.LOGOS === '0' ? null : createLogos({ db }),
   trustProxy: process.env.TRUST_PROXY === '1',
   slowMs: Number(process.env.SLOW_MS ?? 1000),
+  demo: process.env.DEMO !== '0',
 });
 app.listen(PORT, HOST, () => console.log(`API en http://${HOST}:${PORT}`));
 
@@ -48,3 +49,8 @@ if (quotes && sweepMin > 0) app.locals.watcher.start(sweepMin);
 // Cotizaciones para las pestañas abiertas: una sola consulta por valor para todos los usuarios.
 const streamSec = Number(process.env.QUOTE_STREAM_SEC ?? 60);
 if (app.locals.stream && streamSec > 0) app.locals.stream.start(streamSec);
+
+// Las cuentas de la cartera de ejemplo se borran solas pasada una semana.
+const cleanDemo = () => app.locals.cleanDemo().then((n) => n && console.log(`Borradas ${n} carteras de ejemplo.`)).catch((err) => console.error('Ejemplo:', err.message));
+cleanDemo();
+setInterval(cleanDemo, 6 * 3600_000).unref();

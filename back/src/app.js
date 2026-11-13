@@ -15,6 +15,7 @@ import { createHistory } from './history.js';
 import { createLogos } from './logos.js';
 import { timing, instrument, measure } from './timing.js';
 import { createStream } from './stream.js';
+import { demoRows, DEMO_PREFIX, DEMO_TTL_DAYS } from './demo.js';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 
@@ -53,7 +54,7 @@ const HISTORY_TTL = 10 * 60_000;
  * @param push   servicio de push.js (o null: sin avisos con la app cerrada)
  * @param csp    false desactiva la política de contenido (CSP=0)
  */
-export function createApp({ db: rawDb, verifyGoogle, googleClientId, sessionSecret, quotes: rawQuotes = null, logos = null, push = null, trustProxy = false, csp = true, slowMs = 1000, historyWaitMs = 1500 }) {
+export function createApp({ db: rawDb, verifyGoogle, googleClientId, sessionSecret, quotes: rawQuotes = null, logos = null, push = null, trustProxy = false, csp = true, slowMs = 1000, historyWaitMs = 1500, demo = true }) {
   const app = express();
   // Todo acceso a la base de datos y a los proveedores de precios se mide (Server-Timing).
   const db = instrument(rawDb, 'db');
@@ -201,7 +202,7 @@ export function createApp({ db: rawDb, verifyGoogle, googleClientId, sessionSecr
   app.locals.stream = stream;
 
   // ---------- sesión ----------
-  app.get('/api/config', (_req, res) => res.json({ googleClientId: googleClientId ?? null, pushKey: push?.publicKey ?? null }));
+  app.get('/api/config', (_req, res) => res.json({ googleClientId: googleClientId ?? null, pushKey: push?.publicKey ?? null, demo }));
 
   app.post('/api/auth/google', async (req, res) => {
     if (!verifyGoogle) throw new AuthError('El servidor no tiene configurado GOOGLE_CLIENT_ID.');
@@ -212,6 +213,25 @@ export function createApp({ db: rawDb, verifyGoogle, googleClientId, sessionSecr
     session.issue(res, req, profile.id);
     res.json({ user: profile });
   });
+
+  // Cartera de ejemplo: una cuenta temporal con datos inventados, sin Google.
+  app.post('/api/auth/demo', async (req, res) => {
+    if (!demo) return res.status(404).json({ error: 'La cartera de ejemplo está desactivada.' });
+    const profile = { id: `${DEMO_PREFIX}${crypto.randomUUID()}`, email: 'ejemplo@cartera.local', name: 'Cartera de ejemplo' };
+    await db.upsertUser(profile);
+    const { rows, total, invest } = demoRows();
+    await db.saveUpload(profile.id, { name: 'cartera-de-ejemplo.csv', total, rows, relevant: invest });
+    session.issue(res, req, profile.id);
+    res.json({ user: profile });
+  });
+  /** Borra las cuentas de ejemplo de más de DEMO_TTL_DAYS días. Devuelve cuántas. */
+  async function cleanDemo() {
+    const ids = await db.staleUsers(DEMO_PREFIX, new Date(Date.now() - DEMO_TTL_DAYS * 86400000).toISOString());
+    await db.deleteUsers(ids);
+    for (const id of ids) { historyCache.delete(id); builtCache.delete(id); }
+    return ids.length;
+  }
+  app.locals.cleanDemo = cleanDemo;
 
   app.post('/api/auth/logout', (_req, res) => {
     session.clear(res);

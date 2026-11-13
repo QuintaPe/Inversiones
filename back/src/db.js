@@ -688,6 +688,22 @@ function makeRepo(client, url, { cache = true } = {}) {
       await client.execute({ sql: 'DELETE FROM valuations WHERE user_id = ? AND isin = ? AND d = ?', args: [userId, isin, d] });
     },
 
+    /** Cuentas cuyo id empieza por `prefix` creadas antes de `before` (ISO). */
+    async staleUsers(prefix, before) {
+      const r = await client.execute({ sql: 'SELECT id FROM users WHERE id LIKE ? AND created_at < ?', args: [`${prefix}%`, before] });
+      return r.rows.map((x) => x.id);
+    },
+    /** Borra cuentas enteras, con todos sus datos. */
+    async deleteUsers(ids) {
+      if (!ids.length) return;
+      const tables = ['transactions', 'prices', 'imports', 'valuations', 'alerts', 'targets', 'history_cache', 'push_subscriptions'];
+      await client.batch(ids.flatMap((id) => [
+        ...tables.map((t) => ({ sql: `DELETE FROM ${t} WHERE user_id = ?`, args: [id] })),
+        { sql: 'DELETE FROM users WHERE id = ?', args: [id] },
+      ]), 'write');
+      for (const id of ids) { users.delete(id); touchRows(id); }
+    },
+
     async clearUserData(userId) {
       await client.batch(
         ['transactions', 'prices', 'imports', 'valuations', 'alerts', 'targets', 'history_cache'].map((t) => ({ sql: `DELETE FROM ${t} WHERE user_id = ?`, args: [userId] })),

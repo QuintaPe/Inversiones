@@ -104,3 +104,11 @@ El back ya incluye cabeceras de seguridad con política de contenido (`CSP=0` la
 compresión, límite de peticiones y `/api/health`. Define `PUSH_SUBJECT` con un contacto real
 para los avisos.
 Cualquier persona con cuenta de Google puede registrarse: cada usuario solo ve sus datos.
+Desde el acceso también se puede probar una cartera de ejemplo (`back/src/demo.js`): crea una
+cuenta temporal con valores reales y operaciones inventadas, que se borra a la semana (`DEMO=0` la quita).
+
+## Diseño
+
+Los colores, espacios, tamaños de letra y tiempos de animación son variables de `:root` en
+`front/src/styles.css`, con un bloque para cada tema. `npm run contrast --prefix front`
+comprueba que todo el texto cumple el contraste WCAG AA en los dos temas; el build no sigue si falla.
