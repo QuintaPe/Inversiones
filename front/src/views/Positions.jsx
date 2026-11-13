@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Asset, Avatar, Empty, Flash, Icon, Pill, PriceInput, Search, Tabs, Th, useSort } from '../components/ui.jsx';
 import { Kpi } from '../components/Kpi.jsx';
 import { useStored } from '../hooks.js';
+import { classLabel, sector } from '../lib/countries.js';
 import { sum } from '../lib/calc.js';
 import Targets from './Targets.jsx';
 import { eur, eurS, pct, pctS, qty, sign, date } from '../lib/format.js';
@@ -11,6 +12,15 @@ const GET = {
   v: (x) => x.v, day: (x) => x.dayPct, pl: (x) => x.pl, plp: (x) => x.plp, w: (x) => x.w, div: (x) => x.div, real: (x) => x.real,
   last: (x) => x.S.at(-1)?.d,
 };
+
+/** Título de un grupo con su valor, peso y resultado. */
+const GroupHead = ({ g }) => (
+  <div className="grp">
+    <b>{g.label}</b>
+    <span className="mu">{g.rows.length} · {pct(g.w)}</span>
+    <span className="grp-v">{eur(g.v)}{g.plp != null && <small className={sign(g.pl)}>{eurS(g.pl)} · {pctS(g.plp)}</small>}</span>
+  </div>
+);
 
 export default function Positions({ a, onOpen, onPrice, targets, patch, fail }) {
   const [tab, setTab] = useState('open');
@@ -22,6 +32,19 @@ export default function Positions({ a, onOpen, onPrice, targets, patch, fail }) 
   const rows = useMemo(() => open.apply(a.o.filter(match), (x, k) => GET[k](x)), [a.o, q, open.sort]);
   const crow = useMemo(() => closed.apply(a.c.filter(match), (x, k) => GET[k](x)), [a.c, q, closed.sort]);
   const s = open, c = closed;
+  const [groupBy, setGroupBy] = useStored('pos-group', 'none');
+  // Grupos de la lista abierta (tipo de activo o sector), cada uno con su subtotal.
+  const groups = useMemo(() => {
+    if (groupBy === 'none') return [{ key: 'all', label: null, rows }];
+    const keyOf = groupBy === 'cls' ? (x) => classLabel(x.p.cls) : (x) => sector(x.p);
+    const m = new Map();
+    for (const x of rows) { const k = keyOf(x); if (!m.has(k)) m.set(k, []); m.get(k).push(x); }
+    return [...m].map(([k, list]) => {
+      const pr = list.filter((x) => x.has);
+      const v = sum(pr, (x) => x.v), cost = sum(pr, (x) => x.p.cost);
+      return { key: k, label: k, rows: list, v, pl: v - cost, plp: cost ? ((v - cost) / cost) * 100 : null, w: sum(pr, (x) => x.w ?? 0) };
+    }).sort((x, y) => y.v - x.v);
+  }, [rows, groupBy]);
   const top3 = [...a.priced].sort((x, y) => y.v - x.v).slice(0, 3).reduce((t, x) => t + (x.w ?? 0), 0);
 
   return (
@@ -52,6 +75,11 @@ export default function Positions({ a, onOpen, onPrice, targets, patch, fail }) 
           <Search value={q} onChange={setQ} placeholder="Buscar por nombre o ISIN" label="Buscar posición" />
           {tab === 'open' && (
             <>
+              <select aria-label="Agrupar posiciones" value={groupBy} onChange={(ev) => setGroupBy(ev.target.value)}>
+                <option value="none">Sin agrupar</option>
+                <option value="cls">Por tipo de activo</option>
+                <option value="sector">Por sector</option>
+              </select>
               {view === 'cards' && (
                 <select aria-label="Ordenar por" value={s.sort.key} onChange={(ev) => s.onSort(ev.target.value)}>
                   {[['v', 'Valor'], ['plp', 'Rentabilidad'], ['pl', 'Resultado en €'], ['day', 'Hoy'], ['name', 'Nombre']].map(([k, l]) => <option key={k} value={k}>{l}</option>)}
@@ -68,8 +96,12 @@ export default function Positions({ a, onOpen, onPrice, targets, patch, fail }) 
 
       {tab === 'target' ? <Targets a={a} targets={targets} patch={patch} fail={fail} onOpen={onOpen} /> : tab === 'open' && view === 'cards' ? (
         rows.length ? (
+          <div className="pos-groups">
+          {groups.map((g) => (
+          <section key={g.key}>
+          {g.label && <GroupHead g={g} />}
           <ul className="pos-cards">
-            {rows.map((x) => (
+            {g.rows.map((x) => (
               <li key={x.p.isin}>
                 <button type="button" className="pos-card" onClick={() => onOpen(x.p.isin)}>
                   <span className="pos-card-h">
@@ -89,6 +121,9 @@ export default function Positions({ a, onOpen, onPrice, targets, patch, fail }) 
               </li>
             ))}
           </ul>
+          </section>
+          ))}
+          </div>
         ) : <div className="card"><Empty>{q ? 'Ninguna posición coincide con la búsqueda.' : 'No hay posiciones abiertas en esta vista.'}</Empty></div>
       ) : tab === 'open' ? (
         <div className="card table-card">
@@ -103,8 +138,10 @@ export default function Positions({ a, onOpen, onPrice, targets, patch, fail }) 
                 <Th id="div" sort={s.sort} onSort={s.onSort} className="hide-m hide-l">Dividendos</Th>
               </tr>
             </thead>
-            <tbody>
-              {rows.map((x) => (
+            {groups.map((g) => (
+            <tbody key={g.key}>
+              {g.label && <tr className="grp-h static"><td colSpan={6}><GroupHead g={g} /></td></tr>}
+              {g.rows.map((x) => (
                 <tr key={x.p.isin} onClick={() => onOpen(x.p.isin)} tabIndex={0}
                   onKeyDown={(ev) => ev.key === 'Enter' && ev.target === ev.currentTarget && onOpen(x.p.isin)}>
                   <td className="l">
@@ -134,6 +171,7 @@ export default function Positions({ a, onOpen, onPrice, targets, patch, fail }) 
                 </tr>
               ))}
             </tbody>
+            ))}
             {rows.length > 1 && (() => {
               const pr = rows.filter((x) => x.has), pl = sum(pr, (x) => x.pl), cost = sum(pr, (x) => x.p.cost);
               return (
@@ -157,29 +195,28 @@ export default function Positions({ a, onOpen, onPrice, targets, patch, fail }) 
         </div>
       ) : (
         <div className="card table-card">
-          <table className="tbl">
+          <table className="tbl tbl-pos">
             <thead>
               <tr>
                 <Th id="name" sort={c.sort} onSort={c.onSort} className="l">Activo</Th>
                 <Th id="last" sort={c.sort} onSort={c.onSort} className="hide-s">Última venta</Th>
-                <th className="hide-m">Compras</th>
-                <th className="hide-m">Ventas (neto)</th>
+                <th className="hide-s">Invertido</th>
                 <Th id="real" sort={c.sort} onSort={c.onSort}>Realizado</Th>
-                <th className="hide-s">Rentab.</th>
-                <Th id="div" sort={c.sort} onSort={c.onSort} className="hide-s">Dividendos</Th>
+                <Th id="div" sort={c.sort} onSort={c.onSort} className="hide-m">Dividendos</Th>
               </tr>
             </thead>
             <tbody>
               {crow.map((x) => (
                 <tr key={x.p.isin} onClick={() => onOpen(x.p.isin)} tabIndex={0}
                   onKeyDown={(ev) => ev.key === 'Enter' && onOpen(x.p.isin)}>
-                  <td className="l"><Asset p={x.p}>{x.p.isin}</Asset></td>
+                  <td className="l"><Asset p={x.p}>{x.B.length} {x.B.length === 1 ? 'compra' : 'compras'} · {x.S.length} {x.S.length === 1 ? 'venta' : 'ventas'}</Asset></td>
                   <td className="hide-s">{date(x.S.at(-1)?.d)}</td>
-                  <td className="hide-m">{eur(x.bought)}</td>
-                  <td className="hide-m">{eur(sum(x.S, (k) => k.net))}</td>
-                  <td className={sign(x.real)}>{eurS(x.real)}</td>
-                  <td className="hide-s"><Pill n={x.bought ? (x.real / x.bought) * 100 : null} plain /></td>
-                  <td className="hide-s">{x.div ? eur(x.div) : <span className="mu">—</span>}</td>
+                  <td className="hide-s">{eur(x.bought)}<small>cobrado {eur(sum(x.S, (k) => k.net))}</small></td>
+                  <td>
+                    <span className={sign(x.real)}>{eurS(x.real)}</span>
+                    <small><Pill n={x.bought ? (x.real / x.bought) * 100 : null} plain /></small>
+                  </td>
+                  <td className="hide-m">{x.div ? eur(x.div) : <span className="mu">—</span>}</td>
                 </tr>
               ))}
             </tbody>
@@ -187,11 +224,10 @@ export default function Positions({ a, onOpen, onPrice, targets, patch, fail }) 
               <tfoot>
                 <tr>
                   <td className="l">Total ({crow.length})</td>
-                  <td className="hide-s" /><td className="hide-m">{eur(sum(crow, (x) => x.bought))}</td>
-                  <td className="hide-m">{eur(sum(crow, (x) => sum(x.S, (k) => k.net)))}</td>
-                  <td className={sign(sum(crow, (x) => x.real))}>{eurS(sum(crow, (x) => x.real))}</td>
                   <td className="hide-s" />
-                  <td className="hide-s">{eur(sum(crow, (x) => x.div))}</td>
+                  <td className="hide-s">{eur(sum(crow, (x) => x.bought))}</td>
+                  <td className={sign(sum(crow, (x) => x.real))}>{eurS(sum(crow, (x) => x.real))}</td>
+                  <td className="hide-m">{eur(sum(crow, (x) => x.div))}</td>
                 </tr>
               </tfoot>
             )}

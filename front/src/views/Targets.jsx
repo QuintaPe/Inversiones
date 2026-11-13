@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import * as api from '../api.js';
 import { Asset, Empty } from '../components/ui.jsx';
 import { rebalance } from '../lib/calc.js';
-import { eur, eurS, pct, qty, sign, isMasked, MASK } from '../lib/format.js';
+import { eur, pct, qty, sign, isMasked, MASK } from '../lib/format.js';
 
 const n = (v) => parseFloat(String(v).replace(',', '.')) || 0;
 const show = (w) => (w ? String(+w.toFixed(2)).replace('.', ',') : '');
@@ -31,50 +31,73 @@ export default function Targets({ a, targets, patch, fail, onOpen }) {
   if (!rows.length) return <div className="card"><Empty>Hacen falta posiciones con precio para definir una cartera objetivo.</Empty></div>;
   const ok = Math.abs(total - 100) < 0.05;
 
+  const max = Math.max(...rows.map((x) => Math.max(x.w ?? 0, weights[x.p.isin] || 0)), 1);
+  const buys = Object.values(plan.rows).filter((r) => r.delta >= 0.5).reduce((t, r) => t + r.delta, 0);
+  const sells = Object.values(plan.rows).filter((r) => r.delta <= -0.5).reduce((t, r) => t - r.delta, 0);
+
   return (
     <div className="stack">
-      <div className="card tgt-top">
-        <label><span>Aportación nueva (€)</span>
-          <input inputMode="decimal" placeholder="0" readOnly={isMasked()} value={isMasked() ? (extra ? MASK : '') : extra} onChange={(ev) => setExtra(ev.target.value)} /></label>
-        <button type="button" className="btn" onClick={() => fill((x) => x.w)}>Usar los pesos actuales</button>
-        <button type="button" className="btn" onClick={() => fill(() => 100 / rows.length)}>Repartir a partes iguales</button>
-        <div className="tgt-sum">
-          <span className="stat-l">Suma de objetivos</span>
-          <b className={ok ? '' : 'loss'}>{pct(total)}</b>
+      <div className="tgt-head">
+        <div className="kpis-row">
+          <div className="kpi">
+            <span className="kpi-l">Suma de objetivos</span>
+            <b className={`kpi-v ${ok ? '' : 'loss'}`}>{pct(total)}</b>
+            <small className="kpi-s">{ok ? 'lista para calcular' : `faltan ${pct(Math.max(0, 100 - total))} por repartir`}</small>
+          </div>
+          <div className="kpi">
+            <span className="kpi-l">A comprar</span>
+            <b className="kpi-v">{eur(buys)}</b>
+            <small className="kpi-s">{n(extra) > 0 ? 'con la aportación nueva' : 'para clavar los objetivos'}</small>
+          </div>
+          <div className="kpi">
+            <span className="kpi-l">A vender</span>
+            <b className="kpi-v">{eur(sells)}</b>
+            <small className="kpi-s">{n(extra) > 0 ? 'nada: solo se compra' : 'lo que pesa de más'}</small>
+          </div>
+          <label className="kpi tgt-extra">
+            <span className="kpi-l">Aportación nueva (€)</span>
+            <input inputMode="decimal" placeholder="0" readOnly={isMasked()} value={isMasked() ? (extra ? MASK : '') : extra} onChange={(ev) => setExtra(ev.target.value)} />
+            <small className="kpi-s">opcional: solo se proponen compras</small>
+          </label>
+        </div>
+        <div className="toolbar">
+          <button type="button" className="btn" onClick={() => fill((x) => x.w)}>Usar los pesos actuales</button>
+          <button type="button" className="btn" onClick={() => fill(() => 100 / rows.length)}>Repartir a partes iguales</button>
         </div>
       </div>
 
-      <div className="card table-card">
-        <table className="tbl">
-          <thead>
-            <tr><th className="l">Activo</th><th className="hide-s">Peso actual</th><th>Objetivo %</th><th className="hide-s">Desviación</th>
-              <th>{n(extra) > 0 ? 'Comprar' : 'Ajuste'}</th><th className="hide-m">Unidades aprox.</th></tr>
-          </thead>
-          <tbody>
-            {rows.map((x) => {
-              const r = plan.rows[x.p.isin];
-              return (
-                <tr key={x.p.isin} className="static">
-                  <td className="l"><button type="button" className="plain" onClick={() => onOpen(x.p.isin)}><Asset p={x.p}>{eur(x.v)}</Asset></button></td>
-                  <td className="hide-s">{pct(x.w)}</td>
-                  <td>
-                    <input className="tgt" inputMode="decimal" placeholder="0" aria-label={`Peso objetivo de ${x.p.name} en porcentaje`}
-                      readOnly={isMasked()} value={isMasked() ? (draft[x.p.isin] ? MASK : '') : draft[x.p.isin] ?? ''} onChange={(ev) => setDraft((d) => ({ ...d, [x.p.isin]: ev.target.value }))}
-                      onBlur={() => commit(x.p.isin)} onKeyDown={(ev) => ev.key === 'Enter' && ev.currentTarget.blur()} />
-                  </td>
-                  <td className={`hide-s ${ok && r.w ? sign(x.w - r.w) : ''}`}>{r.w ? `${x.w - r.w >= 0 ? '+' : '−'}${pct(Math.abs(x.w - r.w))}` : <span className="mu">—</span>}</td>
-                  <td className={Math.abs(r.delta) >= 0.5 ? sign(r.delta) : ''}>{Math.abs(r.delta) >= 0.5 ? eurS(r.delta) : <span className="mu">—</span>}</td>
-                  <td className="hide-m">{Math.abs(r.delta) >= 0.5 && x.p.price > 0 ? qty(+(Math.abs(r.delta) / x.p.price).toFixed(3)) : <span className="mu">—</span>}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-          <tfoot>
-            <tr><td className="l">Total</td><td className="hide-s">100,00 %</td><td className={ok ? '' : 'loss'}>{pct(total)}</td><td className="hide-s" />
-              <td>{eurS(plan.net)}</td><td className="hide-m" /></tr>
-          </tfoot>
-        </table>
-      </div>
+      <section className="card">
+        <header className="card-h"><div><h2>Peso actual frente a objetivo</h2><p>La barra es tu peso de hoy; la marca, el objetivo</p></div></header>
+        <ul className="tgt-l">
+          {rows.map((x) => {
+            const r = plan.rows[x.p.isin], t = weights[x.p.isin] || 0;
+            const act = Math.abs(r.delta) >= 0.5;
+            return (
+              <li key={x.p.isin}>
+                <button type="button" className="plain tgt-a" onClick={() => onOpen(x.p.isin)}><Asset p={x.p} size="sm">{pct(x.w)} hoy · {eur(x.v)}</Asset></button>
+                <span className="tgt-bar" aria-hidden="true">
+                  <i style={{ width: `${((x.w ?? 0) / max) * 100}%` }} />
+                  {t > 0 && <em style={{ left: `${(t / max) * 100}%` }} />}
+                </span>
+                <label className="tgt-in">
+                  <input className="tgt" inputMode="decimal" placeholder="0" aria-label={`Peso objetivo de ${x.p.name} en porcentaje`}
+                    readOnly={isMasked()} value={isMasked() ? (draft[x.p.isin] ? MASK : '') : draft[x.p.isin] ?? ''} onChange={(ev) => setDraft((d) => ({ ...d, [x.p.isin]: ev.target.value }))}
+                    onBlur={() => commit(x.p.isin)} onKeyDown={(ev) => ev.key === 'Enter' && ev.currentTarget.blur()} />
+                  <span>%</span>
+                </label>
+                <span className="tgt-do">
+                  {act ? (
+                    <>
+                      <b className={sign(r.delta)}>{r.delta > 0 ? 'Comprar' : 'Vender'} {eur(Math.abs(r.delta))}</b>
+                      {x.p.price > 0 && <small>≈ {qty(+(Math.abs(r.delta) / x.p.price).toFixed(3))} uds.</small>}
+                    </>
+                  ) : <span className="mu">{t ? 'en su objetivo' : '—'}</span>}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      </section>
       <p className="note">
         {!ok && 'Los objetivos deben sumar 100 % para que el ajuste tenga sentido. '}
         {n(extra) > 0

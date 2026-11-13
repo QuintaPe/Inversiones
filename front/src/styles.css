@@ -367,6 +367,36 @@ button.kv:hover svg{transform:translateX(3px);color:var(--tx)}
   .facts dd{font-size:17px}
 }
 
+/* posiciones: grupos y cartera objetivo */
+.grp{display:flex;align-items:baseline;gap:var(--sp-3);flex-wrap:wrap}
+.grp b{font-size:var(--fs-md);font-weight:700}
+.grp .mu{font-size:var(--fs-xs)}
+.grp-v{margin-left:auto;font-weight:650;font-variant-numeric:tabular-nums;text-align:right}
+.grp-v small{display:inline;margin-left:var(--sp-2);font-size:var(--fs-xs);font-weight:600}
+.tbl tr.grp-h td{padding-top:var(--sp-5);border-top:0;background:none}
+.pos-groups{display:flex;flex-direction:column;gap:var(--sp-6)}
+.pos-groups .grp{margin-bottom:var(--sp-3)}
+.tgt-head{display:flex;flex-direction:column;gap:var(--sp-3)}
+.tgt-extra input{background:var(--surface-2);border:0;border-radius:10px;padding:6px 10px;font-size:18px;font-weight:650;width:100%;max-width:180px;font-variant-numeric:tabular-nums;margin:2px 0}
+.tgt-extra input:focus{outline:0;box-shadow:0 0 0 2px var(--chart)}
+.tgt-l{list-style:none;padding:0;margin:0}
+.tgt-l li{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) 96px minmax(130px,auto);align-items:center;gap:var(--sp-4);padding:10px 0;border-bottom:1px solid var(--line)}
+.tgt-l li:last-child{border-bottom:0}
+.tgt-a{min-width:0}
+.tgt-bar{position:relative;height:8px;border-radius:4px;background:var(--surface-2)}
+.tgt-bar i{display:block;height:100%;border-radius:4px;background:var(--chart);opacity:.85}
+.tgt-bar em{position:absolute;top:-4px;width:2px;height:16px;border-radius:1px;background:var(--tx);transform:translateX(-1px)}
+.tgt-in{display:flex;align-items:center;gap:6px;color:var(--mu)}
+.tgt-in input.tgt{width:68px}
+.tgt-do{text-align:right;font-variant-numeric:tabular-nums}
+.tgt-do b{display:block;font-weight:650;font-size:14px}
+.tgt-do small{display:block;color:var(--mu);font-size:var(--fs-xs)}
+@media(max-width:780px){
+  .tgt-l li{grid-template-columns:minmax(0,1fr) auto;row-gap:var(--sp-2)}
+  .tgt-bar{grid-column:1/-1;order:3}
+  .tgt-do{grid-column:1/-1;order:4;text-align:left}
+}
+
 /* avatar diminuto (calendario de dividendos) */
 .av.xs{width:22px;height:22px;font-size:8.5px;margin-left:-6px;box-shadow:0 0 0 2px var(--surface)}
 .av.xs:first-child{margin-left:0}
