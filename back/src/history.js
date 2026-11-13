@@ -141,15 +141,23 @@ export function createHistory({ db, quotes, now = () => Date.now() }) {
     const bench = BENCHMARKS.map((b) => ({ ...b, read: reader(hist[b.symbol] ?? []), c: [] }));
     const out = { d: [], v: [], cost: [], idx: [], buy: [], sell: [], div: [] };
     let prevV = 0, idx = 100;
+    // Las mismas series por tipo de activo (acciones y ETF, Private Markets), para el filtro del
+    // resumen. Solo si la cartera mezcla tipos: con uno, coinciden con las totales.
+    const grps = [...new Set(positions.map((p) => p.grp ?? 'ac'))];
+    const per = grps.length > 1
+      ? Object.fromEntries(grps.map((g) => [g, { prevV: 0, idx: 100, out: { v: [], cost: [], idx: [], buy: [], sell: [], div: [] } }]))
+      : null;
     for (let t = ms(firstDate); t <= ms(today); t += DAY) {
       const d = iso(t);
       let v = 0, cost = 0, buy = 0, sell = 0, div = 0;
+      const day = per && Object.fromEntries(grps.map((g) => [g, { v: 0, cost: 0, buy: 0, sell: 0, div: 0 }]));
       for (const s of state) {
         const { evs } = s.p;
+        const g = day?.[s.p.grp ?? 'ac'];
         while (s.i < evs.length && evs[s.i].d <= d) {
           const e = evs[s.i++];
-          if (e.k === 'D') { div += e.net; continue; }
-          if (e.k === 'B') buy += e.net; else if (e.k === 'S') sell += e.net;
+          if (e.k === 'D') { div += e.net; if (g) g.div += e.net; continue; }
+          if (e.k === 'B') { buy += e.net; if (g) g.buy += e.net; } else if (e.k === 'S') { sell += e.net; if (g) g.sell += e.net; }
           s.sh = e.sa; s.ca = e.ca;
         }
         if (s.sh <= 0) continue;
@@ -157,6 +165,17 @@ export function createHistory({ db, quotes, now = () => Date.now() }) {
         s.last = px;
         v += s.sh * px;
         cost += s.ca;
+        if (g) { g.v += s.sh * px; g.cost += s.ca; }
+      }
+      if (per) {
+        for (const [k, x] of Object.entries(day)) {
+          const P = per[k];
+          const b0 = P.prevV + x.buy;
+          if (b0 > 0) P.idx *= (x.v + x.sell + x.div) / b0;
+          P.prevV = x.v;
+          P.out.v.push(+x.v.toFixed(2)); P.out.cost.push(+x.cost.toFixed(2)); P.out.idx.push(+P.idx.toFixed(4));
+          P.out.buy.push(+x.buy.toFixed(2)); P.out.sell.push(+x.sell.toFixed(2)); P.out.div.push(+x.div.toFixed(2));
+        }
       }
       // Rentabilidad del día con las compras al inicio y ventas y dividendos al final.
       const base = prevV + buy;
@@ -170,7 +189,23 @@ export function createHistory({ db, quotes, now = () => Date.now() }) {
       ...out,
       benchmarks: bench.filter((b) => b.c.some((x) => x != null)).map(({ key, name, c }) => ({ key, name, c })),
       unpriced: [...new Set(unpriced)],
+      ...(per && { groups: Object.fromEntries(Object.entries(per).map(([k, P]) => [k, P.out])) }),
       splits: positions.reduce((n, p) => n + p.evs.filter((e) => e.k === 'X').length, 0),
+    };
+  }
+
+  /** Cierres en euros de un símbolo desde una fecha (descarga lo que falte). */
+  async function symbolRows(s, from) {
+    let meta = await ensure({ [s]: from });
+    const cur = meta[s]?.currency;
+    if (!cur) return null;
+    const fxs = cur === 'EUR' ? null : `${cur}EUR=X`;
+    if (fxs) meta = await ensure({ [fxs]: from });
+    const hist = await db.getHistory(fxs ? [s, fxs] : [s]);
+    const rate = fxs ? reader(hist[fxs]) : () => 1;
+    return {
+      symbol: s, currency: cur,
+      rows: hist[s].filter(([d]) => d >= from).map(([d, c]) => [d, +(c * (rate(d) ?? NaN)).toFixed(4)]).filter(([, c]) => Number.isFinite(c)),
     };
   }
 
@@ -247,18 +282,15 @@ export function createHistory({ db, quotes, now = () => Date.now() }) {
     async asset(isin, from) {
       const symbols = await db.getSymbols();
       const s = symbols[isin]?.symbol;
-      if (!s) return null;
-      let meta = await ensure({ [s]: from });
-      const cur = meta[s]?.currency;
-      if (!cur) return null;
-      const fxs = cur === 'EUR' ? null : `${cur}EUR=X`;
-      if (fxs) meta = await ensure({ [fxs]: from });
-      const hist = await db.getHistory(fxs ? [s, fxs] : [s]);
-      const rate = fxs ? reader(hist[fxs]) : () => 1;
-      return {
-        symbol: s, currency: cur,
-        rows: hist[s].filter(([d]) => d >= from).map(([d, c]) => [d, +(c * (rate(d) ?? NaN)).toFixed(4)]).filter(([, c]) => Number.isFinite(c)),
-      };
+      return s ? symbolRows(s, from) : null;
+    },
+
+    /** Cierres en euros de un índice de referencia (BENCHMARKS) desde una fecha. */
+    async benchmark(key, from) {
+      const b = BENCHMARKS.find((x) => x.key === key);
+      if (!b) return null;
+      const r = await symbolRows(b.symbol, from);
+      return r && { key: b.key, name: b.name, rows: r.rows };
     },
   };
 }

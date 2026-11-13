@@ -49,12 +49,15 @@ const CSP = {
   },
 };
 const HISTORY_TTL = 10 * 60_000;
+// Sube al cambiar la forma del histórico (p. ej. series por tipo de activo): invalida lo guardado.
+const HISTORY_FORMAT = 2;
 
 /**
  * @param push   servicio de push.js (o null: sin avisos con la app cerrada)
  * @param csp    false desactiva la política de contenido (CSP=0)
+ * @param rateLimits false quita los límites de peticiones por IP (RATE_LIMIT=0, solo para pruebas)
  */
-export function createApp({ db: rawDb, verifyGoogle, googleClientId, sessionSecret, quotes: rawQuotes = null, logos = null, push = null, trustProxy = false, csp = true, slowMs = 1000, historyWaitMs = 1500, demo = true }) {
+export function createApp({ db: rawDb, verifyGoogle, googleClientId, sessionSecret, quotes: rawQuotes = null, logos = null, push = null, trustProxy = false, csp = true, slowMs = 1000, historyWaitMs = 1500, demo = true, rateLimits = true }) {
   const app = express();
   // Todo acceso a la base de datos y a los proveedores de precios se mide (Server-Timing).
   const db = instrument(rawDb, 'db');
@@ -442,7 +445,7 @@ export function createApp({ db: rawDb, verifyGoogle, googleClientId, sessionSecr
     // además caduca a los pocos minutos.
     const manual = Object.entries(prices).filter(([, p]) => p.source === 'manual').map(([isin, p]) => [isin, p.price]);
     const key = crypto.createHash('sha1')
-      .update(JSON.stringify([new Date().toISOString().slice(0, 10), b.etag, manual, valuations])).digest('base64url');
+      .update(JSON.stringify([HISTORY_FORMAT, new Date().toISOString().slice(0, 10), b.etag, manual, valuations])).digest('base64url');
 
     let saved = historyCache.get(userId);
     if (!saved) {
@@ -492,7 +495,12 @@ export function createApp({ db: rawDb, verifyGoogle, googleClientId, sessionSecr
   api.get('/assets/:isin/history', async (req, res) => {
     if (!history) return res.status(503).json({ error: 'El histórico está desactivado.' });
     const from = isDate(req.query.from) ? req.query.from : '2000-01-01';
-    res.json({ asset: await history.asset(req.params.isin, from) });
+    // ?bench=world añade el índice en euros desde la misma fecha, para comparar.
+    const [asset, bench] = await Promise.all([
+      history.asset(req.params.isin, from),
+      req.query.bench ? history.benchmark(String(req.query.bench), from).catch(() => null) : null,
+    ]);
+    res.json({ asset, bench });
   });
 
   // Valoraciones con fecha de lo que no cotiza.

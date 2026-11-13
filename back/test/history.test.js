@@ -87,3 +87,41 @@ test('mini-gráficas: últimos días en euros con lo ya guardado', async () => {
   assert.deepEqual(s, { US0000000001: [5, 5.5, 6] });
   db.close();
 });
+
+test('índice de referencia en euros para comparar en la ficha', async () => {
+  const db = await openDb({ url: ':memory:' });
+  const quotes = {
+    async history(symbol) {
+      if (symbol === 'IWDA.AS') return { currency: 'EUR', rows: [['2025-01-02', 80], ['2025-01-03', 81]], divs: [] };
+      throw new Error('no');
+    },
+  };
+  const h = createHistory({ db, quotes, now: () => NOW });
+  const b = await h.benchmark('world', '2025-01-01');
+  assert.equal(b.name, 'MSCI World');
+  assert.deepEqual(b.rows, [['2025-01-02', 80], ['2025-01-03', 81]]);
+  assert.equal(await h.benchmark('nada', '2025-01-01'), null);
+  db.close();
+});
+
+test('series por tipo de activo: suman las totales y cada una tiene su rentabilidad', async () => {
+  const db = await openDb({ url: ':memory:' });
+  const h = createHistory({ db, quotes: fake, now: () => NOW });
+  const positions = [
+    { isin: 'US0000000001', name: 'Acme', grp: 'ac', open: true, evs: [buy('2025-01-02', 10, 50, 10, 50)] },
+    { isin: 'LU0000000001', name: 'Fondo', grp: 'pm', open: true, evs: [buy('2025-01-02', 10, 1000, 10, 1000)] },
+  ];
+  const r = await h.build({ positions, prices: {}, valuations: { LU0000000001: [{ d: '2025-01-10', price: 108 }] } });
+  assert.deepEqual(Object.keys(r.groups).sort(), ['ac', 'pm']);
+  for (const k of ['v', 'cost', 'buy', 'sell', 'div']) {
+    r.d.forEach((_, i) => assert.ok(Math.abs(r.groups.ac[k][i] + r.groups.pm[k][i] - r[k][i]) < 0.02, `${k}[${i}]`));
+  }
+  assert.equal(r.groups.ac.v[r.d.indexOf('2025-01-06')], 60); // 10 × 12 USD × 0,5
+  assert.ok(Math.abs(r.groups.ac.idx.at(-1) - 120) < 0.001); // de 50 a 60
+  assert.ok(Math.abs(r.groups.pm.idx.at(-1) - 108) < 0.001); // de 1000 a 1080
+
+  // Con un solo tipo no se repiten las series.
+  const one = await h.build({ positions: positions.slice(0, 1), prices: {}, valuations: {} });
+  assert.equal(one.groups, undefined);
+  db.close();
+});
