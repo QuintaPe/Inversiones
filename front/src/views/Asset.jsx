@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import * as api from '../api.js';
-import { Avatar, Card, Delta, Empty, Icon, Kind, Pill, PriceInput, Seg, Stat } from '../components/ui.jsx';
+import { Avatar, Card, Empty, Icon, PriceInput, Seg } from '../components/ui.jsx';
+import { Kpi } from '../components/Kpi.jsx';
 import { Lines } from '../charts.jsx';
 import { country, classLabel, sector } from '../lib/countries.js';
 import { simulateSale, savingsTax } from '../lib/calc.js';
@@ -13,16 +14,10 @@ const today = () => new Date().toISOString().slice(0, 10);
 const shift = (d, days) => new Date(Date.parse(`${d}T00:00:00Z`) + days * 86400000).toISOString().slice(0, 10);
 
 /** Una operación con su cuenta paso a paso y el estado de la posición después. */
-function Op({ x, onEdit, onRemove }) {
+function OpDetail({ x, onEdit, onRemove }) {
   const manual = !x.parts && x.tid?.startsWith('manual-');
   return (
-    <li className="op">
-      <div className="op-h">
-        <span><Kind k={x.k} /> <span className="op-d">{date(x.d)}</span></span>
-        <b className={x.k === 'S' ? sign(x.re) : ''}>
-          {x.k === 'X' ? `× ${num(x.ratio)}` : x.k === 'B' ? eur(x.net) : x.k === 'S' ? eurS(x.re) : eur(x.net)}
-        </b>
-      </div>
+    <div className="tl-d">
       <div className="op-b">
         {x.k === 'B' && (
           <>
@@ -68,9 +63,72 @@ function Op({ x, onEdit, onRemove }) {
           )}
         </span>
       </div>
+    </div>
+  );
+}
+
+const KIND_NAME = { B: 'Compra', S: 'Venta', D: 'Dividendo', X: 'Split' };
+/** Una operación en una línea; al pulsarla se despliega su cuenta paso a paso. */
+function OpRow({ x, open, onToggle, onEdit, onRemove }) {
+  const amount = x.k === 'X' ? `× ${num(x.ratio)}` : x.k === 'B' ? `−${eur(x.net)}` : eurS(x.net);
+  const what = x.k === 'D' ? `${qty(x.sh)} uds. · retención ${eur(x.tax)}`
+    : x.k === 'X' ? `${qty(x.from)} → ${qty(x.sh)} uds.`
+    : `${qty(x.sh)} × ${eur(x.px)}${x.fee ? ` · comisión ${eur(x.fee)}` : ''}`;
+  return (
+    <li className={`tl-i k-${x.k} ${open ? 'open' : ''}`}>
+      <button type="button" className="tl-b" aria-expanded={open} onClick={onToggle}>
+        <span className="tl-dot" aria-hidden="true" />
+        <span className="tl-main">
+          <span className="tl-t"><b>{KIND_NAME[x.k]}</b> {what}</span>
+          <small>
+            {date(x.d)}
+            {x.sa != null && x.k !== 'D' && ` · después ${qty(x.sa)} uds.${x.av ? ` a ${eur(x.av)}` : ''}`}
+            {x.parts && ` · ${x.parts.length} ejecuciones`}
+          </small>
+        </span>
+        <span className="row-r">
+          <span className={`row-v ${x.k === 'B' || x.k === 'X' ? '' : 'gain'}`}>{amount}</span>
+          {x.k === 'S' && <small className={sign(x.re)}>{eurS(x.re)} resultado</small>}
+        </span>
+        <Icon name="chevron" size={16} />
+      </button>
+      {open && <OpDetail x={x} onEdit={onEdit} onRemove={onRemove} />}
     </li>
   );
 }
+
+/** Todas las operaciones del activo: filtro por tipo y línea de tiempo por años. */
+function OpsTimeline({ ops, onEdit, onRemove }) {
+  const [k, setK] = useState('all');
+  const [open, setOpen] = useState(null);
+  const n = (t) => ops.filter((o) => o.k === t).length;
+  const kinds = [['all', `Todas · ${ops.length}`], ['B', `Compras · ${n('B')}`], ['S', `Ventas · ${n('S')}`], ['D', `Dividendos · ${n('D')}`]]
+    .filter(([t], i) => i === 0 || n(t) > 0);
+  const list = [...ops].reverse().filter((o) => k === 'all' || o.k === k);
+  const years = [];
+  for (const o of list) {
+    const y = o.d.slice(0, 4);
+    if (years.at(-1)?.y !== y) years.push({ y, items: [] });
+    years.at(-1).items.push(o);
+  }
+  return (
+    <>
+      {kinds.length > 2 && <Seg label="Tipo de operación" options={kinds} value={k} onChange={setK} />}
+      {years.map(({ y, items }) => (
+        <section key={y} className="tl-y">
+          <h3 className="kv-h">{y}</h3>
+          <ul className="tl">
+            {items.map((o) => {
+              const id = o.id + o.k;
+              return <OpRow key={id} x={o} open={open === id} onToggle={() => setOpen(open === id ? null : id)} onEdit={onEdit} onRemove={onRemove} />;
+            })}
+          </ul>
+        </section>
+      ))}
+    </>
+  );
+}
+
 
 /** Tarjeta en lugar de un formulario con cifras cuando los importes están ocultos. */
 const Hidden = ({ title }) => (
@@ -202,6 +260,7 @@ function Valuations({ p, onPrice, onChange }) {
 export default function Asset({ x, totalVal, yearBase, onBack, onPrice, liveQuotes, onHistoryChange, onAddOp, onRemoveOp, alerts = [], patch, fail }) {
   const { p } = x;
   const [range, setRange] = useState('max');
+  const [tab, setTab] = useState('resumen');
   const [hist, setHist] = useState(undefined); // undefined = cargando; null = sin cotización
   const [hover, setHover] = useState(null);
   const first = p.evs[0].d;
@@ -237,99 +296,101 @@ export default function Asset({ x, totalVal, yearBase, onBack, onPrice, liveQuot
   const hv = view && hover != null ? { c: view.c[hover], d: view.dates[hover], chg: (view.c[hover] / view.c[0] - 1) * 100 } : null;
   const totalRet = p.open && x.has ? x.pl + x.div : null;
 
+  const tabs = [
+    ['resumen', 'Resumen'], ['ops', `Operaciones · ${x.ops.length}`],
+    p.open && p.lots?.length > 0 && ['sim', 'Simular venta'],
+    p.open && p.priceSource === 'live' && ['alerts', `Alertas${alerts.filter((al) => !al.triggered_at).length ? ` · ${alerts.filter((al) => !al.triggered_at).length}` : ''}`],
+  ].filter(Boolean);
+  const cur = tabs.some(([k]) => k === tab) ? tab : 'resumen';
+  const addOp = () => onAddOp({ isin: p.isin, name: p.name, asset_class: p.cls });
+
   return (
-    <div className="asset-page">
+    <div className="asset-page stack">
       <header className="asset-h">
         <button type="button" className="icon-btn" aria-label="Volver" onClick={onBack}><Icon name="back" /></button>
         <Avatar p={p} size="lg" />
-        <div className="drawer-t">
+        <div className="asset-ht">
           <h1>{p.name}</h1>
-          <p>
-            {p.priceInfo?.symbol && <>{p.priceInfo.symbol} · </>}{p.isin} · {p.sector ? sector(p) : classLabel(p.cls)} · {country(p.isin)}
-            {!p.open && ' · posición cerrada'}
+          <p className="chips">
+            {p.priceInfo?.symbol && <span>{p.priceInfo.symbol}</span>}
+            <span className="mono">{p.isin}</span>
+            <span>{p.sector ? sector(p) : classLabel(p.cls)}</span>
+            <span>{country(p.isin)}</span>
+            {!p.open && <span className="closed">Posición cerrada</span>}
           </p>
         </div>
+        <button type="button" className="btn pri asset-add" onClick={addOp}><Icon name="plus" size={16} /><span className="hide-s">Añadir operación</span></button>
       </header>
 
-      <div className="dash">
-        <div className="dash-main">
-          <section className="hero">
-            <span className="eyebrow">{hv ? dateLong(Date.parse(`${hv.d}T00:00:00Z`)) : p.open ? 'Precio actual' : 'Último precio'}</span>
-            <div className="hero-v">{hv ? eur(hv.c) : p.price > 0 ? eur(p.price) : view ? eur(view.c.at(-1)) : '—'}</div>
-            {/* Misma altura con y sin cursor sobre la gráfica (ver el resumen). */}
-            <div className={`hero-sw ${hv ? 'hovering' : ''}`}>
-              <div className="hero-d hero-base">
-                {chg != null && <span className={`chg ${sign(chg)}`}><span aria-hidden="true">{chg >= 0 ? '▲' : '▼'}</span> {pctS(chg)} <em>en el periodo</em></span>}
-                {x.dayPct != null && <span className={`chg ${sign(x.dayPct)}`}><span aria-hidden="true">{x.dayPct >= 0 ? '▲' : '▼'}</span> {pctS(x.dayPct)} <em>última sesión</em></span>}
-                {chg == null && x.dayPct == null && <span className="chg">&nbsp;</span>}
-              </div>
-              {hv && <div className="hero-d hero-over"><span className={`chg ${sign(hv.chg)}`}>{pctS(hv.chg)} <em>en el periodo hasta ese día</em></span></div>}
+        <section className="hero">
+          <span className="eyebrow">{hv ? dateLong(Date.parse(`${hv.d}T00:00:00Z`)) : p.open ? 'Precio actual' : 'Último precio'}</span>
+          <div className="hero-v">{hv ? eur(hv.c) : p.price > 0 ? eur(p.price) : view ? eur(view.c.at(-1)) : '—'}</div>
+          {/* Misma altura con y sin cursor sobre la gráfica (ver el resumen). */}
+          <div className={`hero-sw ${hv ? 'hovering' : ''}`}>
+            <div className="hero-d hero-base">
+              {chg != null && <span className={`chg ${sign(chg)}`}><span aria-hidden="true">{chg >= 0 ? '▲' : '▼'}</span> {pctS(chg)} <em>en el periodo</em></span>}
+              {x.dayPct != null && <span className={`chg ${sign(x.dayPct)}`}><span aria-hidden="true">{x.dayPct >= 0 ? '▲' : '▼'}</span> {pctS(x.dayPct)} <em>última sesión</em></span>}
+              {chg == null && x.dayPct == null && <span className="chg">&nbsp;</span>}
             </div>
-          </section>
-
-          <section className="chart-block">
-            {view ? (
-              <Lines x={view.t} height={300} label={`Precio de ${p.name} en euros`} base={p.open ? x.avg : undefined}
-                onHover={setHover} marks={view.marks}
-                series={[{ key: 'c', values: view.c, cls: chg >= 0 ? 'up' : 'down', area: true }]}
-                tip={(i) => {
-                  const ms = view.marks.filter((k) => k.i === i);
-                  return (
-                    <>
-                      <small>{dateLong(view.t[i])}</small><b>{eur(view.c[i])}</b>
-                      {ms.map((k) => <small key={k.key}>{k.o.k === 'B' ? 'Compra' : 'Venta'} {qty(k.o.sh)} × {eur(k.o.px)}</small>)}
-                    </>
-                  );
-                }} />
-            ) : hist === undefined ? <div className="sk" style={{ height: 300 }} />
-              : <Empty>{hist ? 'No hay datos en este periodo.' : 'Este activo no tiene cotización pública: su valor se sigue con las valoraciones que anotes.'}</Empty>}
-            {hist && (
-              <>
-                <div className="chart-f">
-                  <ul className="legend flat">
-                    <li><i className="dotk buy" />Compras</li>
-                    <li><i className="dotk sell" />Ventas</li>
-                    {p.open && <li><i className="sw dotted" />Tu precio medio ({eur(x.avg)})</li>}
-                  </ul>
-                  <Seg options={RANGES} value={range} onChange={setRange} label="Periodo" />
-                </div>
-              </>
-            )}
-          </section>
-
-          {p.open ? (
-            <Card title="Tu posición">
-              <div className="perf">
-                <div><span className="stat-l">Valor</span><b className="stat-v">{x.has ? eur(x.v) : '—'}</b></div>
-                <div><span className="stat-l">Resultado</span><b className={`stat-v ${x.has ? sign(x.pl) : ''}`}>{x.has ? eurS(x.pl) : '—'}</b></div>
-                <div><span className="stat-l">Rentabilidad</span><b className={`stat-v ${x.has ? sign(x.pl) : ''}`}>{x.has && x.plp != null ? pctS(x.plp) : '—'}</b></div>
+            {hv && <div className="hero-d hero-over"><span className={`chg ${sign(hv.chg)}`}>{pctS(hv.chg)} <em>en el periodo hasta ese día</em></span></div>}
+          </div>
+        </section>
+        <section className="chart-block">
+          {view ? (
+            <Lines x={view.t} height={300} label={`Precio de ${p.name} en euros`} base={p.open ? x.avg : undefined}
+              onHover={setHover} marks={view.marks}
+              series={[{ key: 'c', values: view.c, cls: chg >= 0 ? 'up' : 'down', area: true }]}
+              tip={(i) => {
+                const ms = view.marks.filter((k) => k.i === i);
+                return (
+                  <>
+                    <small>{dateLong(view.t[i])}</small><b>{eur(view.c[i])}</b>
+                    {ms.map((k) => <small key={k.key}>{k.o.k === 'B' ? 'Compra' : 'Venta'} {qty(k.o.sh)} × {eur(k.o.px)}</small>)}
+                  </>
+                );
+              }} />
+          ) : hist === undefined ? <div className="sk" style={{ height: 300 }} />
+            : <Empty>{hist ? 'No hay datos en este periodo.' : 'Este activo no tiene cotización pública: su valor se sigue con las valoraciones que anotes.'}</Empty>}
+          {hist && (
+            <>
+              <div className="chart-f">
+                <ul className="legend flat">
+                  <li><i className="dotk buy" />Compras</li>
+                  <li><i className="dotk sell" />Ventas</li>
+                  {p.open && <li><i className="sw dotted" />Tu precio medio ({eur(x.avg)})</li>}
+                </ul>
+                <Seg options={RANGES} value={range} onChange={setRange} label="Periodo" />
               </div>
-              <div className="stats">
-                <Stat label="Cantidad" value={qty(p.sh)} />
-                <Stat label="Precio medio" value={eur(x.avg)} hint="precio de equilibrio" />
-                <Stat label="Coste" value={eur(p.cost)} />
-                <Stat label="Peso" value={x.w != null ? pct(x.w) : '—'} hint="del valor de la vista" />
-                <Stat label="Dividendos netos" value={eur(x.div)} hint={x.D.length ? `${x.D.length} cobros${p.cost > 0 ? ` · ${pct((x.div / p.cost) * 100)} s/coste` : ''}` : 'sin cobros'} />
-                <Stat label="Resultado + dividendos" value={totalRet != null ? eurS(totalRet) : '—'} tone={totalRet != null ? sign(totalRet) : ''}
-                  hint={totalRet != null && p.cost > 0 ? pctS((totalRet / p.cost) * 100) : ''} />
-              </div>
-            </Card>
-          ) : (
-            <Card title="Posición cerrada">
-              <div className="perf">
-                <div><span className="stat-l">Resultado realizado</span><b className={`stat-v ${sign(x.real)}`}>{eurS(x.real)}</b></div>
-                <div><span className="stat-l">Rentabilidad</span><b className={`stat-v ${sign(x.real)}`}>{x.bought ? pctS((x.real / x.bought) * 100) : '—'}</b></div>
-                <div><span className="stat-l">Dividendos netos</span><b className="stat-v">{eur(x.div)}</b></div>
-              </div>
-              <div className="stats">
-                <Stat label="Invertido" value={eur(x.bought)} hint={`${x.B.length} compras`} />
-                <Stat label="Cobrado (neto)" value={eur(x.bought + x.real)} hint={`${x.S.length} ventas`} />
-              </div>
-            </Card>
+            </>
           )}
+        </section>
 
-          {p.open && (
-            <Card title="Cómo se calcula">
+      {p.open ? (
+        <div className="kpis-row">
+          <Kpi label="Tu posición" value={x.has ? eur(x.v) : '—'} sub={`${qty(p.sh)} uds.${x.w != null ? ` · ${pct(x.w)} de la cartera` : ''}`} />
+          <Kpi label="Resultado" value={x.has ? eurS(x.pl) : '—'} tone={x.has ? sign(x.pl) : ''} sub={x.has && x.plp != null ? `${pctS(x.plp)} desde la compra` : 'sin precio'} />
+          <Kpi label="Precio medio" value={eur(x.avg)} sub={`coste ${eur(p.cost)}`} />
+          <Kpi label="Dividendos" value={eur(x.div)} sub={x.D.length ? `${x.D.length} cobros${p.cost > 0 ? ` · ${pct((x.div / p.cost) * 100)} s/ coste` : ''}` : 'sin cobros'} />
+        </div>
+      ) : (
+        <div className="kpis-row">
+          <Kpi label="Resultado realizado" value={eurS(x.real)} tone={sign(x.real)} sub={x.bought ? `${pctS((x.real / x.bought) * 100)} sobre lo invertido` : ''} />
+          <Kpi label="Invertido" value={eur(x.bought)} sub={`${x.B.length} compras`} />
+          <Kpi label="Cobrado (neto)" value={eur(x.bought + x.real)} sub={`${x.S.length} ventas`} />
+          <Kpi label="Dividendos" value={eur(x.div)} sub={x.D.length ? `${x.D.length} cobros` : 'sin cobros'} />
+        </div>
+      )}
+
+      <div className="utabs" role="tablist" aria-label="Apartado">
+        {tabs.map(([k, l]) => (
+          <button key={k} type="button" role="tab" aria-selected={cur === k} className={cur === k ? 'on' : ''} onClick={() => setTab(k)}>{l}</button>
+        ))}
+      </div>
+
+      {cur === 'resumen' && (
+        <div className="cols">
+          <Card title={p.open ? 'Cómo se calcula' : 'Resultado'} sub={totalRet != null ? `Resultado + dividendos: ${eurS(totalRet)}${p.cost > 0 ? ` (${pctS((totalRet / p.cost) * 100)})` : ''}` : undefined}>
+            {p.open ? (
               <div className="calc">
                 <div><span>Compras ({x.B.length})</span><b>{eur(x.bought)}</b></div>
                 {x.S.length > 0 && <div><span>− Coste de lo vendido ({x.S.length} ventas)</span><b>−{eur(x.soldCost)}</b></div>}
@@ -345,56 +406,63 @@ export default function Asset({ x, totalVal, yearBase, onBack, onPrice, liveQuot
                 {x.D.length > 0 && <div><span>Dividendos = bruto {num(x.divG)} − retención {num(x.divT)}</span><b>{eur(x.div)}</b></div>}
                 {x.S.length > 0 && <div><span>Realizado en ventas anteriores</span><b className={sign(x.real)}>{eurS(x.real)}</b></div>}
               </div>
-              {p.extra && <p className="note">{maskText(p.extra)}</p>}
-            </Card>
-          )}
-        </div>
-
-        <aside className="dash-side">
-          {p.open && (
-            <Card title="Precio">
-              <label className="price-row">
-                <span>Precio actual (€)</span>
-                <PriceInput p={p} onPrice={onPrice} />
-              </label>
-              {p.priceSource === 'live' && p.priceInfo?.nav ? (
-                <p className="note">
-                  <span className="live-dot" aria-hidden="true" /> Valor liquidativo{p.priceInfo.time && <> del {date(p.priceInfo.time)}</>}
-                  {p.priceInfo.name && <> · {p.priceInfo.name}</>}. Lo publica la gestora, normalmente una vez al mes; se actualiza solo.
-                </p>
-              ) : p.priceSource === 'live' && p.priceInfo ? (
-                <p className="note">
-                  <span className="live-dot" aria-hidden="true" /> En vivo · {p.priceInfo.symbol} · {p.priceInfo.exchange}.{' '}
-                  {p.priceInfo.currency !== 'EUR' && <>{num(p.priceInfo.raw)} {p.priceInfo.currency} × {isMasked() ? MASK : p.priceInfo.rate.toFixed(4)}. </>}
-                  {p.priceInfo.time && <>Cotización del {date(p.priceInfo.time)} a las {time(p.priceInfo.time)}.</>}
-                </p>
-              ) : (
-                <p className="note">
-                  {p.priceAt ? `Fijado a mano el ${date(p.priceAt)}.` : 'Sin precio.'}{' '}
-                  {p.priceSource === 'manual' && liveQuotes && quoted && (
-                    <button type="button" className="link" onClick={() => onPrice(p.isin, null)}>Volver a la cotización en vivo</button>
-                  )}
-                </p>
-              )}
-            </Card>
-          )}
-          {p.open && hist === null && (isMasked() ? <Hidden title="Valoraciones" /> : <Valuations p={p} onPrice={onPrice} onChange={onHistoryChange} />)}
-          {p.open && p.lots?.length > 0 && (isMasked() ? <Hidden title="Simular una venta" /> : <Simulator key={p.isin} p={p} yearBase={yearBase} />)}
-          {p.open && p.priceSource === 'live' && (isMasked() ? <Hidden title="Alertas de precio" /> : <Alerts p={p} alerts={alerts} patch={patch} fail={fail} />)}
-          <Card title={`Operaciones (${x.ops.length})`}
-            right={<button type="button" className="btn" onClick={() => onAddOp({ isin: p.isin, name: p.name, asset_class: p.cls })}><Icon name="plus" size={15} />Añadir</button>}>
-            <ul className="ops">
-              {[...x.ops].reverse().map((e) => (
-                <Op key={e.id + e.k} x={e} onRemove={onRemoveOp}
-                  onEdit={(o) => onAddOp({
-                    tid: o.tid, type: { B: 'BUY', S: 'SELL', D: 'DIVIDEND' }[o.k], isin: p.isin, name: p.name, asset_class: p.cls, date: o.d,
-                    shares: o.sh, price: o.px, fee: o.fee, tax: o.tax, amount: o.g,
-                  })} />
-              ))}
-            </ul>
+            ) : (
+              <div className="calc">
+                <div><span>Compras ({x.B.length})</span><b>{eur(x.bought)}</b></div>
+                <div><span>Cobrado en ventas, neto ({x.S.length})</span><b>{eur(x.bought + x.real)}</b></div>
+                <div className="t"><span>= Resultado realizado (coste medio)</span><b className={sign(x.real)}>{eurS(x.real)}</b></div>
+                {x.D.length > 0 && <div><span>Dividendos = bruto {num(x.divG)} − retención {num(x.divT)}</span><b>{eur(x.div)}</b></div>}
+              </div>
+            )}
+            {p.extra && <p className="note">{maskText(p.extra)}</p>}
           </Card>
-        </aside>
-      </div>
+          <div className="stack">
+            {p.open && (
+              <Card title="Precio">
+                <label className="price-row">
+                  <span>Precio actual (€)</span>
+                  <PriceInput p={p} onPrice={onPrice} />
+                </label>
+                {p.priceSource === 'live' && p.priceInfo?.nav ? (
+                  <p className="note">
+                    <span className="live-dot" aria-hidden="true" /> Valor liquidativo{p.priceInfo.time && <> del {date(p.priceInfo.time)}</>}
+                    {p.priceInfo.name && <> · {p.priceInfo.name}</>}. Lo publica la gestora, normalmente una vez al mes; se actualiza solo.
+                  </p>
+                ) : p.priceSource === 'live' && p.priceInfo ? (
+                  <p className="note">
+                    <span className="live-dot" aria-hidden="true" /> En vivo · {p.priceInfo.symbol} · {p.priceInfo.exchange}.{' '}
+                    {p.priceInfo.currency !== 'EUR' && <>{num(p.priceInfo.raw)} {p.priceInfo.currency} × {isMasked() ? MASK : p.priceInfo.rate.toFixed(4)}. </>}
+                    {p.priceInfo.time && <>Cotización del {date(p.priceInfo.time)} a las {time(p.priceInfo.time)}.</>}
+                  </p>
+                ) : (
+                  <p className="note">
+                    {p.priceAt ? `Fijado a mano el ${date(p.priceAt)}.` : 'Sin precio.'}{' '}
+                    {p.priceSource === 'manual' && liveQuotes && quoted && (
+                      <button type="button" className="link" onClick={() => onPrice(p.isin, null)}>Volver a la cotización en vivo</button>
+                    )}
+                  </p>
+                )}
+              </Card>
+            )}
+            {p.open && hist === null && (isMasked() ? <Hidden title="Valoraciones" /> : <Valuations p={p} onPrice={onPrice} onChange={onHistoryChange} />)}
+            {!p.open && <Card title="Posición cerrada"><p className="note">Ya no tienes acciones de este valor: su resultado quedó realizado en las ventas.</p></Card>}
+          </div>
+        </div>
+      )}
+
+      {cur === 'ops' && (
+        <Card title="Operaciones" sub="De la más reciente a la más antigua · pulsa una para ver la cuenta"
+          right={<button type="button" className="btn" onClick={addOp}><Icon name="plus" size={15} />Añadir</button>}>
+          <OpsTimeline ops={x.ops} onRemove={onRemoveOp}
+            onEdit={(o) => onAddOp({
+              tid: o.tid, type: { B: 'BUY', S: 'SELL', D: 'DIVIDEND' }[o.k], isin: p.isin, name: p.name, asset_class: p.cls, date: o.d,
+              shares: o.sh, price: o.px, fee: o.fee, tax: o.tax, amount: o.g,
+            })} />
+        </Card>
+      )}
+
+      {cur === 'sim' && (isMasked() ? <Hidden title="Simular una venta" /> : <Simulator key={p.isin} p={p} yearBase={yearBase} />)}
+      {cur === 'alerts' && (isMasked() ? <Hidden title="Alertas de precio" /> : <Alerts p={p} alerts={alerts} patch={patch} fail={fail} />)}
     </div>
   );
 }
