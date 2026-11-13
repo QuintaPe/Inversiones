@@ -340,6 +340,29 @@ button.kv:hover svg{transform:translateX(3px);color:var(--tx)}
 .al-t small{display:block;color:var(--mu);font-size:var(--fs-xs)}
 @media(max-width:960px){.sim{grid-template-columns:minmax(0,1fr)}}
 
+/* ficha de activo: resumen con aire (datos sueltos, franja de precio, cuentas plegadas) */
+.asset-page.stack{gap:var(--sp-6)}
+.asset-sum{display:flex;flex-direction:column;gap:var(--sp-6);padding-top:var(--sp-1)}
+.facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));margin:0}
+.facts>div{padding:var(--sp-1) var(--sp-6);border-left:1px solid var(--line);min-width:0}
+.facts>div:first-child{padding-left:0;border-left:0}
+.facts dt{color:var(--mu);font-size:var(--fs-xs);font-weight:600}
+.facts dd{margin:6px 0 2px;font-size:20px;font-weight:700;letter-spacing:-.02em;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.facts small{display:block;color:var(--mu);font-size:var(--fs-xs);font-variant-numeric:tabular-nums}
+.price-strip{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-4);flex-wrap:wrap;padding:14px 18px;border-radius:var(--r-sm);background:var(--surface)}
+.ps-src{display:flex;align-items:center;gap:var(--sp-2);min-width:0;color:var(--tx-2);font-size:14px;font-variant-numeric:tabular-nums}
+.ps-src .live-dot{flex:none}
+.ps-act{display:flex;align-items:center;gap:var(--sp-3);flex-wrap:wrap}
+.ps-in{display:flex;align-items:center;gap:10px;color:var(--mu);font-size:var(--fs-sm)}
+.steps-in{margin-top:var(--sp-3)}
+.utabs button:focus-visible{outline-offset:-3px;border-radius:6px}
+@media(max-width:640px){
+  .facts{grid-template-columns:repeat(2,minmax(0,1fr));row-gap:var(--sp-4)}
+  .facts>div{padding:0 0 0 var(--sp-4)}
+  .facts>div:nth-child(odd){padding-left:0;border-left:0}
+  .facts dd{font-size:17px}
+}
+
 /* avatar diminuto (calendario de dividendos) */
 .av.xs{width:22px;height:22px;font-size:8.5px;margin-left:-6px;box-shadow:0 0 0 2px var(--surface)}
 .av.xs:first-child{margin-left:0}

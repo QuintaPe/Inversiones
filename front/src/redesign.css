@@ -111,6 +111,7 @@ body{
 button.kpi:hover{background:color-mix(in srgb,var(--acc) 7%,var(--surface));border-color:color-mix(in srgb,var(--acc) 30%,var(--edge))}
 .spark-l,.spark rect{filter:drop-shadow(0 0 4px color-mix(in srgb,var(--chart) 45%,transparent))}
 
+.price-strip{border:1px solid var(--edge);box-shadow:var(--card-shadow)}
 .pos-card{border:1px solid var(--edge);box-shadow:var(--card-shadow);background:linear-gradient(180deg,color-mix(in srgb,var(--surface) 92%,var(--tx)) 0,var(--surface) 80px)}
 :root[data-theme=light] .pos-card{background:var(--surface)}
 @media(prefers-color-scheme:light){:root:not([data-theme=dark]) .pos-card{background:var(--surface)}}

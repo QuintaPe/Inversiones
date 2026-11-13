@@ -340,6 +340,8 @@ export default function Asset({ x, totalVal, yearBase, onBack, onPrice, liveQuot
   const { p } = x;
   const [range, setRange] = useState('max');
   const [tab, setTab] = useState('resumen');
+  const [steps, setSteps] = useState(false);
+  const [editPx, setEditPx] = useState(false);
   const [hist, setHist] = useState(undefined); // undefined = cargando; null = sin cotización
   const [hover, setHover] = useState(null);
   const first = p.evs[0].d;
@@ -381,6 +383,15 @@ export default function Asset({ x, totalVal, yearBase, onBack, onPrice, liveQuot
     p.open && p.priceSource === 'live' && ['alerts', `Alertas${alerts.filter((al) => !al.triggered_at).length ? ` · ${alerts.filter((al) => !al.triggered_at).length}` : ''}`],
   ].filter(Boolean);
   const cur = tabs.some(([k]) => k === tab) ? tab : 'resumen';
+  // De dónde sale el precio, en una línea.
+  const info = p.priceInfo;
+  const priceText = p.priceSource === 'live' && info?.nav
+    ? ['Valor liquidativo', info.time && `del ${date(info.time)}`, info.name, 'lo publica la gestora, normalmente cada mes'].filter(Boolean).join(' · ')
+    : p.priceSource === 'live' && info
+      ? ['En vivo', info.symbol, info.exchange,
+        info.currency && info.currency !== 'EUR' && `${num(info.raw)} ${info.currency} × ${isMasked() ? MASK : info.rate.toFixed(4)}`,
+        info.time && `${date(info.time)} ${time(info.time)}`].filter(Boolean).join(' · ')
+      : p.priceAt ? `Precio fijado a mano el ${date(p.priceAt)}` : 'Sin precio: escríbelo para valorar la posición';
   // Tu historia con el valor: desde cuándo, cuántas operaciones y a qué precios compraste.
   const story = (() => {
     const first = x.B[0]?.d;
@@ -481,8 +492,48 @@ export default function Asset({ x, totalVal, yearBase, onBack, onPrice, liveQuot
       </div>
 
       {cur === 'resumen' && (
-        <div className="cols">
-          <Card title={p.open ? 'Cómo se calcula' : 'Resultado'} sub={totalRet != null ? `Resultado + dividendos: ${eurS(totalRet)}${p.cost > 0 ? ` (${pctS((totalRet / p.cost) * 100)})` : ''}` : undefined}>
+        <div className="asset-sum">
+          {story && (
+            <dl className="facts">
+              <div><dt>Primera compra</dt><dd>{story.held}</dd><small>{dateLong(Date.parse(`${story.first}T00:00:00Z`))}</small></div>
+              <div><dt>Operaciones</dt><dd>{x.ops.length}</dd><small>{story.ops}</small></div>
+              {story.min != null && (
+                <div><dt>Precio de compra</dt><dd>{story.min === story.max ? eur(story.min) : `${eur(story.min)} – ${eur(story.max)}`}</dd>
+                  <small>{story.min === story.max ? 'siempre el mismo' : 'el más bajo y el más alto'}</small></div>
+              )}
+              {p.open && p.price > 0 && (
+                <div><dt>Frente a tu precio medio</dt><dd className={sign(p.price - x.avg)}>{pctS((p.price / x.avg - 1) * 100)}</dd>
+                  <small>medio {eur(x.avg)} · ahora {eur(p.price)}</small></div>
+              )}
+            </dl>
+          )}
+
+          {p.open && (
+            <section className="price-strip">
+              <p className="ps-src">
+                {p.priceSource === 'live' && <span className="live-dot" aria-hidden="true" />}
+                <span>{priceText}</span>
+              </p>
+              <div className="ps-act">
+                {p.priceSource !== 'live' || editPx
+                  ? <label className="ps-in"><span>Precio a mano (€)</span><PriceInput p={p} onPrice={onPrice} /></label>
+                  : <button type="button" className="btn soft" onClick={() => setEditPx(true)}>Fijar un precio a mano</button>}
+                {p.priceSource === 'manual' && liveQuotes && quoted && (
+                  <button type="button" className="link" onClick={() => onPrice(p.isin, null)}>Volver a la cotización en vivo</button>
+                )}
+              </div>
+            </section>
+          )}
+
+          {p.open && hist === null && (isMasked() ? <Hidden title="Valoraciones" /> : <Valuations p={p} onPrice={onPrice} onChange={onHistoryChange} />)}
+
+          <Card title={p.open ? 'Cómo se calcula' : 'Resultado'}
+            sub={totalRet != null ? `Resultado + dividendos: ${eurS(totalRet)}${p.cost > 0 ? ` (${pctS((totalRet / p.cost) * 100)})` : ''}` : undefined}>
+            <button type="button" className="fold" aria-expanded={steps} onClick={() => setSteps((v) => !v)}>
+              {steps ? 'Ocultar las cuentas' : 'Ver las cuentas paso a paso'}
+            </button>
+            {steps && (
+              <div className="steps-in">
             {p.open ? (
               <div className="calc">
                 <div><span>Compras ({x.B.length})</span><b>{eur(x.bought)}</b></div>
@@ -507,54 +558,10 @@ export default function Asset({ x, totalVal, yearBase, onBack, onPrice, liveQuot
                 {x.D.length > 0 && <div><span>Dividendos = bruto {num(x.divG)} − retención {num(x.divT)}</span><b>{eur(x.div)}</b></div>}
               </div>
             )}
+              </div>
+            )}
             {p.extra && <p className="note">{maskText(p.extra)}</p>}
           </Card>
-          <div className="stack">
-            {p.open && (
-              <Card title="Precio">
-                <label className="price-row">
-                  <span>Precio actual (€)</span>
-                  <PriceInput p={p} onPrice={onPrice} />
-                </label>
-                {p.priceSource === 'live' && p.priceInfo?.nav ? (
-                  <p className="note">
-                    <span className="live-dot" aria-hidden="true" /> Valor liquidativo{p.priceInfo.time && <> del {date(p.priceInfo.time)}</>}
-                    {p.priceInfo.name && <> · {p.priceInfo.name}</>}. Lo publica la gestora, normalmente una vez al mes; se actualiza solo.
-                  </p>
-                ) : p.priceSource === 'live' && p.priceInfo ? (
-                  <p className="note">
-                    <span className="live-dot" aria-hidden="true" /> {['En vivo', p.priceInfo.symbol, p.priceInfo.exchange].filter(Boolean).join(' · ')}.{' '}
-                    {p.priceInfo.currency !== 'EUR' && <>{num(p.priceInfo.raw)} {p.priceInfo.currency} × {isMasked() ? MASK : p.priceInfo.rate.toFixed(4)}. </>}
-                    {p.priceInfo.time && <>Cotización del {date(p.priceInfo.time)} a las {time(p.priceInfo.time)}.</>}
-                  </p>
-                ) : (
-                  <p className="note">
-                    {p.priceAt ? `Fijado a mano el ${date(p.priceAt)}.` : 'Sin precio.'}{' '}
-                    {p.priceSource === 'manual' && liveQuotes && quoted && (
-                      <button type="button" className="link" onClick={() => onPrice(p.isin, null)}>Volver a la cotización en vivo</button>
-                    )}
-                  </p>
-                )}
-              </Card>
-            )}
-            {p.open && hist === null && (isMasked() ? <Hidden title="Valoraciones" /> : <Valuations p={p} onPrice={onPrice} onChange={onHistoryChange} />)}
-            {!p.open && <Card title="Posición cerrada"><p className="note">Ya no tienes acciones de este valor: su resultado quedó realizado en las ventas.</p></Card>}
-            {story && (
-              <Card title="Tu historia con este valor">
-                <div className="kvs">
-                  <div className="kv"><span>Primera compra<small>{dateLong(Date.parse(`${story.first}T00:00:00Z`))}</small></span><b>{story.held}</b></div>
-                  <div className="kv"><span>Operaciones</span><b>{story.ops}</b></div>
-                  {story.min != null && (
-                    <div className="kv"><span>Precio de compra<small>{story.min === story.max ? 'siempre el mismo' : 'el más bajo y el más alto'}</small></span>
-                      <b>{story.min === story.max ? eur(story.min) : `${eur(story.min)} – ${eur(story.max)}`}</b></div>
-                  )}
-                  {p.open && p.price > 0 && story.min != null && (
-                    <div className="kv"><span>Precio actual frente a tu medio</span><b className={sign(p.price - x.avg)}>{pctS((p.price / x.avg - 1) * 100)}</b></div>
-                  )}
-                </div>
-              </Card>
-            )}
-          </div>
         </div>
       )}
 
