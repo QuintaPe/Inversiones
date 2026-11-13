@@ -6,30 +6,30 @@
    ===================================================================== */
 
 :root{
-  --bg:#07070a;--surface:#111116;--surface-2:#1a1a21;--surface-3:#26262f;--mu:#86868f;
+  --bg:#07070a;--surface:#0e0e12;--surface-2:#1a1a21;--surface-3:#26262f;--mu:#86868f;
   --line:rgba(255,255,255,.07);--line-2:rgba(255,255,255,.14);
   --acc:#7c3aed;--acc-tx:#b8a1ff;--on-acc:#fff;--acc-2:#3b82f6;
-  --edge:rgba(255,255,255,.075);--edge-top:rgba(255,255,255,.12);
-  --card-shadow:0 1px 0 rgba(255,255,255,.035) inset,0 18px 40px -24px rgba(0,0,0,.9);
+  --edge:rgba(255,255,255,.05);--edge-top:rgba(255,255,255,.12);
+  --card-shadow:none;--float-shadow:0 1px 0 rgba(255,255,255,.035) inset,0 18px 40px -24px rgba(0,0,0,.9);
   --halo-1:rgba(124,58,237,.22);--halo-2:rgba(59,130,246,.12);
   --chart:#b8a1ff;
   --r:22px;
 }
 @media(prefers-color-scheme:light){:root:not([data-theme=dark]){
-  --bg:#f3f3f7;--surface:#ffffff;--surface-2:#f0f0f5;--surface-3:#e5e5ec;
+  --bg:#f6f6f9;--surface:#ffffff;--surface-2:#f0f0f5;--surface-3:#e5e5ec;
   --line:rgba(16,16,28,.07);--line-2:rgba(16,16,28,.14);
   --acc:#6d28d9;--acc-tx:#6d28d9;--on-acc:#fff;--acc-2:#2563eb;
-  --edge:rgba(16,16,28,.07);--edge-top:rgba(255,255,255,.9);
-  --card-shadow:0 1px 2px rgba(16,16,28,.04),0 14px 34px -20px rgba(16,16,28,.18);
+  --edge:rgba(16,16,28,.05);--edge-top:rgba(255,255,255,.9);
+  --card-shadow:none;--float-shadow:0 1px 2px rgba(16,16,28,.04),0 14px 34px -20px rgba(16,16,28,.18);
   --halo-1:rgba(124,58,237,.10);--halo-2:rgba(59,130,246,.07);
   --chart:#6d28d9;
 }}
 :root[data-theme=light]{
-  --bg:#f3f3f7;--surface:#ffffff;--surface-2:#f0f0f5;--surface-3:#e5e5ec;
+  --bg:#f6f6f9;--surface:#ffffff;--surface-2:#f0f0f5;--surface-3:#e5e5ec;
   --line:rgba(16,16,28,.07);--line-2:rgba(16,16,28,.14);
   --acc:#6d28d9;--acc-tx:#6d28d9;--on-acc:#fff;--acc-2:#2563eb;
-  --edge:rgba(16,16,28,.07);--edge-top:rgba(255,255,255,.9);
-  --card-shadow:0 1px 2px rgba(16,16,28,.04),0 14px 34px -20px rgba(16,16,28,.18);
+  --edge:rgba(16,16,28,.05);--edge-top:rgba(255,255,255,.9);
+  --card-shadow:none;--float-shadow:0 1px 2px rgba(16,16,28,.04),0 14px 34px -20px rgba(16,16,28,.18);
   --halo-1:rgba(124,58,237,.10);--halo-2:rgba(59,130,246,.07);
   --chart:#6d28d9;
 }
@@ -52,7 +52,7 @@ body{
   max-width:1184px;padding:8px 8px 8px 22px;border-radius:999px;
   background:color-mix(in srgb,var(--surface) 72%,transparent);
   backdrop-filter:saturate(170%) blur(20px);-webkit-backdrop-filter:saturate(170%) blur(20px);
-  border:1px solid var(--edge);box-shadow:var(--card-shadow);
+  border:1px solid var(--edge);box-shadow:var(--float-shadow);
 }
 .brand i{color:var(--acc-tx)}
 .nav a{transition:color var(--dur-1),background var(--dur-1)}
@@ -63,7 +63,7 @@ body{
 
 /* ---------- tarjetas con profundidad ---------- */
 .card{
-  background:linear-gradient(180deg,color-mix(in srgb,var(--surface) 92%,var(--tx)) 0,var(--surface) 90px);
+  background:var(--surface);
   border:1px solid var(--edge);box-shadow:var(--card-shadow);
 }
 :root[data-theme=light] .card{background:var(--surface)}
@@ -105,14 +105,14 @@ body{
 .chart .bar:not(.up):not(.down){fill:var(--chart)}
 
 /* ---------- indicadores ---------- */
-.kpi{border:1px solid var(--edge);box-shadow:var(--card-shadow);background:linear-gradient(180deg,color-mix(in srgb,var(--surface) 92%,var(--tx)) 0,var(--surface) 70px)}
+.kpi{border:1px solid var(--edge);box-shadow:var(--card-shadow);background:var(--surface)}
 :root[data-theme=light] .kpi{background:var(--surface)}
 @media(prefers-color-scheme:light){:root:not([data-theme=dark]) .kpi{background:var(--surface)}}
 button.kpi:hover{background:color-mix(in srgb,var(--acc) 7%,var(--surface));border-color:color-mix(in srgb,var(--acc) 30%,var(--edge))}
 .spark-l,.spark rect{filter:drop-shadow(0 0 4px color-mix(in srgb,var(--chart) 45%,transparent))}
 
 .price-strip{border:1px solid var(--edge);box-shadow:var(--card-shadow)}
-.pos-card{border:1px solid var(--edge);box-shadow:var(--card-shadow);background:linear-gradient(180deg,color-mix(in srgb,var(--surface) 92%,var(--tx)) 0,var(--surface) 80px)}
+.pos-card{border:1px solid var(--edge);box-shadow:var(--card-shadow);background:var(--surface)}
 :root[data-theme=light] .pos-card{background:var(--surface)}
 @media(prefers-color-scheme:light){:root:not([data-theme=dark]) .pos-card{background:var(--surface)}}
 .pos-card:hover{border-color:color-mix(in srgb,var(--acc) 30%,var(--edge));background:color-mix(in srgb,var(--acc) 6%,var(--surface))}
@@ -157,7 +157,7 @@ button.kpi:hover{background:color-mix(in srgb,var(--acc) 7%,var(--surface));bord
   background:linear-gradient(135deg,var(--tx) 30%,var(--acc-tx));
   -webkit-background-clip:text;background-clip:text;color:transparent;
 }
-.login-c{background:color-mix(in srgb,var(--surface) 80%,transparent);border:1px solid var(--edge);box-shadow:var(--card-shadow),0 0 120px -40px var(--acc);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px)}
+.login-c{background:color-mix(in srgb,var(--surface) 80%,transparent);border:1px solid var(--edge);box-shadow:var(--float-shadow),0 0 120px -40px var(--acc);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px)}
 .drop{border:1px solid var(--edge);box-shadow:var(--card-shadow)}
 .drop-i{background:color-mix(in srgb,var(--acc) 22%,var(--surface-2));color:var(--acc-tx)}
 
@@ -168,7 +168,7 @@ button.kpi:hover{background:color-mix(in srgb,var(--acc) 7%,var(--surface));bord
   .main{padding-top:18px;padding-bottom:120px}
   .tabs{
     left:12px;right:12px;bottom:calc(10px + env(safe-area-inset-bottom));padding:6px;border-radius:24px;
-    background:color-mix(in srgb,var(--surface) 78%,transparent);border:1px solid var(--edge);box-shadow:var(--card-shadow),0 12px 30px -12px rgba(0,0,0,.5);
+    background:color-mix(in srgb,var(--surface) 78%,transparent);border:1px solid var(--edge);box-shadow:var(--float-shadow),0 12px 30px -12px rgba(0,0,0,.5);
   }
   .tabs a{border-radius:18px;padding:8px 0 6px}
   .tabs a.on{color:var(--tx);background:color-mix(in srgb,var(--acc) 18%,transparent)}
