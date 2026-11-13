@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
-import { Asset, Avatar, Card, Empty, Flash, Icon, Pill, PriceInput, Search, Seg, Th, useSort } from '../components/ui.jsx';
+import { Asset, Avatar, Empty, Flash, Icon, Pill, PriceInput, Search, Th, useSort } from '../components/ui.jsx';
 import { Kpi } from '../components/Kpi.jsx';
-import { Treemap } from '../charts.jsx';
 import { useStored } from '../hooks.js';
 import { sum } from '../lib/calc.js';
 import Targets from './Targets.jsx';
@@ -17,7 +16,6 @@ export default function Positions({ a, onOpen, onPrice, targets, patch, fail }) 
   const [tab, setTab] = useState('open');
   const [q, setQ] = useState('');
   const [view, setView] = useStored('pos-view', 'list');
-  const [mapBy, setMapBy] = useState('total');
   const open = useSort('v');
   const closed = useSort('real');
   const match = (x) => !q || `${x.p.name} ${x.p.isin}`.toLowerCase().includes(q.trim().toLowerCase());
@@ -45,16 +43,6 @@ export default function Positions({ a, onOpen, onPrice, targets, patch, fail }) 
             <Kpi label="Dividendos cobrados" value={eur(a.divN)} sub="netos, desde el inicio" />
             <Kpi label="Concentración" value={pct(top3)} sub="pesan tus 3 mayores posiciones" />
           </div>
-
-          <Card title="Mapa de la cartera" className="pos-map"
-            sub={mapBy === 'day' ? 'Tamaño: peso · color: cuánto se ha movido hoy' : 'Tamaño: peso · color: rentabilidad desde la compra'}
-            right={a.day != null && <Seg label="Color del mapa" options={[['total', 'Total'], ['day', 'Hoy']]} value={mapBy} onChange={setMapBy} />}>
-            <Treemap height={260} cap={mapBy === 'day' ? 3 : 40}
-              items={a.priced.map((x) => {
-                const c = mapBy === 'day' ? (x.dayPct ?? 0) : (x.plp ?? 0);
-                return { key: x.p.isin, label: x.p.name, v: x.v, plp: c, right: `${pct(x.w)} · ${pctS(c)}`, sub: eur(x.v), w2: pct(x.w), onClick: () => onOpen(x.p.isin) };
-              })} />
-          </Card>
         </>
       )}
 
