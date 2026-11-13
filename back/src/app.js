@@ -390,7 +390,17 @@ export function createApp({ db: rawDb, verifyGoogle, googleClientId, sessionSecr
   // Saldo de efectivo reconstruido desde el CSV (null si el CSV se subió antes de guardar el efectivo).
   api.get('/cash', async (req, res) => {
     const rows = await db.getRows(req.userId);
-    res.json({ cash: buildCash(rows), labels: CASH_LABEL, income: buildIncome(rows) });
+    res.json({ cash: buildCash(rows), labels: CASH_LABEL, income: buildIncome(rows), cats: await db.getMerchantCategories(req.userId) });
+  });
+
+  // Categoría de un comercio, para todos sus pagos. { merchant, category } (category null = automática).
+  api.put('/categories', async (req, res) => {
+    const merchant = String(req.body?.merchant ?? '').trim().slice(0, 200);
+    const category = req.body?.category == null ? null : String(req.body.category).trim().slice(0, 40);
+    if (!merchant) return res.status(400).json({ error: 'Falta el comercio.' });
+    if (category != null && !/^[a-z]+$/.test(category)) return res.status(400).json({ error: 'Categoría no válida.' });
+    await db.setMerchantCategory(req.userId, merchant, category);
+    res.json({ cats: await db.getMerchantCategories(req.userId) });
   });
 
   // Fija (o borra, con price vacío) el precio actual de una posición.

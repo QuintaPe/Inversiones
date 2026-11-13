@@ -39,12 +39,27 @@ const BUYS = [
   [14, 'US67066G1040', 1500], [17, 'US5949181045', 1000], [20, 'NL0010273215', 800], [23, 'US67066G1040', 800],
   [27, 'ES0144580Y14', 600], [30, 'DE0008404005', 700],
 ];
+// Gastos de cada mes: [comercio, MCC, pagos al mes, importe mínimo, máximo, cada cuántos meses].
+const SPEND = [
+  ['MERCADONA', '5411', 3, 35, 80], ['LIDL', '5411', 1, 18, 45], ['REPSOL', '5541', 1, 40, 62],
+  ['NETFLIX.COM', '4899', 1, 13.99, 13.99], ['SPOTIFY', '5815', 1, 11.99, 11.99], ['RENFE VIAJEROS', '4112', 1, 14, 36],
+  ['LA TAGLIATELLA', '5812', 2, 24, 58], ['BAR EL RINCÓN', '5813', 2, 6, 18], ['FARMACIA CENTRAL', '5912', 1, 8, 24],
+  ['AMAZON', '5999', 1, 15, 70], ['ZARA', '5651', 1, 29, 79, 2], ['CINESA', '7832', 1, 9, 19, 2], ['DECATHLON', '5941', 1, 20, 60, 4],
+];
+// Pseudoaleatorio con semilla (mulberry32): el ejemplo sale siempre igual.
+const rng = (seed) => () => {
+  let t = (seed += 0x6d2b79f5);
+  t = Math.imul(t ^ (t >>> 15), t | 1);
+  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+};
+
 // Ventas: [meses desde el inicio, ISIN, parte de lo que se tiene].
 const SELLS = [[26, 'US67066G1040', 0.4], [33, 'US1912161007', 0.5]];
 
 /** Filas como las de un CSV de Trade Republic, de hace 36 meses a hoy. */
 export function demoRows(now = Date.now()) {
-  const head = '"datetime","date","category","type","asset_class","name","symbol","shares","price","amount","fee","tax","description","transaction_id"';
+  const head = '"datetime","date","category","type","asset_class","name","symbol","shares","price","amount","fee","tax","description","transaction_id","mcc_code"';
   const lines = [head];
   const today = new Date(now);
   const start = Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - 36, 1);
@@ -55,11 +70,11 @@ export function demoRows(now = Date.now()) {
     const t = Date.UTC(new Date(start).getUTCFullYear(), new Date(start).getUTCMonth() + month, day, hour);
     return t > now ? null : new Date(t).toISOString();
   };
-  const push = (dt, cat, type, isin, shares, price, amount, fee, tax, desc) => {
+  const push = (dt, cat, type, isin, shares, price, amount, fee, tax, desc, who = '', mcc = '') => {
     const a = isin ? ASSETS[isin] : null;
     cash += amount + fee + tax;
-    lines.push([dt, dt.slice(0, 10), cat, type, a?.cls ?? '', a?.name ?? '', isin ?? '', shares, price, amount.toFixed(2),
-      fee ? fee.toFixed(2) : '', tax ? tax.toFixed(2) : '', desc, `demo-${++n}`].map(q).join(','));
+    lines.push([dt, dt.slice(0, 10), cat, type, a?.cls ?? '', a?.name ?? who, isin ?? '', shares, price, amount.toFixed(2),
+      fee ? fee.toFixed(2) : '', tax ? tax.toFixed(2) : '', desc, `demo-${++n}`, mcc].map(q).join(','));
   };
   const buy = (dt, isin, eur, fee, desc = 'Buy trade') => {
     const px = +priceAt(isin, dt).toFixed(2);
@@ -71,7 +86,18 @@ export function demoRows(now = Date.now()) {
   for (let m = 0; m <= 36; m++) {
     const pay = at(m, 1, 8);
     if (!pay) break;
-    push(pay, 'CASH', 'CUSTOMER_INBOUND', null, '', '', m === 0 ? 8000 : 1100, 0, 0, 'Ingreso');
+    push(pay, 'CASH', 'CUSTOMER_INBOUND', null, '', '', m === 0 ? 8000 : 1600, 0, 0, 'Ingreso', 'Nómina');
+    // Pagos con tarjeta del mes y algún Bizum.
+    const r = rng(m + 1);
+    for (const [who, mcc, times, lo, hi, every = 1] of SPEND) {
+      if (m % every !== 0) continue;
+      for (let k = 0; k < times; k++) {
+        const dt = at(m, 3 + Math.floor(r() * 25), 11 + Math.floor(r() * 9));
+        if (dt) push(dt, 'CASH', 'CARD_TRANSACTION', null, '', '', -+(lo + (hi - lo) * r()).toFixed(2), 0, 0, 'Card', who, mcc);
+      }
+    }
+    const bz = at(m, 20, 19);
+    if (bz && m % 2 === 1) push(bz, 'CASH', 'TRANSFER_INSTANT_OUTBOUND', null, '', '', -+(15 + 30 * r()).toFixed(2), 0, 0, 'Bizum', 'Ana García');
     // Plan de ahorro: dos ETF el día 2 de cada mes, sin comisión.
     for (const [isin, eur] of [['IE00B4L5Y983', 450], ['IE00BK5BQT80', 250]]) {
       const dt = at(m, 2, 9);

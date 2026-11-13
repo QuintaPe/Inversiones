@@ -21,7 +21,7 @@ test('coste medio ponderado, venta parcial y dividendos', () => {
   ));
   assert.equal(rows.length, 5);
   const card = rows.find((r) => r.type === 'CARD_TRANSACTION');
-  assert.deepEqual([card.name, card.description, card.amount], ['', '', '-5'], 'de la tarjeta solo se guarda fecha, tipo e importe');
+  assert.deepEqual([card.name, card.description, card.amount], ['Bar', '', '-5'], 'de la tarjeta se guarda el comercio, no el concepto');
   const { positions } = buildPortfolio(rows);
   assert.equal(positions.length, 1);
   const p = positions[0];

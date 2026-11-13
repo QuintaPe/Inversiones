@@ -6,12 +6,12 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // Columnas de cada operación: las del CSV de Trade Republic que describen una inversión,
-// más la cuenta y la divisa. Lo que identifica pagos personales (comercio, IBAN, concepto,
-// categoría de tarjeta) no se guarda nunca.
+// más la cuenta, la divisa y, en los pagos, el comercio o la otra parte (name) y la categoría
+// del comercio (mcc_code). El IBAN y la referencia de las transferencias no se guardan nunca.
 export const ROW_COLS = [
   'transaction_id', 'datetime', 'date', 'category', 'type', 'asset_class', 'name', 'symbol',
   'shares', 'price', 'amount', 'fee', 'tax', 'description',
-  'original_amount', 'original_currency', 'fx_rate', 'account_type', 'currency',
+  'original_amount', 'original_currency', 'fx_rate', 'account_type', 'currency', 'mcc_code',
 ];
 const V1_COLS = ROW_COLS.slice(0, 17);
 
@@ -153,6 +153,19 @@ const MIGRATIONS = [
       await c.execute(`CREATE TABLE IF NOT EXISTS history_cache (
          user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
          k TEXT NOT NULL, value TEXT NOT NULL, built_at TEXT NOT NULL)`);
+    },
+  },
+  {
+    v: 4,
+    name: 'comercio y categoría de los pagos',
+    async up(c) {
+      // Código de categoría del comercio (MCC) de cada pago con tarjeta, y la categoría que el
+      // usuario elige para un comercio (se aplica a todos sus pagos, pasados y futuros).
+      await addColumn(c, "ALTER TABLE transactions ADD COLUMN mcc_code TEXT NOT NULL DEFAULT ''");
+      await c.execute(`CREATE TABLE IF NOT EXISTS merchant_categories (
+         user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+         merchant TEXT NOT NULL, category TEXT NOT NULL,
+         PRIMARY KEY (user_id, merchant))`);
     },
   },
 ];
@@ -545,15 +558,28 @@ function makeRepo(client, url, { cache = true } = {}) {
     /** Copia completa de lo que el usuario ha subido o anotado. */
     async exportUser(userId) {
       const q = (sql) => client.execute({ sql, args: [userId] }).then((r) => r.rows.map((x) => ({ ...x })));
-      const [transactions, prices, valuations, alerts, targets, imports] = await Promise.all([
+      const [transactions, prices, valuations, alerts, targets, imports, merchant_categories] = await Promise.all([
         q(`SELECT ${ROW_COLS.join(', ')}, source, deleted_at FROM transactions WHERE user_id = ? ORDER BY datetime`),
         q('SELECT isin, price, updated_at FROM prices WHERE user_id = ?'),
         q('SELECT isin, d, price FROM valuations WHERE user_id = ? ORDER BY isin, d'),
         q('SELECT isin, dir, price, created_at, triggered_at FROM alerts WHERE user_id = ?'),
         q('SELECT isin, weight FROM targets WHERE user_id = ?'),
         q('SELECT name, uploaded_at, total, relevant, added, sha256 FROM imports WHERE user_id = ? ORDER BY id'),
+        q('SELECT merchant, category FROM merchant_categories WHERE user_id = ? ORDER BY merchant'),
       ]);
-      return { transactions, prices, valuations, alerts, targets, imports };
+      return { transactions, prices, valuations, alerts, targets, imports, merchant_categories };
+    },
+
+    // ---------- categoría de cada comercio, elegida por el usuario ----------
+    async getMerchantCategories(userId) {
+      const r = await client.execute({ sql: 'SELECT merchant, category FROM merchant_categories WHERE user_id = ?', args: [userId] });
+      return Object.fromEntries(r.rows.map((x) => [x.merchant, x.category]));
+    },
+    /** category null vuelve a la automática. */
+    async setMerchantCategory(userId, merchant, category) {
+      await client.execute(category
+        ? { sql: 'INSERT INTO merchant_categories (user_id, merchant, category) VALUES (?, ?, ?) ON CONFLICT(user_id, merchant) DO UPDATE SET category = excluded.category', args: [userId, merchant, category] }
+        : { sql: 'DELETE FROM merchant_categories WHERE user_id = ? AND merchant = ?', args: [userId, merchant] });
     },
 
     async getTargets(userId) {
@@ -710,7 +736,7 @@ function makeRepo(client, url, { cache = true } = {}) {
     /** Borra cuentas enteras, con todos sus datos. */
     async deleteUsers(ids) {
       if (!ids.length) return;
-      const tables = ['transactions', 'prices', 'imports', 'valuations', 'alerts', 'targets', 'history_cache', 'push_subscriptions'];
+      const tables = ['transactions', 'prices', 'imports', 'valuations', 'alerts', 'targets', 'history_cache', 'push_subscriptions', 'merchant_categories'];
       await client.batch(ids.flatMap((id) => [
         ...tables.map((t) => ({ sql: `DELETE FROM ${t} WHERE user_id = ?`, args: [id] })),
         { sql: 'DELETE FROM users WHERE id = ?', args: [id] },
@@ -720,7 +746,7 @@ function makeRepo(client, url, { cache = true } = {}) {
 
     async clearUserData(userId) {
       await client.batch(
-        ['transactions', 'prices', 'imports', 'valuations', 'alerts', 'targets', 'history_cache'].map((t) => ({ sql: `DELETE FROM ${t} WHERE user_id = ?`, args: [userId] })),
+        ['transactions', 'prices', 'imports', 'valuations', 'alerts', 'targets', 'history_cache', 'merchant_categories'].map((t) => ({ sql: `DELETE FROM ${t} WHERE user_id = ?`, args: [userId] })),
         'write',
       );
       touchRows(userId);

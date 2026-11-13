@@ -28,11 +28,15 @@ test('escisión: las acciones entran a coste cero y se pueden vender', () => {
   const { rows, invest, unknown } = parseCsv(CSV);
   assert.equal(invest, 3);
   assert.deepEqual(unknown, { TIPO_NUEVO: 1 });
-  // De los pagos con tarjeta no se guarda ni el comercio ni el concepto.
+  // De los pagos con tarjeta se guarda el comercio (name) y su MCC; nunca el concepto, ni el
+  // IBAN o la referencia de una transferencia (no son columnas que se guarden).
   const card = rows.find((r) => r.transaction_id === 't-3');
   assert.equal(card.description, '');
-  assert.equal(card.counterparty_name, undefined);
-  assert.equal(card.mcc_code, undefined);
+  assert.equal(card.mcc_code, '5812');
+  assert.equal(card.counterparty_iban, undefined);
+  assert.equal(card.payment_reference, undefined);
+  // Las operaciones de inversión no llevan MCC.
+  assert.equal(rows.find((r) => r.type === 'BUY').mcc_code, '');
   assert.equal(rows[0].currency, 'EUR');
 
   const spun = buildPortfolio(rows).positions.find((p) => p.isin === 'US0000000002');
@@ -48,6 +52,9 @@ test('escisión: las acciones entran a coste cero y se pueden vender', () => {
   // La comisión de la tarjeta sale del efectivo como gasto de tarjeta, no como «otros».
   const cash = buildCash(rows);
   assert.equal(cash.totals.card, -10);
+  // El extracto suma lo mismo que el saldo, y solo las operaciones con valor llevan nombre.
+  assert.ok(Math.abs(cash.moves.reduce((t, m) => t + m[2], 0) - cash.ledger) < 0.01);
+  for (const m of cash.moves) assert.equal(m.length === 4, m[1] === 'invest' || m[1] === 'dividend');
 });
 
 test('migración: una base de datos anterior conserva operaciones, quitadas y precios', async () => {
@@ -286,4 +293,15 @@ test('efectivo: descuenta los redondeos de la tarjeta pendientes de invertir', (
   const loose = buildCash(rows.filter((r) => !['p2', 'p3'].includes(r.transaction_id)));
   assert.equal(loose.roundUps, null);
   assert.equal(loose.balance, loose.ledger);
+});
+
+test('categoría de un comercio: se guarda, se lee con el efectivo y se puede volver a la automática', async () => {
+  const db = await openDb({ url: ':memory:' });
+  await db.upsertUser({ id: 'u1', email: 'a@b.c', name: 'A' });
+  await db.setMerchantCategory('u1', 'MERCADONA', 'food');
+  await db.setMerchantCategory('u1', 'MERCADONA', 'super');
+  assert.deepEqual(await db.getMerchantCategories('u1'), { MERCADONA: 'super' });
+  await db.setMerchantCategory('u1', 'MERCADONA', null);
+  assert.deepEqual(await db.getMerchantCategories('u1'), {});
+  db.close();
 });

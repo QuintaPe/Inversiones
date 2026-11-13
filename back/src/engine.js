@@ -9,15 +9,16 @@ export const REQUIRED_COLUMNS = [
   'shares', 'price', 'amount', 'fee', 'tax', 'description', 'transaction_id',
 ];
 
-// Filas de inversión: se guardan completas. El resto (tarjeta, transferencias,
-// intereses…) solo se guarda como fecha, tipo e importe, sin comercio ni concepto,
-// para poder reconstruir el saldo de efectivo.
+// Filas de inversión: se guardan completas. Del resto (tarjeta, transferencias, intereses…) se
+// guarda fecha, tipo e importe para reconstruir el saldo; en los pagos con tarjeta, además, el
+// comercio y su código de categoría (MCC), y en las transferencias el nombre de la otra parte,
+// para ver y categorizar los gastos. Nunca el IBAN ni la referencia de la transferencia.
 const INVEST_TYPES = new Set([
   'BUY', 'SELL', 'DIVIDEND', 'PRIVATE_MARKET_BUY', 'IPO_SUBSCRIPTION',
   'BONUS', 'MANUAL', 'BENEFITS_SAVEBACK', 'SPIN_OFF',
 ]);
 // Columnas que se guardan si el CSV las trae (las exportaciones antiguas no las tienen).
-const OPTIONAL_COLUMNS = ['original_amount', 'original_currency', 'fx_rate', 'account_type', 'currency'];
+const OPTIONAL_COLUMNS = ['original_amount', 'original_currency', 'fx_rate', 'account_type', 'currency', 'mcc_code'];
 const SKIP_TYPES = new Set(['MIGRATION']); // traspasos internos: ni mueven efectivo ni cambian la posición
 export const isInvestRow = (r) => INVEST_TYPES.has(r.type);
 
@@ -55,7 +56,12 @@ export function parseCsv(text) {
       const row = {};
       for (const c of REQUIRED_COLUMNS) row[c] = r[c] ?? '';
       for (const c of OPTIONAL_COLUMNS) row[c] = r[c] ?? '';
-      if (!INVEST_TYPES.has(r.type)) { row.name = ''; row.description = ''; row.symbol = ''; }
+      if (!INVEST_TYPES.has(r.type)) {
+        const keepName = r.type.startsWith('CARD_') || r.type.startsWith('TRANSFER_') || r.type === 'CUSTOMER_INBOUND';
+        if (!keepName) row.name = '';
+        if (!r.type.startsWith('CARD_')) row.mcc_code = '';
+        row.description = ''; row.symbol = '';
+      } else row.mcc_code = '';
       return row;
     });
   return { total: records.length, rows, invest: rows.filter(isInvestRow).length, unknown: unknownTypes(rows) };
@@ -287,6 +293,8 @@ export function buildCash(rows) {
   // su fecha valor y, ordenadas por hora de ejecución, la gráfica volvía hacia atrás.
   const sorted = [...rows].sort((a, b) => a.date.localeCompare(b.date) || byTime(a, b));
   const totals = {}, months = {}, days = [];
+  // Extracto de todos los movimientos de efectivo, con el valor o el comercio si lo hay.
+  const moves = [];
   let balance = 0, has = false;
   for (const r of sorted) {
     // Importe, comisión e impuesto con su signo: es lo que suma el saldo real de la cuenta.
@@ -298,6 +306,11 @@ export function buildCash(rows) {
     totals[g] = (totals[g] ?? 0) + delta;
     const m = (months[r.date.slice(0, 7)] ??= {});
     m[g] = (m[g] ?? 0) + delta;
+    // [fecha, concepto, importe, nombre (valor, comercio u otra parte), MCC del comercio]
+    const mv = [r.date, g, +delta.toFixed(2)];
+    if (r.name || r.mcc_code) mv.push(r.name ?? '');
+    if (r.mcc_code) mv.push(r.mcc_code);
+    moves.push(mv);
     if (days.length && days.at(-1)[0] === r.date) days.at(-1)[1] = +balance.toFixed(2);
     else days.push([r.date, +balance.toFixed(2)]);
   }
@@ -309,7 +322,7 @@ export function buildCash(rows) {
   const roundUps = pendingRoundUps(sorted);
   const pending = roundUps?.amount ?? 0;
   if (pending) days.at(-1)[1] = +(days.at(-1)[1] - pending).toFixed(2);
-  return { balance: +(ledger - pending).toFixed(2), ledger, roundUps, totals, months, days };
+  return { balance: +(ledger - pending).toFixed(2), ledger, roundUps, totals, months, days, moves };
 }
 
 /** Céntimos que redondea un pago con tarjeta: hasta el euro siguiente, o 1 € si ya es redondo. */
