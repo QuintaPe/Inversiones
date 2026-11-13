@@ -175,7 +175,8 @@ export default function Cash({ cash, labels, cats = {}, onCats, fail, portfolioV
       <div className="card">
         <Empty>
           Para reconstruir el efectivo hacen falta todos los movimientos de la cuenta. Vuelve a subir tu CSV: de los
-          pagos con tarjeta y las transferencias solo se guarda la fecha y el importe, nunca el comercio ni el concepto.
+          pagos con tarjeta se guarda el comercio y su categoría, y de las transferencias el nombre de la otra parte; nunca
+          el IBAN ni el concepto.
         </Empty>
       </div>
     );

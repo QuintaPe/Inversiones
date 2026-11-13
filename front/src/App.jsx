@@ -523,7 +523,7 @@ export default function App() {
             <UploadButton onFile={upload} busy={busy} className="btn pri">{busy ? 'Subiendo…' : 'Elegir archivo CSV'}</UploadButton>
             <ol className="steps">
               <li><b>1</b>En Trade Republic: Perfil → Transacciones → Exportar CSV.</li>
-              <li><b>2</b>Súbelo aquí. De los pagos con tarjeta y las transferencias solo se guarda fecha e importe, para calcular tu efectivo.</li>
+              <li><b>2</b>Súbelo aquí. De los pagos con tarjeta se guarda el comercio y su categoría, y de las transferencias el nombre de la otra parte, para calcular tu efectivo y ver tus gastos; nunca el IBAN ni el concepto.</li>
               <li><b>3</b>Los precios se actualizan solos con la cotización en vivo.</li>
             </ol>
           </div>

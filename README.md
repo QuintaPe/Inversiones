@@ -6,7 +6,7 @@ Gestor de cartera de inversión a partir de la exportación CSV de Trade Republi
   (coste medio y FIFO), cotizaciones e histórico de precios, logotipos, vigilancia de
   alertas y avisos push.
 - `front/` — React + Vite. Resumen, posiciones, ficha de activo, operaciones, dividendos,
-  fiscalidad y efectivo. Instalable como app (PWA) en la versión compilada.
+  fiscalidad y efectivo con gastos por categoría. Instalable como app (PWA) en la versión compilada.
 
 ## Puesta en marcha
 
@@ -16,7 +16,10 @@ cp back/.env.example back/.env   # Turso, Google y SESSION_SECRET
 npm run dev:back                 # API en http://127.0.0.1:3001
 npm run dev:front                # web en http://localhost:5173
 npm test                         # tests del back y de los cálculos del front
+npm run e2e                      # la app real en Chromium: escritorio, tableta y móvil, claro y oscuro
 ```
+
+La primera vez, `npx playwright install chromium-headless-shell` descarga el navegador de las pruebas.
 
 Sin `TURSO_DATABASE_URL` el back usa un SQLite local (`back/data/local.db`).
 Sin `GOOGLE_CLIENT_ID` no se puede iniciar sesión. El back no recarga solo al cambiar `.env`.
@@ -30,7 +33,7 @@ Sin `GOOGLE_CLIENT_ID` no se puede iniciar sesión. El back no recarga solo al c
 | Valor liquidativo de fondos no cotizados (Private Markets) | onvista por ISIN, último publicado y su histórico mensual; no oficial |
 | Valor diario y rentabilidad | Cierres históricos guardados en la base de datos (`back/src/history.js`) |
 | Logotipos | Parqet y Financial Modeling Prep, descargados una vez por el servidor |
-| Efectivo | Suma de todos los movimientos del CSV; de tarjeta y transferencias solo fecha e importe |
+| Efectivo y gastos | Suma de todos los movimientos del CSV; los gastos se agrupan por el comercio y su categoría (MCC), o la que elijas para cada comercio |
 
 Las fuentes de precios y logotipos son públicas pero no garantizadas: si fallan, la app
 mantiene lo último guardado. `LIVE_QUOTES=0` y `LOGOS=0` las desactivan.
@@ -49,9 +52,12 @@ se añade una migración nueva al final; las ya publicadas no se tocan.
 | `prices`, `valuations` | Precios y valoraciones que el usuario fija a mano |
 | `symbols`, `price_history`, `symbol_divs`, `symbol_splits`, `history_meta` | Caché global de mercado |
 | `alerts`, `targets`, `push_subscriptions` | Alertas, cartera objetivo y dispositivos con avisos |
+| `merchant_categories` | Categoría que el usuario elige para un comercio |
 
 Los importes se guardan como texto decimal exacto, tal cual vienen en el CSV. De los pagos
-con tarjeta y las transferencias no se guarda comercio, IBAN, concepto ni categoría.
+con tarjeta se guarda el comercio y su código de categoría (MCC), y de las transferencias el
+nombre de la otra parte, para ver y categorizar los gastos; nunca el concepto, el IBAN ni la
+referencia de la transferencia.
 Al subir un CSV se enseña primero qué va a cambiar; `GET /api/export` descarga una copia
 completa de los datos del usuario.
 
@@ -62,6 +68,30 @@ y avisa por Web Push a los dispositivos donde el usuario lo haya activado, aunqu
 esté cerrada. Las claves VAPID se generan solas y se guardan en la base de datos. Los avisos
 necesitan HTTPS y la versión compilada (service worker); en iOS, además, la app instalada.
 
+## Pruebas de extremo a extremo
+
+`npm run e2e` compila el front y lo sirve con el back real (base de datos en memoria, sin
+proveedores externos ni límites de peticiones) sobre la cartera de ejemplo con precios fijos.
+Recorre cada sección en seis configuraciones (escritorio, tableta y móvil, en claro y en
+oscuro) y comprueba que no hay errores en la consola ni scroll horizontal. También cubre la
+navegación, el teclado en las gráficas, el tema y los gestos táctiles.
+
+Para cambios de estilos, `npm run e2e:visual:base` guarda una captura de cada sección *antes*
+de tocar nada y `npm run e2e:visual` compara después. La cartera de ejemplo se fecha desde
+hoy, así que las capturas solo sirven para comparar el mismo día y no se versionan.
+
+## Interfaz
+
+- **Rutas**: URLs limpias (`/posiciones`, `/activo/US0378331005`). Pestañas, filtros y periodos
+  van en la URL (`/operaciones?tipo=ventas&año=2025`), así que se pueden recargar, enlazar y
+  compartir. Al volver atrás se recupera el scroll, y los enlaces antiguos con `#/` siguen
+  funcionando (`front/src/router.js`, sin dependencias).
+- **Estilos**: una sola hoja, `front/src/styles.css` (ver Diseño).
+- **Accesibilidad**: enlace para saltar al contenido, foco y aviso al cambiar de sección, y
+  gráficas que se recorren con las flechas y anuncian el punto activo.
+- **Móvil**: deslizar hacia abajo desde arriba actualiza las cotizaciones sin recargar la app,
+  y la app instalada tiene accesos directos a las secciones principales.
+
 ## Rendimiento
 
 - Cada respuesta lleva `Server-Timing` (pestaña Red del navegador) con el tiempo de base de
@@ -70,6 +100,8 @@ necesitan HTTPS y la versión compilada (service worker); en iOS, además, la ap
 - `npm run bench --prefix back` mide el motor y la API con una cartera sintética;
   `-- --latency 40` simula la ida y vuelta a Turso y `-- --rows 50000` cambia el tamaño.
 - `npm run build` falla si el front supera su presupuesto de tamaño (`front/scripts/budget.js`).
+- En Operaciones, los meses fuera de pantalla no se maquetan hasta acercarse (`content-visibility`)
+  y las siguientes 100 filas se cargan solas al llegar al final.
 - Cachés en memoria de usuarios, operaciones, símbolos, splits y posiciones calculadas; se
   invalidan en cada escritura. Suponen un solo proceso (`DB_CACHE=0` las desactiva).
 - `TURSO_REPLICA=replica.db` usa Turso como réplica embebida: las lecturas no cruzan la red.
@@ -110,5 +142,9 @@ cuenta temporal con valores reales y operaciones inventadas, que se borra a la s
 ## Diseño
 
 Los colores, espacios, tamaños de letra y tiempos de animación son variables de `:root` en
-`front/src/styles.css`, con un bloque para cada tema. `npm run contrast --prefix front`
-comprueba que todo el texto cumple el contraste WCAG AA en los dos temas; el build no sigue si falla.
+`front/src/styles.css`. Cada color se escribe una sola vez como `light-dark(claro, oscuro)`;
+el tema lo decide el sistema o el que se elige en la app (`data-theme` en `<html>`).
+Lightning CSS (`vite.config.js`) traduce `light-dark()` y añade los prefijos para los
+navegadores soportados (Safari 16 en adelante), así que no se escriben `-webkit-` a mano.
+`npm run contrast --prefix front` comprueba que todo el texto cumple el contraste WCAG AA en
+los dos temas; el build no sigue si falla.
