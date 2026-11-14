@@ -152,7 +152,9 @@ export function buildPortfolio(rows, splits = {}) {
       type: 'SPLIT', symbol: isin, date: d, datetime: `${d}T00:00:00.000Z`, ratio, transaction_id: `split-${isin}-${d}`,
     })));
 
-  const events = [...trades, ...dividends, ...spinoffs, ...splitRows].sort(byTime);
+  // Los splits van delante: con la misma hora exacta (una operación a las 00:00:00 UTC de ese día)
+  // el orden estable los deja primero, y la operación no se multiplica dos veces.
+  const events = [...splitRows, ...trades, ...dividends, ...spinoffs].sort(byTime);
   for (const r of events) {
     if (!r.symbol) continue;
     if (r.type === 'SPLIT') {
