@@ -96,6 +96,8 @@ export const deleteTx = (tid) => full(call(`/api/transactions/${encodeURICompone
 export const getRemoved = () => call('/api/transactions/removed');
 export const restoreTx = (tid) => full(call(`/api/transactions/${encodeURIComponent(tid)}/restore`, { method: 'POST' }));
 export const getCash = () => call('/api/cash');
+/** Tope de gasto al mes de una categoría ('total' = todo el gasto); amount vacío lo quita. */
+export const setBudget = (category, amount) => call('/api/budgets', json('PUT', { category, amount }));
 /** Categoría de un comercio para todos sus pagos (category null = la automática). */
 export const setCategory = (merchant, category) => call('/api/categories', json('PUT', { merchant, category }));
 

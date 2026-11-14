@@ -36,3 +36,15 @@ export async function settled(page) {
 
 /** Ancho que sobresale de la ventana (0 = sin scroll horizontal). */
 export const overflow = (page) => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+
+/**
+ * Página con una cartera de ejemplo propia, para las pruebas que cambian datos de la cuenta
+ * (categorías, topes, restaurar una copia): las seis configuraciones corren a la vez y, con la
+ * cuenta compartida, se pisarían unas a otras.
+ */
+export async function ownAccount(browser, testInfo) {
+  const context = await browser.newContext({ ...testInfo.project.use, storageState: undefined });
+  const res = await context.request.post('/api/auth/demo');
+  expect(res.ok()).toBeTruthy();
+  return context.newPage();
+}

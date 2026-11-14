@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "node --env-file-if-exists=.env --watch src/index.js",
     "start": "node --env-file-if-exists=.env src/index.js",
-    "test": "node --test",
+    "test": "node --test --test-force-exit --test-timeout=60000",
     "bench": "node bench/run.js"
   },
   "dependencies": {

@@ -160,7 +160,7 @@ function Statement({ moves, labels, year, years, setYear }) {
   );
 }
 
-export default function Cash({ cash, labels, cats = {}, onCats, fail, portfolioValue }) {
+export default function Cash({ cash, labels, cats = {}, onCats, budgets = {}, onBudgets, fail, portfolioValue }) {
   const [year, setYear] = useParam('año', 'all');
   const [table, setTable] = useState(false);
   const health = useMemo(() => (cash ? cashHealth(cash) : null), [cash]);
@@ -256,7 +256,7 @@ export default function Cash({ cash, labels, cats = {}, onCats, fail, portfolioV
       )}
 
       {tab === 'gastos' && (cash.moves?.some(isSpend)
-        ? <Spending moves={cash.moves} cats={cats} onCats={onCats} fail={fail} />
+        ? <Spending moves={cash.moves} cats={cats} onCats={onCats} budgets={budgets} onBudgets={onBudgets} fail={fail} />
         : <div className="card"><Empty>Tu CSV no tiene pagos con tarjeta ni transferencias salientes.</Empty></div>)}
 
       {tab === 'movimientos' && cash.moves && <Statement moves={cash.moves} labels={labels} year={year} years={years} setYear={setYear} />}

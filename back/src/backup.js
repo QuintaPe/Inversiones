@@ -14,7 +14,7 @@ const isin = (v) => { const s = str(v, 20).trim().toUpperCase(); return s || nul
 
 /**
  * @param text  contenido del archivo .json
- * @returns { exported_at, transactions, prices, valuations, alerts, targets, imports, merchant_categories }
+ * @returns { exported_at, transactions, prices, valuations, alerts, targets, imports, merchant_categories, budgets }
  */
 export function readBackup(text) {
   let raw;
@@ -51,6 +51,8 @@ export function readBackup(text) {
     })).slice(-500),
     merchant_categories: uniq(list(raw.merchant_categories).map((m) => ({ merchant: str(m?.merchant, 200).trim(), category: str(m?.category, 40) }))
       .filter((m) => m.merchant && /^[a-z]+$/.test(m.category)), (m) => m.merchant),
+    budgets: uniq(list(raw.budgets).map((x) => ({ category: str(x?.category, 40), amount: parsePrice(x?.amount) }))
+      .filter((x) => /^[a-z]+$/.test(x.category) && x.amount), (x) => x.category),
   };
 }
 

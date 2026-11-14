@@ -1,6 +1,6 @@
 // Efectivo: pestañas de resumen, gastos (categorías, comercios, recurrentes, pagos), movimientos y análisis.
 import { test, expect } from '@playwright/test';
-import { watchErrors, settled } from './helpers.js';
+import { watchErrors, settled, ownAccount } from './helpers.js';
 
 const tab = (page, name) => page.getByRole('tab', { name }).click();
 
@@ -16,7 +16,8 @@ test('resumen: salud del efectivo, este mes e ingresos y gastos', async ({ page 
   expect(errors).toEqual([]);
 });
 
-test('gastos: por categoría, comercios, recurrentes y cambiar la categoría de un comercio', async ({ page }) => {
+test('gastos: por categoría, comercios, recurrentes y cambiar la categoría de un comercio', async ({ browser }, testInfo) => {
+  const page = await ownAccount(browser, testInfo);
   const errors = watchErrors(page);
   await page.goto('/efectivo');
   await settled(page);
@@ -61,4 +62,27 @@ test('análisis: mapa de gasto por categoría y mes', async ({ page }) => {
   await settled(page);
   await expect(page.getByRole('heading', { name: 'Gasto por categoría y mes' })).toBeVisible();
   await expect(page.locator('.heat tbody tr').first()).toBeVisible();
+});
+
+test('gastos: topes al mes, total y por categoría', async ({ browser }, testInfo) => {
+  const page = await ownAccount(browser, testInfo);
+  const errors = watchErrors(page);
+  await page.goto('/efectivo?ver=gastos');
+  await settled(page);
+  await page.getByRole('button', { name: /topes de gasto/ }).click();
+  await page.getByLabel('Tope de Todo el mes (€)').fill('5000');
+  await page.getByLabel('Tope de Todo el mes (€)').press('Enter');
+  await expect(page.locator('.bud')).toContainText(/Te quedan .* de tu tope de 5\.000,00/);
+  await page.getByLabel('Tope de Todo el mes (€)').fill('1');
+  await page.getByLabel('Tope de Todo el mes (€)').press('Enter');
+  await expect(page.locator('.bud.over')).toContainText('Te has pasado');
+  // Se guarda en la cuenta: sigue ahí al recargar. Vacío lo quita.
+  await page.reload();
+  await settled(page);
+  await expect(page.locator('.bud.over')).toBeVisible();
+  await page.getByRole('button', { name: /topes de gasto/ }).click();
+  await page.getByLabel('Tope de Todo el mes (€)').fill('');
+  await page.getByLabel('Tope de Todo el mes (€)').press('Enter');
+  await expect(page.locator('.bud')).toHaveCount(0);
+  expect(errors).toEqual([]);
 });

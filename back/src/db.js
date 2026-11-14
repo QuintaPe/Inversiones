@@ -177,6 +177,17 @@ const MIGRATIONS = [
       await addColumn(c, 'ALTER TABLE users ADD COLUMN session_v INTEGER NOT NULL DEFAULT 0');
     },
   },
+  {
+    v: 6,
+    name: 'topes de gasto al mes',
+    async up(c) {
+      // Tope mensual por categoría de gasto ('total' = todo el gasto del mes).
+      await c.execute(`CREATE TABLE IF NOT EXISTS budgets (
+         user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+         category TEXT NOT NULL, amount REAL NOT NULL,
+         PRIMARY KEY (user_id, category))`);
+    },
+  },
 ];
 export const SCHEMA_VERSION = MIGRATIONS.at(-1).v;
 
@@ -576,7 +587,7 @@ function makeRepo(client, url, { cache = true } = {}) {
     /** Copia completa de lo que el usuario ha subido o anotado. */
     async exportUser(userId) {
       const q = (sql) => client.execute({ sql, args: [userId] }).then((r) => r.rows.map((x) => ({ ...x })));
-      const [transactions, prices, valuations, alerts, targets, imports, merchant_categories] = await Promise.all([
+      const [transactions, prices, valuations, alerts, targets, imports, merchant_categories, budgets] = await Promise.all([
         q(`SELECT ${ROW_COLS.join(', ')}, source, deleted_at FROM transactions WHERE user_id = ? ORDER BY datetime`),
         q('SELECT isin, price, updated_at FROM prices WHERE user_id = ?'),
         q('SELECT isin, d, price FROM valuations WHERE user_id = ? ORDER BY isin, d'),
@@ -584,8 +595,22 @@ function makeRepo(client, url, { cache = true } = {}) {
         q('SELECT isin, weight FROM targets WHERE user_id = ?'),
         q('SELECT name, uploaded_at, total, relevant, added, sha256 FROM imports WHERE user_id = ? ORDER BY id'),
         q('SELECT merchant, category FROM merchant_categories WHERE user_id = ? ORDER BY merchant'),
+        q('SELECT category, amount FROM budgets WHERE user_id = ? ORDER BY category'),
       ]);
-      return { transactions, prices, valuations, alerts, targets, imports, merchant_categories };
+      return { transactions, prices, valuations, alerts, targets, imports, merchant_categories, budgets };
+    },
+
+    // ---------- topes de gasto al mes ----------
+    /** { categoría: euros al mes }; 'total' es el tope de todo el gasto. */
+    async getBudgets(userId) {
+      const r = await client.execute({ sql: 'SELECT category, amount FROM budgets WHERE user_id = ?', args: [userId] });
+      return Object.fromEntries(r.rows.map((x) => [x.category, x.amount]));
+    },
+    /** amount null quita el tope. */
+    async setBudget(userId, category, amount) {
+      await client.execute(amount
+        ? { sql: 'INSERT INTO budgets (user_id, category, amount) VALUES (?, ?, ?) ON CONFLICT(user_id, category) DO UPDATE SET amount = excluded.amount', args: [userId, category, amount] }
+        : { sql: 'DELETE FROM budgets WHERE user_id = ? AND category = ?', args: [userId, category] });
     },
 
     // ---------- categoría de cada comercio, elegida por el usuario ----------
@@ -754,7 +779,7 @@ function makeRepo(client, url, { cache = true } = {}) {
     /** Borra cuentas enteras, con todos sus datos. */
     async deleteUsers(ids) {
       if (!ids.length) return;
-      const tables = ['transactions', 'prices', 'imports', 'valuations', 'alerts', 'targets', 'history_cache', 'push_subscriptions', 'merchant_categories'];
+      const tables = ['transactions', 'prices', 'imports', 'valuations', 'alerts', 'targets', 'history_cache', 'push_subscriptions', 'merchant_categories', 'budgets'];
       await client.batch(ids.flatMap((id) => [
         ...tables.map((t) => ({ sql: `DELETE FROM ${t} WHERE user_id = ?`, args: [id] })),
         { sql: 'DELETE FROM users WHERE id = ?', args: [id] },
@@ -767,7 +792,7 @@ function makeRepo(client, url, { cache = true } = {}) {
      * sola transacción: o entra entera o no cambia nada.
      */
     async restoreUser(userId, b) {
-      const del = ['transactions', 'prices', 'imports', 'valuations', 'alerts', 'targets', 'history_cache', 'merchant_categories']
+      const del = ['transactions', 'prices', 'imports', 'valuations', 'alerts', 'targets', 'history_cache', 'merchant_categories', 'budgets']
         .map((t) => ({ sql: `DELETE FROM ${t} WHERE user_id = ?`, args: [userId] }));
       const txSql = `INSERT INTO transactions (user_id, ${ROW_COLS.join(', ')}, source, deleted_at) VALUES (?, ${ROW_COLS.map(() => '?').join(', ')}, ?, ?)`;
       try {
@@ -780,6 +805,7 @@ function makeRepo(client, url, { cache = true } = {}) {
           ...b.targets.map((x) => ({ sql: 'INSERT INTO targets (user_id, isin, weight) VALUES (?, ?, ?)', args: [userId, x.isin, x.weight] })),
           ...b.imports.map((x) => ({ sql: 'INSERT INTO imports (user_id, name, uploaded_at, total, relevant, added, sha256) VALUES (?, ?, ?, ?, ?, ?, ?)', args: [userId, x.name, x.uploaded_at, x.total, x.relevant, x.added, x.sha256] })),
           ...b.merchant_categories.map((x) => ({ sql: 'INSERT INTO merchant_categories (user_id, merchant, category) VALUES (?, ?, ?)', args: [userId, x.merchant, x.category] })),
+          ...b.budgets.map((x) => ({ sql: 'INSERT INTO budgets (user_id, category, amount) VALUES (?, ?, ?)', args: [userId, x.category, x.amount] })),
         ], 'write');
       } finally {
         touchRows(userId);
@@ -788,7 +814,7 @@ function makeRepo(client, url, { cache = true } = {}) {
 
     async clearUserData(userId) {
       await client.batch(
-        ['transactions', 'prices', 'imports', 'valuations', 'alerts', 'targets', 'history_cache', 'merchant_categories'].map((t) => ({ sql: `DELETE FROM ${t} WHERE user_id = ?`, args: [userId] })),
+        ['transactions', 'prices', 'imports', 'valuations', 'alerts', 'targets', 'history_cache', 'merchant_categories', 'budgets'].map((t) => ({ sql: `DELETE FROM ${t} WHERE user_id = ?`, args: [userId] })),
         'write',
       );
       touchRows(userId);

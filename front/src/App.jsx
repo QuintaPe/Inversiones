@@ -574,7 +574,8 @@ export default function App() {
             {route === 'operaciones' && <Ledger {...view} />}
             {route === 'dividendos' && <Dividends {...view} />}
             {route === 'fiscalidad' && <Tax {...view} />}
-            {route === 'efectivo' && <Cash cash={cash?.cash} labels={cash?.labels ?? {}} cats={cash?.cats ?? {}} onCats={(cats) => setCash((c) => ({ ...c, cats }))} fail={fail} portfolioValue={whole.val} />}
+            {route === 'efectivo' && <Cash cash={cash?.cash} labels={cash?.labels ?? {}} cats={cash?.cats ?? {}} onCats={(cats) => setCash((c) => ({ ...c, cats }))}
+              budgets={cash?.budgets ?? {}} onBudgets={(budgets) => setCash((c) => ({ ...c, budgets }))} fail={fail} portfolioValue={whole.val} />}
           </div>
           </Suspense>
           </ErrorBoundary>

@@ -1145,3 +1145,14 @@ button.plain{background:none;border:0;padding:0;text-align:left;border-radius:12
 .proj-g{margin:var(--sp-3) 0 0;padding:12px 14px;border-radius:14px;background:var(--surface-2);color:var(--tx-2)}
 .proj-g b{color:var(--tx)}
 @media (max-width:640px){.form.proj-f{grid-template-columns:1fr 1fr}}
+
+/* Topes de gasto */
+.bud{margin:0 0 var(--sp-3)}
+.bud-b{position:relative;height:10px;border-radius:5px;background:var(--surface-2)}
+.bud-b em{position:absolute;inset:0 auto 0 0;border-radius:5px;background:var(--acc-tx)}
+.bud.over .bud-b em{background:var(--loss)}
+.bud-b u{position:absolute;top:-4px;bottom:-4px;width:2px;margin-left:-1px;border-radius:1px;background:var(--tx);opacity:.55}
+.bud p{margin:8px 0 0;color:var(--mu);font-size:var(--fs-sm)}
+.bud p b{color:var(--tx)}
+.bud.over p b{color:var(--loss)}
+.form.bud-f{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));margin-top:var(--sp-3)}

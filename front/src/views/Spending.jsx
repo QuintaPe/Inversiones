@@ -30,7 +30,20 @@ function CatPick({ merchant, value, auto, onPick }) {
   );
 }
 
-export default function Spending({ moves, cats, onCats, fail }) {
+/** Campo de un tope: se guarda al salir o con Intro, solo si ha cambiado. */
+function BudgetInput({ k, label, value, onSave }) {
+  const shown = value ? String(value).replace('.', ',') : '';
+  return (
+    <label><span>{label}</span>
+      <input key={shown} inputMode="decimal" defaultValue={shown} placeholder="Sin tope" aria-label={`Tope de ${label}`}
+        onKeyDown={(ev) => { if (ev.key === 'Enter') ev.currentTarget.blur(); }}
+        onBlur={(ev) => { const v = ev.target.value.trim(); if (v !== shown) onSave(k, v); }} />
+    </label>
+  );
+}
+
+export default function Spending({ moves, cats, onCats, budgets = {}, onBudgets, fail }) {
+  const [editing, setEditing] = useState(false);
   const pays = useMemo(() => moves.filter(isPay), [moves]);
   const months = useMemo(() => [...new Set(pays.map((m) => m[0].slice(0, 7)))].sort(), [pays]);
   const [sel, setSel] = useParam('gasto', null);
@@ -88,6 +101,15 @@ export default function Spending({ moves, cats, onCats, fail }) {
   const pick = async (merchant, category) => {
     try { onCats((await api.setCategory(merchant, category)).cats); } catch (err) { fail(err, 'No se guardó la categoría: '); }
   };
+  const saveBudget = async (k, amount) => {
+    try { onBudgets((await api.setBudget(k, amount)).budgets); } catch (err) { fail(err, 'No se guardó el tope: '); }
+  };
+  // Tope de todo el mes: cuánto queda (o cuánto te has pasado) y por dónde deberías ir a estas alturas.
+  const cap$ = budgets.total > 0 ? budgets.total : null;
+  const today = moves.at(-1)[0];
+  const [yy, mm] = month.split('-').map(Number);
+  const daysIn = new Date(Date.UTC(yy, mm, 0)).getUTCDate();
+  const pace = month === today.slice(0, 7) ? Number(today.slice(8, 10)) / daysIn : 1;
   const go = (d) => { setSel(months[i + d]); setCat(null); };
   const diff = avg != null ? cur.total - avg : null;
 
@@ -111,6 +133,19 @@ export default function Spending({ moves, cats, onCats, fail }) {
 
       <div className="cols spend">
         <Card title={eur(cur.total)} sub={diff == null ? `${spendRows.length} pagos` : `${spendRows.length} pagos · ${diff > 0 ? `${eur(diff)} más` : `${eur(-diff)} menos`} que tu media (${eur(avg)})`} className="spend-sum">
+          {cap$ && (
+            <div className={`bud ${cur.total > cap$ ? 'over' : ''}`}>
+              <div className="bud-b" role="img" aria-label={`Gastado ${Math.round((cur.total / cap$) * 100)} % del tope del mes`}>
+                <em style={{ width: `${Math.min(100, (cur.total / cap$) * 100)}%` }} />
+                {pace < 1 && <u style={{ left: `${pace * 100}%` }} title="Hoy" />}
+              </div>
+              <p>
+                {cur.total > cap$ ? <>Te has pasado <b>{eur(cur.total - cap$)}</b> de tu tope de {eur(cap$)}</>
+                  : <>Te quedan <b>{eur(cap$ - cur.total)}</b> de tu tope de {eur(cap$)}</>}
+                {pace < 1 && cur.total <= cap$ && (cur.total > cap$ * pace ? ' · vas por encima del ritmo' : ' · vas dentro del ritmo')}
+              </p>
+            </div>
+          )}
           {!catRows.length ? <Empty>Sin gastos este mes.</Empty> : (
             <ul className="cat-l">
               {catRows.map(([k, v]) => {
@@ -120,7 +155,8 @@ export default function Spending({ moves, cats, onCats, fail }) {
                     <button type="button" className={cat === k ? 'on' : ''} aria-pressed={cat === k} onClick={() => setCat(cat === k ? null : k)} style={swatch(k)}>
                       <span className="cat-n"><i aria-hidden="true" />{CAT[k].label}</span>
                       <span className="cat-b" aria-hidden="true"><em style={{ width: `${(v / maxCat) * 100}%` }} />{a > 0 && <u style={{ left: `${Math.min(100, (a / maxCat) * 100)}%` }} title={`Media: ${eur(a)}`} />}</span>
-                      <span className="cat-v"><b>{eur(v)}</b><small>{pct((v / cur.total) * 100)}{a > 0 ? ` · media ${eur(a)}` : ''}</small></span>
+                      <span className="cat-v"><b className={budgets[k] > 0 && v > budgets[k] ? 'loss' : ''}>{eur(v)}</b>
+                        <small>{budgets[k] > 0 ? `tope ${eur(budgets[k])}` : pct((v / cur.total) * 100)}{a > 0 ? ` · media ${eur(a)}` : ''}</small></span>
                     </button>
                   </li>
                 );
@@ -128,6 +164,17 @@ export default function Spending({ moves, cats, onCats, fail }) {
             </ul>
           )}
           <p className="cat-hint">Pulsa una categoría para ver solo sus pagos. La raya marca tu media de los últimos meses.</p>
+          <button type="button" className="fold" aria-expanded={editing} onClick={() => setEditing((v) => !v)}>
+            {editing ? 'Ocultar los topes' : Object.keys(budgets).length ? 'Cambiar los topes de gasto' : 'Poner topes de gasto al mes'}
+          </button>
+          {editing && (
+            <div className="form bud-f">
+              <BudgetInput k="total" label="Todo el mes (€)" value={budgets.total} onSave={saveBudget} />
+              {CATS.filter(([k]) => budgets[k] > 0 || prev.concat(month).some((m) => byMonth[m]?.cats[k] > 0)).map(([k, label]) => (
+                <BudgetInput key={k} k={k} label={`${label} (€)`} value={budgets[k]} onSave={saveBudget} />
+              ))}
+            </div>
+          )}
         </Card>
 
         <Card title="Dónde más gastas" sub={cap(monthName(month))}>

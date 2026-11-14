@@ -36,7 +36,7 @@ export default function accountRoutes(api, { db, push, pf }) {
   // Saldo de efectivo reconstruido desde el CSV (null si el CSV se subió antes de guardar el efectivo).
   api.get('/cash', async (req, res) => {
     const rows = await db.getRows(req.userId);
-    res.json({ cash: buildCash(rows), labels: CASH_LABEL, income: buildIncome(rows), cats: await db.getMerchantCategories(req.userId) });
+    res.json({ cash: buildCash(rows), labels: CASH_LABEL, income: buildIncome(rows), cats: await db.getMerchantCategories(req.userId), budgets: await db.getBudgets(req.userId) });
   });
 
   // Categoría de un comercio, para todos sus pagos. { merchant, category } (category null = automática).
@@ -56,6 +56,17 @@ export default function accountRoutes(api, { db, push, pf }) {
     const day = new Date().toISOString().slice(0, 10);
     res.set('Content-Disposition', `attachment; filename="cartera-${day}.json"`)
       .json({ app: 'cartera', version: 2, exported_at: new Date().toISOString(), ...(await db.exportUser(req.userId)) });
+  });
+
+  // Tope de gasto al mes de una categoría ('total' = todo el gasto). { category, amount } (amount vacío lo quita).
+  api.put('/budgets', async (req, res) => {
+    const category = String(req.body?.category ?? '');
+    check(/^[a-z]{1,40}$/.test(category), 'Categoría no válida.');
+    const clear = req.body?.amount == null || req.body.amount === '';
+    const amount = clear ? null : parsePrice(req.body.amount);
+    check(clear || (amount && amount <= 1e9), 'Importe no válido.');
+    await db.setBudget(req.userId, category, amount);
+    res.json({ budgets: await db.getBudgets(req.userId) });
   });
 
   // Restaura una copia descargada con /export: sustituye todos los datos de la cuenta.

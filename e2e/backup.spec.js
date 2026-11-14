@@ -1,8 +1,9 @@
 // Copia de los datos: se descarga desde el menú de la cuenta y se puede restaurar.
 import { test, expect } from '@playwright/test';
-import { watchErrors, settled } from './helpers.js';
+import { watchErrors, settled, ownAccount } from './helpers.js';
 
-test('restaurar una copia: enseña qué trae, avisa de que sustituye y la carga', async ({ page }) => {
+test('restaurar una copia: enseña qué trae, avisa de que sustituye y la carga', async ({ browser }, testInfo) => {
+  const page = await ownAccount(browser, testInfo);
   const errors = watchErrors(page);
   await page.goto('/posiciones');
   await settled(page);

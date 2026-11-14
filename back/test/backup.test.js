@@ -33,6 +33,12 @@ test('copia: lo descargado se restaura idéntico tras borrar los datos', async (
   await call('/api/targets', json('PUT', { targets: { [isin]: 40 } }));
   await call(`/api/prices/${isin}`, json('PUT', { price: 123.45 }));
   await call('/api/categories', json('PUT', { merchant: 'MERCADONA', category: 'super' }));
+  assert.equal((await call('/api/budgets', json('PUT', { category: 'DROP', amount: 5 }))).status, 400);
+  assert.equal((await call('/api/budgets', json('PUT', { category: 'total', amount: -5 }))).status, 400);
+  await call('/api/budgets', json('PUT', { category: 'total', amount: '600,50' }));
+  await call('/api/budgets', json('PUT', { category: 'ocio', amount: 80 }));
+  assert.deepEqual((await call('/api/budgets', json('PUT', { category: 'ocio', amount: '' }))).body.budgets, { total: 600.5 });
+  assert.deepEqual((await call('/api/cash')).body.budgets, { total: 600.5 });
   // Una operación quitada a mano sigue quitada después de restaurar.
   const before = (await call('/api/export')).body;
   const divTid = before.transactions.find((t) => t.type === 'DIVIDEND').transaction_id;
@@ -50,6 +56,7 @@ test('copia: lo descargado se restaura idéntico tras borrar los datos', async (
   assert.equal(pre.transactions, dump.transactions.length - 1);
   assert.equal(pre.removed, 1);
   assert.deepEqual([pre.alerts, pre.targets, pre.prices, pre.categories], [1, 1, 1, 1]);
+  assert.deepEqual((await call('/api/cash')).body.budgets, {}, 'borrar los datos quita también los topes');
   assert.equal((await call('/api/portfolio')).body.positions.length, 0, 'la vista previa no guarda nada');
 
   const done = await call('/api/import', file(text));
