@@ -1,4 +1,7 @@
 import crypto from 'node:crypto';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { createAutoBackup } from './autobackup.js';
 import { createApp } from './app.js';
 import { openDb } from './db.js';
 import { googleVerifier } from './auth.js';
@@ -61,6 +64,14 @@ const cleanDemo = () => app.locals.cleanDemo().then((n) => n && log.info(`Borrad
 cleanDemo();
 const demoTimer = setInterval(cleanDemo, 6 * 3600_000);
 demoTimer.unref();
+
+// Copia diaria de cada cuenta en back/data/backups (o BACKUP_DIR). BACKUP=0 la desactiva.
+// Con la base de datos en memoria (pruebas) no hay nada que conservar.
+if (process.env.BACKUP !== '0' && db.url !== ':memory:') {
+  const dir = process.env.BACKUP_DIR || path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'data', 'backups');
+  const backups = createAutoBackup({ db, dir, daily: Number(process.env.BACKUP_DAILY ?? 14), weekly: Number(process.env.BACKUP_WEEKLY ?? 8), log });
+  stops.push(backups.start());
+}
 
 // Apagado ordenado (despliegues, Ctrl+C): se deja de aceptar tráfico, se cierran los canales de
 // cotizaciones para que las pestañas reconecten con el servidor nuevo, se espera a las

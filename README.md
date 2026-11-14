@@ -168,6 +168,11 @@ compresión y límite de peticiones. Define `PUSH_SUBJECT` con un contacto real 
 - **Registro**: con `NODE_ENV=production` (o `LOG_FORMAT=json`) cada línea es un objeto JSON. Los
   errores sin tratar llevan el identificador de la petición, que también va en la cabecera
   `X-Request-Id` y en la respuesta 500, para poder buscarlos.
+- **Copias automáticas**: una vez al día el servidor guarda cada cuenta en
+  `back/data/backups/AAAA-MM-DD/<usuario>.json.gz` (`BACKUP_DIR` la cambia; `back/src/autobackup.js`),
+  con el mismo formato que «Descargar una copia»: se descomprime (`gunzip`) y se carga con
+  «Restaurar una copia». Conserva las 14 últimas y una por semana de las 8 semanas anteriores.
+  En Docker, monta un volumen en `/app/back/data` para que sobrevivan al contenedor.
 - **Sesiones**: la cookie dura 30 días. «Cerrar en otros dispositivos» (menú de la cuenta)
   invalida todas las demás sesiones del usuario.
 Cualquier persona con cuenta de Google puede registrarse: cada usuario solo ve sus datos.

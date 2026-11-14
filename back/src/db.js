@@ -830,6 +830,11 @@ function makeRepo(client, url, { cache = true } = {}) {
       const r = await client.execute({ sql: 'SELECT id FROM users WHERE id LIKE ? AND created_at < ?', args: [`${prefix}%`, before] });
       return r.rows.map((x) => x.id);
     },
+    /** Identificadores de todas las cuentas. */
+    async listUserIds() {
+      const r = await client.execute('SELECT id FROM users ORDER BY id');
+      return r.rows.map((x) => x.id);
+    },
     /** Borra cuentas enteras, con todos sus datos. */
     async deleteUsers(ids) {
       if (!ids.length) return;
