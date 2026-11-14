@@ -15,6 +15,7 @@ import { sessions, AuthError } from './auth.js';
 import { createHistory } from './history.js';
 import { timing, instrument } from './timing.js';
 import { createStream } from './stream.js';
+import { Invalid, isAssetId, isDate } from './lib/validate.js';
 import { createPortfolio } from './services/portfolio.js';
 import sessionRoutes from './routes/session.js';
 import portfolioRoutes from './routes/portfolio.js';
@@ -125,6 +126,11 @@ export function createApp({ db: rawDb, verifyGoogle, googleClientId, sessionSecr
     next();
   });
 
+  // Parámetros de ruta: se comprueban una vez para todas las rutas que los usan.
+  api.param('isin', (req, res, next, v) => (isAssetId(v) ? next() : res.status(400).json({ error: 'Activo no válido.' })));
+  api.param('d', (req, res, next, v) => (isDate(v) ? next() : res.status(400).json({ error: 'Fecha no válida.' })));
+  api.param('tid', (req, res, next, v) => (v.length <= 200 ? next() : res.status(400).json({ error: 'Operación no válida.' })));
+
   const ctx = { db, quotes, history, logos, push, stream, pf, historyWaitMs, log };
   portfolioRoutes(api, ctx);
   transactionRoutes(api, ctx);
@@ -147,7 +153,7 @@ export function createApp({ db: rawDb, verifyGoogle, googleClientId, sessionSecr
 
   app.use((err, req, res, _next) => {
     if (err instanceof AuthError) return res.status(401).json({ error: err.message });
-    if (err instanceof CsvError || err instanceof BackupError) return res.status(400).json({ error: err.message });
+    if (err instanceof CsvError || err instanceof BackupError || err instanceof Invalid) return res.status(400).json({ error: err.message });
     if (err instanceof multer.MulterError) return res.status(400).json({ error: `Archivo no válido: ${err.message}` });
     log.error('Error sin tratar', { id: req.id, method: req.method, path: req.originalUrl.split('?')[0], user: req.userId ?? null }, err);
     if (res.headersSent) return res.end();

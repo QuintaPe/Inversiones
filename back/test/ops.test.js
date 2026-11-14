@@ -48,3 +48,27 @@ test('registro: texto en desarrollo, una línea JSON con campos en producción',
   const e = JSON.parse(out[1][0]);
   assert.deepEqual([e.level, e.msg, e.ms], ['warn', 'Lenta: GET /x', 12]);
 });
+
+test('validación: activos, fechas y tamaños de lo que llega', async () => {
+  const db = await openDb({ url: ':memory:' });
+  const server = createApp({ db, verifyGoogle: null, googleClientId: null, sessionSecret: 's', slowMs: 0 }).listen(0);
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const cookie = (await fetch(`${base}/api/auth/demo`, { method: 'POST' })).headers.get('set-cookie').split(';')[0];
+  const call = async (method, p, body) => {
+    const res = await fetch(base + p, { method, headers: { cookie, 'content-type': 'application/json' }, body: body && JSON.stringify(body) });
+    return [res.status, (await res.json().catch(() => ({}))).error];
+  };
+  const long = 'X'.repeat(21);
+  assert.deepEqual(await call('PUT', `/api/prices/${long}`, { price: 1 }), [400, 'Activo no válido.']);
+  assert.deepEqual(await call('PUT', '/api/valuations/US0378331005/2025-02-30x', { price: 1 }), [400, 'Fecha no válida.']);
+  assert.deepEqual(await call('PUT', '/api/valuations/US0378331005/2025-02-03', { price: -1 }), [400, 'Precio no válido.']);
+  assert.equal((await call('PUT', '/api/valuations/US0378331005/2025-02-03', { price: '12,5' }))[0], 200);
+  assert.deepEqual(await call('POST', '/api/alerts', { isin: long, dir: 'above', price: 1 }), [400, 'Alerta no válida.']);
+  assert.deepEqual(await call('DELETE', '/api/alerts/1;DROP'), [400, 'Alerta no válida.']);
+  assert.deepEqual(await call('PUT', '/api/targets', { targets: { [long]: 10 } }), [400, 'Activo no válido.']);
+  assert.deepEqual(await call('PUT', '/api/targets', {}), [400, 'Faltan pesos.']);
+  assert.deepEqual(await call('PUT', '/api/prices', { prices: Object.fromEntries(Array.from({ length: 1001 }, (_, i) => [`A${i}`, 1])) }), [400, 'Demasiados precios en una sola petición.']);
+  assert.equal((await call('PUT', '/api/prices', { prices: { US0378331005: 10 } }))[0], 200);
+  assert.equal((await call('PUT', '/api/targets', { targets: { US0378331005: 25 } }))[0], 200);
+  server.close(); db.close();
+});

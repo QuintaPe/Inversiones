@@ -1,7 +1,7 @@
 // Alertas, cartera objetivo, efectivo y categorías, copia de los datos, avisos y borrado.
 import { buildCash, buildIncome, CASH_LABEL } from '../engine.js';
 import multer from 'multer';
-import { parsePrice } from '../lib/validate.js';
+import { parsePrice, isAssetId, assetMap, check } from '../lib/validate.js';
 import { readBackup, backupSummary } from '../backup.js';
 
 const backupFile = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
@@ -12,18 +12,19 @@ export default function accountRoutes(api, { db, push, pf }) {
   // ---------- alertas de precio y cartera objetivo ----------
   api.post('/alerts', async (req, res) => {
     const price = parsePrice(req.body?.price), dir = req.body?.dir, isin = String(req.body?.isin ?? '');
-    if (!price || !['above', 'below'].includes(dir) || !isin) return res.status(400).json({ error: 'Alerta no válida.' });
+    if (!price || !['above', 'below'].includes(dir) || !isAssetId(isin)) return res.status(400).json({ error: 'Alerta no válida.' });
     if ((await db.getAlerts(req.userId)).length >= 200) return res.status(400).json({ error: 'Has llegado al máximo de alertas.' });
     await db.addAlert(req.userId, { isin, dir, price });
     res.json({ alerts: await db.getAlerts(req.userId) });
   });
   api.delete('/alerts/:id', async (req, res) => {
+    check(/^\d{1,15}$/.test(req.params.id), 'Alerta no válida.');
     await db.deleteAlert(req.userId, Number(req.params.id));
     res.json({ alerts: await db.getAlerts(req.userId) });
   });
   api.put('/targets', async (req, res) => {
     const clean = {};
-    for (const [isin, w] of Object.entries(req.body?.targets ?? {})) {
+    for (const [isin, w] of assetMap(req.body?.targets, 500, 'pesos')) {
       const n = w == null || w === '' ? null : Number(w);
       if (n != null && !(n >= 0 && n <= 100)) return res.status(400).json({ error: 'Los pesos van de 0 a 100.' });
       clean[isin] = n;

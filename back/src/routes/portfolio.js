@@ -2,7 +2,7 @@
 import crypto from 'node:crypto';
 import multer from 'multer';
 import { parseCsv } from '../engine.js';
-import { parsePrice, isDate } from '../lib/validate.js';
+import { parsePrice, assetMap, check } from '../lib/validate.js';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 
@@ -74,7 +74,7 @@ export default function portfolioRoutes(api, { db, quotes, logos, stream, pf }) 
   api.get('/valuations', async (req, res) => res.json({ valuations: await db.getValuations(req.userId) }));
   api.put('/valuations/:isin/:d', async (req, res) => {
     const price = parsePrice(req.body?.price);
-    if (!isDate(req.params.d) || !price) return res.status(400).json({ error: 'Fecha o precio no válidos.' });
+    check(price, 'Precio no válido.');
     await db.setValuation(req.userId, req.params.isin, req.params.d, price);
     res.json({ valuations: await db.getValuations(req.userId) });
   });
@@ -86,7 +86,7 @@ export default function portfolioRoutes(api, { db, quotes, logos, stream, pf }) 
   // Varios precios a la vez: { prices: { ISIN: precio, … } }
   api.put('/prices', async (req, res) => {
     const valid = Object.fromEntries(
-      Object.entries(req.body?.prices ?? {}).map(([k, v]) => [k, parsePrice(v)]).filter(([, v]) => v),
+      assetMap(req.body?.prices, 1000, 'precios').map(([k, v]) => [k, parsePrice(v)]).filter(([, v]) => v),
     );
     await db.setPrices(req.userId, valid);
     res.json({ updated: Object.keys(valid).length });
