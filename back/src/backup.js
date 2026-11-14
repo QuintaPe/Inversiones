@@ -5,6 +5,9 @@ import { isDate, parsePrice } from './lib/validate.js';
 
 export class BackupError extends Error {}
 
+/** Tipos de cuenta del patrimonio: lo que se tiene y, con 'debt', lo que se debe. */
+export const ACCOUNT_KINDS = ['cash', 'deposit', 'property', 'other', 'debt'];
+
 const MAX_ROWS = 200_000;
 const MAX_FIELD = 500;
 const str = (v, max = MAX_FIELD) => (v == null ? '' : String(v).slice(0, max));
@@ -20,7 +23,7 @@ export function readBackup(text) {
   let raw;
   try { raw = JSON.parse(text); } catch { throw new BackupError('El archivo no es una copia válida (no es JSON).'); }
   if (raw?.app !== 'cartera' || !Array.isArray(raw.transactions)) throw new BackupError('El archivo no es una copia descargada desde esta app.');
-  if (!(raw.version >= 1 && raw.version <= 2)) throw new BackupError('La copia es de una versión de la app que no se puede restaurar aquí.');
+  if (!(raw.version >= 1 && raw.version <= 3)) throw new BackupError('La copia es de una versión de la app que no se puede restaurar aquí.');
   if (raw.transactions.length > MAX_ROWS) throw new BackupError('La copia tiene demasiadas operaciones.');
 
   const seen = new Set();
@@ -55,6 +58,11 @@ export function readBackup(text) {
       .filter((x) => /^[a-z]+$/.test(x.category) && x.amount), (x) => x.category),
     watchlist: uniq(list(raw.watchlist).map((x) => ({ isin: isin(x?.isin), name: str(x?.name, 80).trim(), added_at: stamp(x?.added_at) ?? now }))
       .filter((x) => x.isin && x.name), (x) => x.isin).slice(0, 200),
+    accounts: list(raw.accounts).map((a) => ({
+      name: str(a?.name, 60).trim(), kind: ACCOUNT_KINDS.includes(a?.kind) ? a.kind : 'other', created_at: stamp(a?.created_at) ?? now,
+      balances: uniq(list(a?.balances).map((y) => ({ d: str(y?.d, 10), amount: Number(y?.amount) }))
+        .filter((y) => isDate(y.d) && y.amount >= 0 && y.amount <= 1e12), (y) => y.d).slice(-1000),
+    })).filter((a) => a.name).slice(0, 50),
     asset_notes: uniq(list(raw.asset_notes).map((x) => ({ isin: isin(x?.isin), note: str(x?.note, 2000).trim() }))
       .filter((x) => x.isin && x.note), (x) => x.isin),
   };

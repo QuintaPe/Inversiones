@@ -68,6 +68,7 @@ se añade una migración nueva al final; las ya publicadas no se tocan.
 | `alerts`, `targets`, `push_subscriptions` | Alertas, cartera objetivo y dispositivos con avisos |
 | `merchant_categories`, `budgets` | Categoría que el usuario elige para un comercio y topes de gasto al mes |
 | `watchlist`, `asset_notes` | Valores en seguimiento (sin tenerlos) y nota libre de cada activo |
+| `accounts`, `account_balances` | Patrimonio: otras cuentas, bienes y deudas, con el saldo que el usuario anota en cada fecha |
 
 Los importes se guardan como texto decimal exacto, tal cual vienen en el CSV. De los pagos
 con tarjeta se guarda el comercio y su código de categoría (MCC), y de las transferencias el
@@ -90,6 +91,10 @@ en una sola transacción y valida cada dato del archivo antes de guardarlo (`bac
 - **Topes de gasto** (Efectivo → Gastos): al mes, total y por categoría.
 - **Seguimiento** (Posiciones): valores que no tienes, por ISIN, cotizados con tu cartera.
 - **Nota de cada activo** en su ficha.
+- **Patrimonio** (Efectivo → Patrimonio): patrimonio neto sumando a la cartera y al efectivo las cuentas,
+  depósitos, inmuebles y deudas que anotes a mano, con su evolución a fin de cada mes (`shared/wealth.js`).
+- **Buscador** (Ctrl/⌘ + K): va a secciones y valores y ejecuta acciones (añadir operación, subir CSV,
+  ocultar importes, tema, copias, cerrar sesión).
 
 ## Alertas y avisos
 

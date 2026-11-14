@@ -48,7 +48,7 @@ export function createAutoBackup({ db, dir, daily = 14, weekly = 8, skip = 'demo
       if (id.startsWith(skip)) continue;
       const data = await db.exportUser(id);
       if (!data.transactions.length) continue; // cuenta vacía: nada que perder
-      const body = await gzip(JSON.stringify({ app: 'cartera', version: 2, exported_at: at, ...data }));
+      const body = await gzip(JSON.stringify({ app: 'cartera', version: 3, exported_at: at, ...data }));
       // Se escribe aparte y se renombra: una copia a medias nunca pisa la buena del mismo día.
       const file = path.join(out, `${id.replace(/[^\w.-]/g, '_')}.json.gz`);
       await fs.writeFile(`${file}.tmp`, body, { mode: 0o600 });

@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 // Acceso a Turso (libSQL). Sin TURSO_DATABASE_URL usa un fichero SQLite local,
 // para poder desarrollar sin tocar la base de datos remota.
 import { createClient } from '@libsql/client';
@@ -203,6 +204,27 @@ const MIGRATIONS = [
            user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
            isin TEXT NOT NULL, note TEXT NOT NULL, updated_at TEXT NOT NULL,
            PRIMARY KEY (user_id, isin))`,
+      ], 'write');
+    },
+  },
+  {
+    v: 8,
+    name: 'patrimonio: otras cuentas, bienes y deudas con sus saldos fechados',
+    async up(c) {
+      await c.batch([
+        // Lo que el usuario tiene (o debe) fuera de la cartera: kind = cash | deposit | property | other | debt.
+        `CREATE TABLE IF NOT EXISTS accounts (
+           id TEXT PRIMARY KEY,
+           user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+           name TEXT NOT NULL, kind TEXT NOT NULL, created_at TEXT NOT NULL)`,
+        'CREATE INDEX IF NOT EXISTS accounts_user ON accounts (user_id)',
+        // Saldo anotado a mano en una fecha; siempre positivo (en una deuda, lo que se debe).
+        `CREATE TABLE IF NOT EXISTS account_balances (
+           account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+           user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+           d TEXT NOT NULL, amount REAL NOT NULL,
+           PRIMARY KEY (account_id, d))`,
+        'CREATE INDEX IF NOT EXISTS account_balances_user ON account_balances (user_id)',
       ], 'write');
     },
   },
@@ -617,7 +639,13 @@ function makeRepo(client, url, { cache = true } = {}) {
         q('SELECT isin, name, added_at FROM watchlist WHERE user_id = ? ORDER BY isin'),
         q('SELECT isin, note FROM asset_notes WHERE user_id = ? ORDER BY isin'),
       ]);
-      return { transactions, prices, valuations, alerts, targets, imports, merchant_categories, budgets, watchlist, asset_notes };
+      // Cada cuenta del patrimonio con sus saldos; el identificador no viaja (al restaurar se crea otro).
+      const [acc, bal] = await Promise.all([
+        q('SELECT id, name, kind, created_at FROM accounts WHERE user_id = ? ORDER BY created_at, id'),
+        q('SELECT account_id, d, amount FROM account_balances WHERE user_id = ? ORDER BY d'),
+      ]);
+      const accounts = acc.map(({ id, ...a }) => ({ ...a, balances: bal.filter((b) => b.account_id === id).map((b) => ({ d: b.d, amount: b.amount })) }));
+      return { transactions, prices, valuations, alerts, targets, imports, merchant_categories, budgets, watchlist, asset_notes, accounts };
     },
 
     // ---------- seguimiento y notas ----------
@@ -825,6 +853,46 @@ function makeRepo(client, url, { cache = true } = {}) {
       await client.execute({ sql: 'DELETE FROM valuations WHERE user_id = ? AND isin = ? AND d = ?', args: [userId, isin, d] });
     },
 
+    // ---------- patrimonio: otras cuentas, bienes y deudas ----------
+    /** [{ id, name, kind, created_at, balances: [{ d, amount }] }], con los saldos por fecha. */
+    async getAccounts(userId) {
+      const [acc, bal] = await Promise.all([
+        client.execute({ sql: 'SELECT id, name, kind, created_at FROM accounts WHERE user_id = ? ORDER BY created_at, id', args: [userId] }),
+        client.execute({ sql: 'SELECT account_id, d, amount FROM account_balances WHERE user_id = ? ORDER BY d', args: [userId] }),
+      ]);
+      const by = Map.groupBy(bal.rows, (r) => r.account_id);
+      return acc.rows.map((a) => ({ ...a, balances: (by.get(a.id) ?? []).map((r) => ({ d: r.d, amount: r.amount })) }));
+    },
+    async addAccount(userId, { name, kind }) {
+      const id = crypto.randomUUID();
+      await client.execute({ sql: 'INSERT INTO accounts (id, user_id, name, kind, created_at) VALUES (?, ?, ?, ?, ?)', args: [id, userId, name, kind, now()] });
+      return id;
+    },
+    /** false si la cuenta no es del usuario. */
+    async updateAccount(userId, id, { name, kind }) {
+      const r = await client.execute({ sql: 'UPDATE accounts SET name = ?, kind = ? WHERE id = ? AND user_id = ?', args: [name, kind, id, userId] });
+      return r.rowsAffected > 0;
+    },
+    async deleteAccount(userId, id) {
+      await client.batch([
+        { sql: 'DELETE FROM account_balances WHERE account_id = ? AND user_id = ?', args: [id, userId] },
+        { sql: 'DELETE FROM accounts WHERE id = ? AND user_id = ?', args: [id, userId] },
+      ], 'write');
+    },
+    /** Anota (o corrige) el saldo de una cuenta en una fecha. false si la cuenta no es del usuario. */
+    async setAccountBalance(userId, id, d, amount) {
+      const r = await client.execute({
+        sql: `INSERT INTO account_balances (account_id, user_id, d, amount)
+              SELECT id, user_id, ?, ? FROM accounts WHERE id = ? AND user_id = ?
+              ON CONFLICT(account_id, d) DO UPDATE SET amount = excluded.amount`,
+        args: [d, amount, id, userId],
+      });
+      return r.rowsAffected > 0;
+    },
+    async deleteAccountBalance(userId, id, d) {
+      await client.execute({ sql: 'DELETE FROM account_balances WHERE account_id = ? AND user_id = ? AND d = ?', args: [id, userId, d] });
+    },
+
     /** Cuentas cuyo id empieza por `prefix` creadas antes de `before` (ISO). */
     async staleUsers(prefix, before) {
       const r = await client.execute({ sql: 'SELECT id FROM users WHERE id LIKE ? AND created_at < ?', args: [`${prefix}%`, before] });
@@ -838,7 +906,7 @@ function makeRepo(client, url, { cache = true } = {}) {
     /** Borra cuentas enteras, con todos sus datos. */
     async deleteUsers(ids) {
       if (!ids.length) return;
-      const tables = ['transactions', 'prices', 'imports', 'valuations', 'alerts', 'targets', 'history_cache', 'push_subscriptions', 'merchant_categories', 'budgets', 'watchlist', 'asset_notes'];
+      const tables = ['transactions', 'prices', 'imports', 'valuations', 'alerts', 'targets', 'history_cache', 'push_subscriptions', 'merchant_categories', 'budgets', 'watchlist', 'asset_notes', 'account_balances', 'accounts'];
       await client.batch(ids.flatMap((id) => [
         ...tables.map((t) => ({ sql: `DELETE FROM ${t} WHERE user_id = ?`, args: [id] })),
         { sql: 'DELETE FROM users WHERE id = ?', args: [id] },
@@ -851,7 +919,7 @@ function makeRepo(client, url, { cache = true } = {}) {
      * sola transacción: o entra entera o no cambia nada.
      */
     async restoreUser(userId, b) {
-      const del = ['transactions', 'prices', 'imports', 'valuations', 'alerts', 'targets', 'history_cache', 'merchant_categories', 'budgets', 'watchlist', 'asset_notes']
+      const del = ['transactions', 'prices', 'imports', 'valuations', 'alerts', 'targets', 'history_cache', 'merchant_categories', 'budgets', 'watchlist', 'asset_notes', 'account_balances', 'accounts']
         .map((t) => ({ sql: `DELETE FROM ${t} WHERE user_id = ?`, args: [userId] }));
       const txSql = `INSERT INTO transactions (user_id, ${ROW_COLS.join(', ')}, source, deleted_at) VALUES (?, ${ROW_COLS.map(() => '?').join(', ')}, ?, ?)`;
       try {
@@ -867,6 +935,14 @@ function makeRepo(client, url, { cache = true } = {}) {
           ...b.watchlist.map((x) => ({ sql: 'INSERT INTO watchlist (user_id, isin, name, added_at) VALUES (?, ?, ?, ?)', args: [userId, x.isin, x.name, x.added_at] })),
           ...b.asset_notes.map((x) => ({ sql: 'INSERT INTO asset_notes (user_id, isin, note, updated_at) VALUES (?, ?, ?, ?)', args: [userId, x.isin, x.note, now()] })),
           ...b.budgets.map((x) => ({ sql: 'INSERT INTO budgets (user_id, category, amount) VALUES (?, ?, ?)', args: [userId, x.category, x.amount] })),
+          // Las cuentas reciben un identificador nuevo: el de la copia podría ser de otra cuenta de usuario.
+          ...(b.accounts ?? []).flatMap((x) => {
+            const id = crypto.randomUUID();
+            return [
+              { sql: 'INSERT INTO accounts (id, user_id, name, kind, created_at) VALUES (?, ?, ?, ?, ?)', args: [id, userId, x.name, x.kind, x.created_at] },
+              ...x.balances.map((y) => ({ sql: 'INSERT INTO account_balances (account_id, user_id, d, amount) VALUES (?, ?, ?, ?)', args: [id, userId, y.d, y.amount] })),
+            ];
+          }),
         ], 'write');
       } finally {
         touchRows(userId);
@@ -875,7 +951,7 @@ function makeRepo(client, url, { cache = true } = {}) {
 
     async clearUserData(userId) {
       await client.batch(
-        ['transactions', 'prices', 'imports', 'valuations', 'alerts', 'targets', 'history_cache', 'merchant_categories', 'budgets', 'watchlist', 'asset_notes'].map((t) => ({ sql: `DELETE FROM ${t} WHERE user_id = ?`, args: [userId] })),
+        ['transactions', 'prices', 'imports', 'valuations', 'alerts', 'targets', 'history_cache', 'merchant_categories', 'budgets', 'watchlist', 'asset_notes', 'account_balances', 'accounts'].map((t) => ({ sql: `DELETE FROM ${t} WHERE user_id = ?`, args: [userId] })),
         'write',
       );
       touchRows(userId);

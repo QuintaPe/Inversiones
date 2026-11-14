@@ -5,6 +5,7 @@ import { Lines, Columns, Diverge } from '../charts.jsx';
 import { useParam } from '../router.js';
 import { cashHealth, spendOf, incomeOf, investOf } from '../../../shared/cash.js';
 import Spending from './Spending.jsx';
+import Wealth from './Wealth.jsx';
 import { prettyName, categoryOf, isSpend, CAT } from '../lib/categories.js';
 import { eur, eurS, pct, sign, date, dateLong, month, compact } from '../lib/format.js';
 
@@ -15,7 +16,7 @@ const dec1 = (n) => n.toFixed(1).replace('.', ',');
 const KINDS = [['all', 'Todo'], ['deposit', 'Ingresos'], ['card', 'Tarjeta'], ['withdrawal', 'Retiradas'], ['invest', 'Inversión'], ['rent', 'Rentas'], ['rest', 'Otros']];
 const IN_KIND = { rent: ['dividend', 'interest', 'reward'], rest: ['tax', 'other'] };
 const PAGE = 80;
-const TABS = { resumen: 'resumen', gastos: 'gastos', movimientos: 'movimientos', analisis: 'analisis' };
+const TABS = { resumen: 'resumen', gastos: 'gastos', movimientos: 'movimientos', analisis: 'analisis', patrimonio: 'patrimonio' };
 
 /** Mapa de gasto: categorías (filas) por mes (columnas); el color, cuánto pesa en su fila. */
 function Heatmap({ moves, cats, months }) {
@@ -160,7 +161,7 @@ function Statement({ moves, labels, year, years, setYear }) {
   );
 }
 
-export default function Cash({ cash, labels, cats = {}, onCats, budgets = {}, onBudgets, fail, portfolioValue }) {
+export default function Cash({ cash, labels, cats = {}, onCats, budgets = {}, onBudgets, fail, portfolioValue, hist }) {
   const [year, setYear] = useParam('año', 'all');
   const [table, setTable] = useState(false);
   const health = useMemo(() => (cash ? cashHealth(cash) : null), [cash]);
@@ -215,7 +216,7 @@ export default function Cash({ cash, labels, cats = {}, onCats, budgets = {}, on
         </div>
       </section>
 
-      <Sticky><Tabs label="Apartado" value={tab} onChange={setTab} items={[['resumen', 'Resumen'], ['gastos', 'Gastos'], ['movimientos', 'Movimientos'], ['analisis', 'Análisis']]} /></Sticky>
+      <Sticky><Tabs label="Apartado" value={tab} onChange={setTab} items={[['resumen', 'Resumen'], ['gastos', 'Gastos'], ['movimientos', 'Movimientos'], ['analisis', 'Análisis'], ['patrimonio', 'Patrimonio']]} /></Sticky>
 
       {tab === 'resumen' && (
         <>
@@ -260,6 +261,8 @@ export default function Cash({ cash, labels, cats = {}, onCats, budgets = {}, on
         : <div className="card"><Empty>Tu CSV no tiene pagos con tarjeta ni transferencias salientes.</Empty></div>)}
 
       {tab === 'movimientos' && cash.moves && <Statement moves={cash.moves} labels={labels} year={year} years={years} setYear={setYear} />}
+
+      {tab === 'patrimonio' && <Wealth portfolioValue={portfolioValue} cash={cash} hist={hist} fail={fail} />}
 
       {tab === 'analisis' && (
         <>

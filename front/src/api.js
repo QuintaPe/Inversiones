@@ -110,3 +110,10 @@ export const deleteAlert = (id) => call(`/api/alerts/${id}`, { method: 'DELETE' 
 export const setTargets = (targets) => call('/api/targets', json('PUT', { targets }));
 
 export const clearData = () => full(call('/api/data', { method: 'DELETE' }));
+
+// Patrimonio: otras cuentas, bienes y deudas, con saldos anotados a mano.
+export const getAccounts = () => call('/api/accounts');
+export const addAccount = (account) => call('/api/accounts', json('POST', account));
+export const removeAccount = (id) => call(`/api/accounts/${id}`, { method: 'DELETE' });
+export const setAccountBalance = (id, amount, d) => call(`/api/accounts/${id}/balances`, json('PUT', { amount, d }));
+export const removeAccountBalance = (id, d) => call(`/api/accounts/${id}/balances/${d}`, { method: 'DELETE' });

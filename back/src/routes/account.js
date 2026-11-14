@@ -1,8 +1,8 @@
 // Alertas, cartera objetivo, efectivo y categorías, copia de los datos, avisos y borrado.
 import { buildCash, buildIncome, CASH_LABEL } from '../engine.js';
 import multer from 'multer';
-import { parsePrice, isAssetId, assetMap, check } from '../lib/validate.js';
-import { readBackup, backupSummary } from '../backup.js';
+import { parsePrice, isAssetId, isDate, assetMap, check } from '../lib/validate.js';
+import { readBackup, backupSummary, ACCOUNT_KINDS } from '../backup.js';
 
 const backupFile = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
@@ -57,7 +57,7 @@ export default function accountRoutes(api, { db, push, pf, quotes }) {
   api.get('/export', async (req, res) => {
     const day = new Date().toISOString().slice(0, 10);
     res.set('Content-Disposition', `attachment; filename="cartera-${day}.json"`)
-      .json({ app: 'cartera', version: 2, exported_at: new Date().toISOString(), ...(await db.exportUser(req.userId)) });
+      .json({ app: 'cartera', version: 3, exported_at: new Date().toISOString(), ...(await db.exportUser(req.userId)) });
   });
 
   // ---------- valores en seguimiento y nota de cada activo ----------
@@ -88,6 +88,54 @@ export default function accountRoutes(api, { db, push, pf, quotes }) {
     check(note.length <= 2000, 'La nota es demasiado larga (máximo 2.000 caracteres).');
     await db.setNote(req.userId, req.params.isin, note);
     res.json({ isin: req.params.isin, note: note || null });
+  });
+
+  // ---------- patrimonio: otras cuentas, bienes y deudas, con saldos anotados a mano ----------
+  const readAccount = (body) => {
+    const name = String(body?.name ?? '').trim();
+    check(name.length >= 1 && name.length <= 60, 'Escribe un nombre de hasta 60 caracteres.');
+    check(ACCOUNT_KINDS.includes(body?.kind), 'Tipo de cuenta no válido.');
+    return { name, kind: body.kind };
+  };
+  // Saldo: cero o positivo (en una deuda, lo que queda por pagar), en una fecha que no sea futura.
+  const readBalance = (body) => {
+    const amount = typeof body?.amount === 'number' ? body.amount : parseFloat(String(body?.amount ?? '').replace(',', '.'));
+    check(Number.isFinite(amount) && amount >= 0 && amount <= 1e12, 'Importe no válido.');
+    const d = body?.d ?? new Date().toISOString().slice(0, 10);
+    check(isDate(d) && d >= '1970-01-01' && d <= new Date().toISOString().slice(0, 10), 'Fecha no válida.');
+    return { d, amount };
+  };
+  const accountId = (req) => { check(/^[0-9a-f-]{36}$/.test(req.params.id), 'Cuenta no válida.'); return req.params.id; };
+  const accounts = async (req, res) => res.json({ accounts: await db.getAccounts(req.userId) });
+
+  api.get('/accounts', accounts);
+  // Crea la cuenta con su primer saldo: { name, kind, amount, d? }.
+  api.post('/accounts', async (req, res) => {
+    const acc = readAccount(req.body), bal = readBalance(req.body);
+    check((await db.getAccounts(req.userId)).length < 50, 'Has llegado al máximo de cuentas.');
+    await db.setAccountBalance(req.userId, await db.addAccount(req.userId, acc), bal.d, bal.amount);
+    return accounts(req, res);
+  });
+  api.put('/accounts/:id', async (req, res) => {
+    if (!(await db.updateAccount(req.userId, accountId(req), readAccount(req.body)))) return res.status(404).json({ error: 'Cuenta no encontrada.' });
+    return accounts(req, res);
+  });
+  api.delete('/accounts/:id', async (req, res) => {
+    await db.deleteAccount(req.userId, accountId(req));
+    return accounts(req, res);
+  });
+  // Anota el saldo de un día (el mismo día se corrige): { amount, d? }.
+  api.put('/accounts/:id/balances', async (req, res) => {
+    const id = accountId(req), bal = readBalance(req.body);
+    const acc = (await db.getAccounts(req.userId)).find((a) => a.id === id);
+    if (!acc) return res.status(404).json({ error: 'Cuenta no encontrada.' });
+    check(acc.balances.length < 1000 || acc.balances.some((b) => b.d === bal.d), 'Demasiados saldos anotados en esta cuenta.');
+    await db.setAccountBalance(req.userId, id, bal.d, bal.amount);
+    return accounts(req, res);
+  });
+  api.delete('/accounts/:id/balances/:d', async (req, res) => {
+    await db.deleteAccountBalance(req.userId, accountId(req), req.params.d);
+    return accounts(req, res);
   });
 
   // Tope de gasto al mes de una categoría ('total' = todo el gasto). { category, amount } (amount vacío lo quita).

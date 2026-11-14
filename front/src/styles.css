@@ -1182,3 +1182,18 @@ button.plain{background:none;border:0;padding:0;text-align:left;border-radius:12
 .demo-pill{background:color-mix(in srgb,var(--acc) 14%,var(--surface));box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--acc) 34%,transparent);color:var(--tx)}
 .demo-pill svg{color:var(--acc-tx)}
 @media(max-width:640px){.demo-pill{width:40px;padding:0;justify-content:center}.demo-pill span{display:none}}
+
+/* ---------- patrimonio: cuentas, bienes y deudas anotados a mano ---------- */
+.accts{list-style:none;padding:0;margin:0 0 var(--sp-4)}
+.acct{padding:var(--sp-3) 0;border-bottom:1px solid var(--line)}
+.acct-h{display:flex;align-items:center;gap:var(--sp-3)}
+.acct-n{display:flex;flex-direction:column;min-width:0;margin-right:auto}
+.acct-n b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.acct-n small{color:var(--mu);font-size:var(--fs-xs)}
+.acct-v{font-variant-numeric:tabular-nums;white-space:nowrap}
+.acct-h .btn{padding:7px 12px;font-size:var(--fs-sm)}
+.acct-b{padding-top:var(--sp-3)}
+.acct-x{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:var(--sp-2);margin-top:var(--sp-2)}
+.acct-x .btn{padding:7px 12px;font-size:var(--fs-sm)}
+.form.acct-f select{width:100%;border-radius:12px;padding:11px 12px}
+.acct-add{align-self:end;justify-self:start}
