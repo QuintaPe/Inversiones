@@ -84,6 +84,9 @@ en una sola transacción y valida cada dato del archivo antes de guardarlo (`bac
 
 - **Rentabilidad**: por periodo, con tus aportaciones (Dietz), ponderada por tiempo, anualizada
   (TIR, desde tres meses), caída máxima, volatilidad e índices con tus mismas aportaciones.
+- **Índices de referencia** (`shared/benchmarks.js`): MSCI World, S&P 500, FTSE All-World, Euro Stoxx 50, emergentes
+  y bonos globales, cada uno con el ETF que lo replica en euros. En el detalle de rentabilidad del Resumen puedes
+  definir tu propio índice mezclándolos (por ejemplo 80 % MSCI World y 20 % bonos); se guarda en tu cuenta.
 - **Proyección** (Resumen): aportación mensual, rentabilidad esperada ±3 puntos y una meta de
   patrimonio con la fecha en que se alcanza. El plan se guarda en tu cuenta y, si lo fijas, la app
   te dice si vas por delante o por detrás de él (`shared/plan.js`).

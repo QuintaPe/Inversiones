@@ -103,6 +103,13 @@ test('ajustes: el plan de la proyección se valida, se guarda en la cuenta, viaj
   assert.deepEqual((await a('/api/portfolio')).body.settings, { plan });
   assert.deepEqual((await b('/api/portfolio')).body.settings, {});
 
+  // Índice de referencia propio: índices conocidos, sin repetir y sumando 100.
+  for (const bad of [{ parts: [] }, { parts: [{ key: 'world', w: 50 }] }, { parts: [{ key: 'nasdaq', w: 100 }] }, { parts: [{ key: 'world', w: 50 }, { key: 'world', w: 50 }] }, { parts: 'world' }]) {
+    assert.equal((await a('/api/settings/benchmark', json('PUT', { value: bad }))).status, 400, JSON.stringify(bad));
+  }
+  r = await a('/api/settings/benchmark', json('PUT', { value: { parts: [{ key: 'world', w: 80 }, { key: 'bonds', w: '20' }] } }));
+  assert.deepEqual(r.body.settings.benchmark, { parts: [{ key: 'world', w: 80 }, { key: 'bonds', w: 20 }] });
+  await a('/api/settings/benchmark', json('PUT', { value: null }));
   const exported = (await a('/api/export')).body;
   assert.deepEqual(exported.settings, [{ key: 'plan', value: plan }]);
   r = await a('/api/settings/plan', json('PUT', { value: null }));

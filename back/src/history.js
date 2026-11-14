@@ -3,14 +3,13 @@
 
 import { HISTORY_V } from './db.js';
 
+import { BENCHMARKS } from '../../shared/benchmarks.js';
+
 const DAY = 86400000;
 const iso = (ms) => new Date(ms).toISOString().slice(0, 10);
 const ms = (d) => Date.parse(`${d}T00:00:00Z`);
 const STALE_MS = 6 * 3600 * 1000;
-export const BENCHMARKS = [
-  { key: 'world', name: 'MSCI World', symbol: 'IWDA.AS' },
-  { key: 'sp500', name: 'S&P 500', symbol: 'SXR8.DE' },
-];
+export { BENCHMARKS };
 
 /** Valor en `d` de una serie [[fecha, valor]] ordenada, arrastrando el último dato conocido. */
 function reader(rows) {

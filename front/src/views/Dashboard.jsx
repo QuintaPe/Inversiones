@@ -5,6 +5,8 @@ import { investedSeries, allocation, monthlyDividends, sum } from '../../../shar
 import { prepare, periodStats, gainBetween } from '../../../shared/perf.js';
 import { useTween } from '../hooks.js';
 import Projection from './Projection.jsx';
+import BenchEditor from './BenchEditor.jsx';
+import { withBlend, MINE } from '../../../shared/benchmarks.js';
 import { RANGE_NAME, useRange } from '../lib/periods.js';
 import { Kpi, Spark, VsBars } from '../components/Kpi.jsx';
 import { country, classLabel, region, sector, industry, currency, exchange } from '../lib/countries.js';
@@ -79,10 +81,11 @@ export default function Dashboard({ a, hist, histProgress, flt, cash, onOpen, go
   // Con un filtro de tipo, las series de ese tipo (el servidor las manda si la cartera mezcla tipos).
   const h = useMemo(() => {
     if (!hist) return null;
-    if (flt === 'all') return prepare(hist);
+    // El índice propio del usuario (si lo ha definido) va el primero: es con el que se compara.
+    if (flt === 'all') return prepare(withBlend(hist, settings?.benchmark));
     const g = hist.groups?.[flt];
-    return g ? prepare({ ...hist, ...g }) : null;
-  }, [hist, flt]);
+    return g ? prepare(withBlend({ ...hist, ...g }, settings?.benchmark)) : null;
+  }, [hist, flt, settings?.benchmark]);
   const st = useMemo(() => (h ? periodStats(h, start) : null), [h, start]);
   const loading = hist === undefined;
 
@@ -142,7 +145,7 @@ export default function Dashboard({ a, hist, histProgress, flt, cash, onOpen, go
     const world = st?.bench.find((b) => b.mwr != null);
     if (world && st.mwr != null) {
       const diff = st.mwr - world.mwr;
-      out.push({ key: 'bench', label: `Frente al ${world.name}`, value: `${diff >= 0 ? '+' : '−'}${num(Math.abs(diff))} p. p.`, tone: sign(diff),
+      out.push({ key: 'bench', label: world.key === MINE ? 'Frente a tu índice' : `Frente al ${world.name}`, value: `${diff >= 0 ? '+' : '−'}${num(Math.abs(diff))} p. p.`, tone: sign(diff),
         sub: `${RANGE_NAME[range]}, con tus mismas aportaciones`, onClick: () => setMode('perf'),
         spark: <VsBars rows={[
           { label: 'Tú', v: st.mwr, text: pctS(st.mwr), cls: 'vs-me' },
@@ -220,7 +223,7 @@ export default function Dashboard({ a, hist, histProgress, flt, cash, onOpen, go
       const rel = (g) => (st.avg > 0 ? (g / st.avg) * 100 : 0);
       const mineG = x.map((_, i) => gainBetween(h, st.i0, i + from));
       const mine = mineG.map(rel);
-      const bs = st.bench.filter((b) => b.g).map((b, k) => ({ key: b.key, name: b.name, cls: `b${k + 1}`, g: b.g, values: b.g.map(rel) }));
+      const bs = st.bench.filter((b) => b.g).slice(0, 2).map((b, k) => ({ key: b.key, name: b.name, cls: `b${k + 1}`, g: b.g, values: b.g.map(rel) }));
       chart = (
         <Lines x={x} height={280} base={0} scale={(v) => `${v.toLocaleString("es-ES")} %`} label="Resultado acumulado frente a los índices con las mismas aportaciones" onHover={(i) => setHover(i == null ? null : i + from)}
           series={[{ key: 'me', values: mine, cls: 'vs-me' }, ...bs]}
@@ -401,6 +404,7 @@ export default function Dashboard({ a, hist, histProgress, flt, cash, onOpen, go
                       <tr key={b.key}>
                         <th scope="row">
                           {b.name}
+                          {b.key === MINE && <small>{h.benchmarks[0].mix}</small>}
                           {b.mwr != null && <small>{st.gain >= b.gain ? 'Lo bates por' : 'Te bate por'} {eur(Math.abs(st.gain - b.gain))}</small>}
                         </th>
                         <td>{b.mwr != null ? pctS(b.mwr) : '—'}</td>
@@ -409,6 +413,7 @@ export default function Dashboard({ a, hist, histProgress, flt, cash, onOpen, go
                     ))}
                   </tbody>
                 </table>
+                {onSetting && flt === 'all' && <BenchEditor value={settings?.benchmark} onSave={(v) => onSetting('benchmark', v)} />}
               </>
             )}
 

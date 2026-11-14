@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/app.js';
 import { openDb } from '../src/db.js';
+import { BENCHMARKS } from '../../shared/benchmarks.js';
 
 const CSV = [
   '"datetime","date","category","type","asset_class","name","symbol","shares","price","amount","fee","tax","description","transaction_id"',
@@ -61,7 +62,7 @@ test('el histórico lento responde enseguida con su progreso y se guarda para de
   assert.equal(r.history.d[0], '2025-01-02');
   const downloads = quotes.downloads;
   // Mientras se reconstruía, las preguntas repetidas no lanzaron otra reconstrucción.
-  assert.ok(downloads <= 3, `descargas: ${downloads}`);
+  assert.ok(downloads <= 1 + BENCHMARKS.length, `descargas: ${downloads}`); // el valor y los índices de referencia
   s.stop();
 
   // Tras reiniciar el servidor, la serie guardada sale sin descargar nada.

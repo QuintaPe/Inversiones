@@ -1,6 +1,7 @@
 // Ajustes que el usuario guarda en su cuenta (tabla user_settings): cada clave tiene su forma,
 // y nada entra en la base de datos sin pasar por aquí (peticiones y copias restauradas).
 import { isDate } from './validate.js';
+import { BENCHMARK_KEYS } from '../../../shared/benchmarks.js';
 
 const num = (v, min, max) => {
   if (v == null || v === '') return null;
@@ -21,6 +22,15 @@ const SHAPES = {
     if (out.since != null && !(isDate(out.since) && out.since <= new Date().toISOString().slice(0, 10))) return undefined;
     if ((out.since == null) !== (out.start == null)) return undefined; // van juntos
     return out;
+  },
+  // Índice de referencia propio: mezcla de los índices disponibles, con pesos que suman 100.
+  benchmark(v) {
+    if (!v || typeof v !== 'object' || !Array.isArray(v.parts) || v.parts.length < 1 || v.parts.length > BENCHMARK_KEYS.length) return undefined;
+    const parts = v.parts.map((p) => ({ key: p?.key, w: num(p?.w, 0.01, 100) }));
+    if (parts.some((p) => !BENCHMARK_KEYS.includes(p.key) || p.w == null)) return undefined;
+    if (new Set(parts.map((p) => p.key)).size !== parts.length) return undefined;
+    if (Math.abs(parts.reduce((t, p) => t + p.w, 0) - 100) > 0.05) return undefined;
+    return { parts };
   },
 };
 

@@ -57,3 +57,24 @@ test('informe de riesgo: dos valores iguales no diversifican; uno opuesto sí; e
   assert.equal(riskReport([{ key: 'A', v: 1, rows: prices(up) }, { key: 'N', v: 1, rows: [] }]), null);
   assert.equal(riskReport([]), null);
 });
+
+test('índice propio: una parte lo pone primero; una mezcla pondera desde el primer día en que todas cotizan', async () => {
+  const { withBlend, MINE } = await import('../../shared/benchmarks.js');
+  const h = {
+    d: ['d0', 'd1', 'd2', 'd3'],
+    benchmarks: [
+      { key: 'world', name: 'MSCI World', c: [100, 110, 121, 121] },
+      { key: 'sp500', name: 'S&P 500', c: [50, 50, 50, 50] },
+      { key: 'bonds', name: 'Bonos globales', c: [null, 200, null, 220] },
+    ],
+  };
+  assert.equal(withBlend(h, null), h);
+  assert.equal(withBlend(h, { parts: [{ key: 'nope', w: 100 }] }), h);
+  assert.deepEqual(withBlend(h, { parts: [{ key: 'sp500', w: 100 }] }).benchmarks.map((b) => b.key), ['sp500', 'world', 'bonds']);
+  const mix = withBlend(h, { parts: [{ key: 'world', w: 80 }, { key: 'bonds', w: 20 }] });
+  assert.deepEqual(mix.benchmarks.map((b) => b.key), [MINE, 'world', 'sp500', 'bonds']);
+  // Empieza en d1 (los bonos no cotizan antes); en d2 los bonos arrastran su último cierre.
+  assert.deepEqual(mix.benchmarks[0].c, [null, 100, 108, 110]);
+  assert.equal(mix.benchmarks[0].mix, '80 % MSCI World + 20 % Bonos globales');
+  assert.equal(h.benchmarks.length, 3);
+});
