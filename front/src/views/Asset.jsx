@@ -341,7 +341,25 @@ function Valuations({ p, onPrice, onChange }) {
   );
 }
 
-export default function Asset({ x, totalVal, yearBase, onBack, onPrice, liveQuotes, onHistoryChange, onAddOp, onRemoveOp, alerts = [], patch, fail }) {
+/** Nota libre del activo: por qué lo tienes, qué vigilar. Se guarda al salir del campo. */
+function NoteCard({ p, onNote }) {
+  const [text, setText] = useState(p.note ?? '');
+  const [saved, setSaved] = useState(false);
+  const save = async () => {
+    if (text.trim() === (p.note ?? '')) return;
+    if (await onNote(p.isin, text)) { setSaved(true); setTimeout(() => setSaved(false), 1600); }
+  };
+  return (
+    <Card title="Tu nota" sub="Por qué lo tienes, a qué precio venderías, qué vigilar">
+      <div className="note-f">
+        <textarea value={text} onChange={(ev) => setText(ev.target.value)} onBlur={save} maxLength={2000} aria-label={`Nota sobre ${p.name}`} placeholder="Escribe aquí tu tesis de inversión…" />
+        <small role="status">{saved ? 'Guardada.' : 'Solo la ves tú. Se guarda al salir del campo.'}</small>
+      </div>
+    </Card>
+  );
+}
+
+export default function Asset({ x, totalVal, yearBase, onBack, onPrice, liveQuotes, onHistoryChange, onAddOp, onRemoveOp, alerts = [], patch, fail, onNote }) {
   const { p } = x;
   const [range, setRange] = useParam('periodo', 'max', { 1: '1m', 3: '3m', 6: '6m', ytd: 'año', 12: '1a', max: 'max' });
   const [tab, setTab] = useParam('ver', 'resumen', { ops: 'operaciones', sim: 'simulador', alerts: 'alertas' });
@@ -561,6 +579,7 @@ export default function Asset({ x, totalVal, yearBase, onBack, onPrice, liveQuot
 
           {p.open && hist === null && (isMasked() ? <Hidden title="Valoraciones" /> : <Valuations p={p} onPrice={onPrice} onChange={onHistoryChange} />)}
 
+          <NoteCard key={p.isin} p={p} onNote={onNote} />
           <Card title={p.open ? 'Cómo se calcula' : 'Resultado'}
             sub={totalRet != null ? `Resultado + dividendos: ${eurS(totalRet)}${p.cost > 0 ? ` (${pctS((totalRet / p.cost) * 100)})` : ''}` : undefined}>
             <button type="button" className="fold" aria-expanded={steps} onClick={() => setSteps((v) => !v)}>

@@ -57,7 +57,7 @@ export function createApp({ db: rawDb, verifyGoogle, googleClientId, sessionSecr
   const app = express();
   // Todo acceso a la base de datos y a los proveedores de precios se mide (Server-Timing).
   const db = instrument(rawDb, 'db');
-  const quotes = instrument(rawQuotes, 'ext', ['quoteIsins', 'resolveIsins', 'history']);
+  const quotes = instrument(rawQuotes, 'ext', ['quoteIsins', 'resolveIsins', 'history', 'nameOf']);
   const session = sessions(sessionSecret);
   const history = quotes?.history ? createHistory({ db, quotes }) : null;
   const watcher = createAlertWatcher({ db, quotes, push, log });

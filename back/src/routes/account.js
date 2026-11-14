@@ -6,7 +6,9 @@ import { readBackup, backupSummary } from '../backup.js';
 
 const backupFile = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
-export default function accountRoutes(api, { db, push, pf }) {
+const ISIN_RE = /^[A-Z]{2}[A-Z0-9]{9}\d$/;
+
+export default function accountRoutes(api, { db, push, pf, quotes }) {
   const { portfolio } = pf;
 
   // ---------- alertas de precio y cartera objetivo ----------
@@ -56,6 +58,36 @@ export default function accountRoutes(api, { db, push, pf }) {
     const day = new Date().toISOString().slice(0, 10);
     res.set('Content-Disposition', `attachment; filename="cartera-${day}.json"`)
       .json({ app: 'cartera', version: 2, exported_at: new Date().toISOString(), ...(await db.exportUser(req.userId)) });
+  });
+
+  // ---------- valores en seguimiento y nota de cada activo ----------
+  api.get('/watchlist', async (req, res) => res.json({ watch: await db.getWatch(req.userId) }));
+  // Añade un valor por su ISIN: se busca su símbolo, se cotiza y se guarda con su nombre.
+  api.post('/watchlist', async (req, res) => {
+    const isin = String(req.body?.isin ?? '').trim().toUpperCase();
+    check(ISIN_RE.test(isin), 'Escribe un ISIN válido (12 caracteres, como US0378331005).');
+    check((await db.getWatch(req.userId)).length < 200, 'Has llegado al máximo de valores en seguimiento.');
+    let name = String(req.body?.name ?? '').trim().slice(0, 80);
+    if (quotes) {
+      const { quotes: found, resolved, failed } = await quotes.quoteIsins([isin], await db.getSymbols());
+      await db.saveSymbols(resolved);
+      if (failed.length) return res.status(404).json({ error: 'No encuentro cotización para ese ISIN.' });
+      await db.setLivePrices(found);
+      name ||= (await quotes.nameOf?.(isin)) ?? '';
+    }
+    await db.addWatch(req.userId, { isin, name: name || (await db.getNames([isin]))[isin] || isin });
+    res.json({ watch: await db.getWatch(req.userId) });
+  });
+  api.delete('/watchlist/:isin', async (req, res) => {
+    await db.deleteWatch(req.userId, req.params.isin);
+    res.json({ watch: await db.getWatch(req.userId) });
+  });
+  // Nota libre de un activo ({ note }; vacía la borra).
+  api.put('/notes/:isin', async (req, res) => {
+    const note = String(req.body?.note ?? '').trim();
+    check(note.length <= 2000, 'La nota es demasiado larga (máximo 2.000 caracteres).');
+    await db.setNote(req.userId, req.params.isin, note);
+    res.json({ isin: req.params.isin, note: note || null });
   });
 
   // Tope de gasto al mes de una categoría ('total' = todo el gasto). { category, amount } (amount vacío lo quita).

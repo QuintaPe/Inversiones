@@ -333,6 +333,17 @@ export default function App() {
     }
   }, [fail, refreshQuotes]);
 
+  const onNote = useCallback(async (isin, note) => {
+    try {
+      const r = await api.setNote(isin, note);
+      setData((d) => ({ ...d, positions: d.positions.map((p) => (p.isin === isin ? { ...p, note: r.note } : p)) }));
+      return true;
+    } catch (err) {
+      fail(err, 'No se guardó la nota: ');
+      return false;
+    }
+  }, [fail]);
+
   const wipe = async () => {
     if (!(await confirm({ title: '¿Borrar todos tus datos?', text: 'Se eliminan tus operaciones, precios, valoraciones, alertas y objetivos. No se puede deshacer: descarga antes una copia si quieres conservarlos.', action: 'Borrar todo', danger: true }))) return;
     try {
@@ -569,7 +580,7 @@ export default function App() {
           <div className="view" key={`${path}|${hidden ? 1 : 0}`}>
             {route === 'activo' && (assetRow
               ? <Asset x={assetRow} totalVal={whole.val} yearBase={yearBase} onBack={back} onPrice={onPrice} liveQuotes={liveOn} onHistoryChange={reloadHistory}
-                  onAddOp={setOpForm} onRemoveOp={removeOp} alerts={(data.alerts ?? []).filter((al) => al.isin === arg)} patch={patch} fail={fail} />
+                  onAddOp={setOpForm} onRemoveOp={removeOp} alerts={(data.alerts ?? []).filter((al) => al.isin === arg)} patch={patch} fail={fail} onNote={onNote} />
               : <div className="card"><p className="empty">No tienes ninguna posición con el ISIN {arg}.</p></div>)}
             {route === 'resumen' && <Dashboard {...view} />}
             {route === 'posiciones' && <Positions {...view} />}

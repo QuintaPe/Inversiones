@@ -188,6 +188,24 @@ const MIGRATIONS = [
          PRIMARY KEY (user_id, category))`);
     },
   },
+  {
+    v: 7,
+    name: 'valores en seguimiento y notas de cada activo',
+    async up(c) {
+      await c.batch([
+        // Valores que el usuario sigue sin tenerlos en cartera.
+        `CREATE TABLE IF NOT EXISTS watchlist (
+           user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+           isin TEXT NOT NULL, name TEXT NOT NULL, added_at TEXT NOT NULL,
+           PRIMARY KEY (user_id, isin))`,
+        // Nota libre por activo (por qué lo compré, qué vigilar).
+        `CREATE TABLE IF NOT EXISTS asset_notes (
+           user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+           isin TEXT NOT NULL, note TEXT NOT NULL, updated_at TEXT NOT NULL,
+           PRIMARY KEY (user_id, isin))`,
+      ], 'write');
+    },
+  },
 ];
 export const SCHEMA_VERSION = MIGRATIONS.at(-1).v;
 
@@ -587,7 +605,7 @@ function makeRepo(client, url, { cache = true } = {}) {
     /** Copia completa de lo que el usuario ha subido o anotado. */
     async exportUser(userId) {
       const q = (sql) => client.execute({ sql, args: [userId] }).then((r) => r.rows.map((x) => ({ ...x })));
-      const [transactions, prices, valuations, alerts, targets, imports, merchant_categories, budgets] = await Promise.all([
+      const [transactions, prices, valuations, alerts, targets, imports, merchant_categories, budgets, watchlist, asset_notes] = await Promise.all([
         q(`SELECT ${ROW_COLS.join(', ')}, source, deleted_at FROM transactions WHERE user_id = ? ORDER BY datetime`),
         q('SELECT isin, price, updated_at FROM prices WHERE user_id = ?'),
         q('SELECT isin, d, price FROM valuations WHERE user_id = ? ORDER BY isin, d'),
@@ -596,8 +614,44 @@ function makeRepo(client, url, { cache = true } = {}) {
         q('SELECT name, uploaded_at, total, relevant, added, sha256 FROM imports WHERE user_id = ? ORDER BY id'),
         q('SELECT merchant, category FROM merchant_categories WHERE user_id = ? ORDER BY merchant'),
         q('SELECT category, amount FROM budgets WHERE user_id = ? ORDER BY category'),
+        q('SELECT isin, name, added_at FROM watchlist WHERE user_id = ? ORDER BY isin'),
+        q('SELECT isin, note FROM asset_notes WHERE user_id = ? ORDER BY isin'),
       ]);
-      return { transactions, prices, valuations, alerts, targets, imports, merchant_categories, budgets };
+      return { transactions, prices, valuations, alerts, targets, imports, merchant_categories, budgets, watchlist, asset_notes };
+    },
+
+    // ---------- seguimiento y notas ----------
+    /** Valores en seguimiento con su última cotización guardada (si la hay). */
+    async getWatch(userId) {
+      const r = await client.execute({
+        sql: `SELECT w.isin, w.name, w.added_at, q.price, q.info, q.updated_at
+              FROM watchlist w LEFT JOIN quotes q ON q.isin = w.isin WHERE w.user_id = ? ORDER BY w.name COLLATE NOCASE`,
+        args: [userId],
+      });
+      return r.rows.map((x) => ({ isin: x.isin, name: x.name, added_at: x.added_at, price: x.price ?? null, priceAt: x.updated_at ?? null, info: x.info ? JSON.parse(x.info) : null }));
+    },
+    /** ISIN en seguimiento de varios usuarios, sin repetir. */
+    async getWatchIsins(userIds) {
+      if (!userIds.length) return [];
+      const r = await client.execute({ sql: `SELECT DISTINCT isin FROM watchlist WHERE user_id IN (${userIds.map(() => '?').join(',')})`, args: userIds });
+      return r.rows.map((x) => x.isin);
+    },
+    async addWatch(userId, { isin, name }) {
+      await client.execute({ sql: 'INSERT INTO watchlist (user_id, isin, name, added_at) VALUES (?, ?, ?, ?) ON CONFLICT(user_id, isin) DO UPDATE SET name = excluded.name', args: [userId, isin, name, now()] });
+    },
+    async deleteWatch(userId, isin) {
+      await client.execute({ sql: 'DELETE FROM watchlist WHERE user_id = ? AND isin = ?', args: [userId, isin] });
+    },
+    /** { ISIN: nota }. */
+    async getNotes(userId) {
+      const r = await client.execute({ sql: 'SELECT isin, note FROM asset_notes WHERE user_id = ?', args: [userId] });
+      return Object.fromEntries(r.rows.map((x) => [x.isin, x.note]));
+    },
+    /** Nota vacía la borra. */
+    async setNote(userId, isin, note) {
+      await client.execute(note
+        ? { sql: 'INSERT INTO asset_notes (user_id, isin, note, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(user_id, isin) DO UPDATE SET note = excluded.note, updated_at = excluded.updated_at', args: [userId, isin, note, now()] }
+        : { sql: 'DELETE FROM asset_notes WHERE user_id = ? AND isin = ?', args: [userId, isin] });
     },
 
     // ---------- topes de gasto al mes ----------
@@ -779,7 +833,7 @@ function makeRepo(client, url, { cache = true } = {}) {
     /** Borra cuentas enteras, con todos sus datos. */
     async deleteUsers(ids) {
       if (!ids.length) return;
-      const tables = ['transactions', 'prices', 'imports', 'valuations', 'alerts', 'targets', 'history_cache', 'push_subscriptions', 'merchant_categories', 'budgets'];
+      const tables = ['transactions', 'prices', 'imports', 'valuations', 'alerts', 'targets', 'history_cache', 'push_subscriptions', 'merchant_categories', 'budgets', 'watchlist', 'asset_notes'];
       await client.batch(ids.flatMap((id) => [
         ...tables.map((t) => ({ sql: `DELETE FROM ${t} WHERE user_id = ?`, args: [id] })),
         { sql: 'DELETE FROM users WHERE id = ?', args: [id] },
@@ -792,7 +846,7 @@ function makeRepo(client, url, { cache = true } = {}) {
      * sola transacción: o entra entera o no cambia nada.
      */
     async restoreUser(userId, b) {
-      const del = ['transactions', 'prices', 'imports', 'valuations', 'alerts', 'targets', 'history_cache', 'merchant_categories', 'budgets']
+      const del = ['transactions', 'prices', 'imports', 'valuations', 'alerts', 'targets', 'history_cache', 'merchant_categories', 'budgets', 'watchlist', 'asset_notes']
         .map((t) => ({ sql: `DELETE FROM ${t} WHERE user_id = ?`, args: [userId] }));
       const txSql = `INSERT INTO transactions (user_id, ${ROW_COLS.join(', ')}, source, deleted_at) VALUES (?, ${ROW_COLS.map(() => '?').join(', ')}, ?, ?)`;
       try {
@@ -805,6 +859,8 @@ function makeRepo(client, url, { cache = true } = {}) {
           ...b.targets.map((x) => ({ sql: 'INSERT INTO targets (user_id, isin, weight) VALUES (?, ?, ?)', args: [userId, x.isin, x.weight] })),
           ...b.imports.map((x) => ({ sql: 'INSERT INTO imports (user_id, name, uploaded_at, total, relevant, added, sha256) VALUES (?, ?, ?, ?, ?, ?, ?)', args: [userId, x.name, x.uploaded_at, x.total, x.relevant, x.added, x.sha256] })),
           ...b.merchant_categories.map((x) => ({ sql: 'INSERT INTO merchant_categories (user_id, merchant, category) VALUES (?, ?, ?)', args: [userId, x.merchant, x.category] })),
+          ...b.watchlist.map((x) => ({ sql: 'INSERT INTO watchlist (user_id, isin, name, added_at) VALUES (?, ?, ?, ?)', args: [userId, x.isin, x.name, x.added_at] })),
+          ...b.asset_notes.map((x) => ({ sql: 'INSERT INTO asset_notes (user_id, isin, note, updated_at) VALUES (?, ?, ?, ?)', args: [userId, x.isin, x.note, now()] })),
           ...b.budgets.map((x) => ({ sql: 'INSERT INTO budgets (user_id, category, amount) VALUES (?, ?, ?)', args: [userId, x.category, x.amount] })),
         ], 'write');
       } finally {
@@ -814,7 +870,7 @@ function makeRepo(client, url, { cache = true } = {}) {
 
     async clearUserData(userId) {
       await client.batch(
-        ['transactions', 'prices', 'imports', 'valuations', 'alerts', 'targets', 'history_cache', 'merchant_categories', 'budgets'].map((t) => ({ sql: `DELETE FROM ${t} WHERE user_id = ?`, args: [userId] })),
+        ['transactions', 'prices', 'imports', 'valuations', 'alerts', 'targets', 'history_cache', 'merchant_categories', 'budgets', 'watchlist', 'asset_notes'].map((t) => ({ sql: `DELETE FROM ${t} WHERE user_id = ?`, args: [userId] })),
         'write',
       );
       touchRows(userId);

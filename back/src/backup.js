@@ -53,6 +53,10 @@ export function readBackup(text) {
       .filter((m) => m.merchant && /^[a-z]+$/.test(m.category)), (m) => m.merchant),
     budgets: uniq(list(raw.budgets).map((x) => ({ category: str(x?.category, 40), amount: parsePrice(x?.amount) }))
       .filter((x) => /^[a-z]+$/.test(x.category) && x.amount), (x) => x.category),
+    watchlist: uniq(list(raw.watchlist).map((x) => ({ isin: isin(x?.isin), name: str(x?.name, 80).trim(), added_at: stamp(x?.added_at) ?? now }))
+      .filter((x) => x.isin && x.name), (x) => x.isin).slice(0, 200),
+    asset_notes: uniq(list(raw.asset_notes).map((x) => ({ isin: isin(x?.isin), note: str(x?.note, 2000).trim() }))
+      .filter((x) => x.isin && x.note), (x) => x.isin),
   };
 }
 

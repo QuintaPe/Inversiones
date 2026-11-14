@@ -57,7 +57,8 @@ se añade una migración nueva al final; las ya publicadas no se tocan.
 | `prices`, `valuations` | Precios y valoraciones que el usuario fija a mano |
 | `symbols`, `price_history`, `symbol_divs`, `symbol_splits`, `history_meta` | Caché global de mercado |
 | `alerts`, `targets`, `push_subscriptions` | Alertas, cartera objetivo y dispositivos con avisos |
-| `merchant_categories` | Categoría que el usuario elige para un comercio |
+| `merchant_categories`, `budgets` | Categoría que el usuario elige para un comercio y topes de gasto al mes |
+| `watchlist`, `asset_notes` | Valores en seguimiento (sin tenerlos) y nota libre de cada activo |
 
 Los importes se guardan como texto decimal exacto, tal cual vienen en el CSV. De los pagos
 con tarjeta se guarda el comercio y su código de categoría (MCC), y de las transferencias el
@@ -68,7 +69,24 @@ completa de los datos del usuario, y «Restaurar una copia» (menú de la cuenta
 `POST /api/import`) la vuelve a cargar: enseña qué trae, sustituye todo lo que hay en la cuenta
 en una sola transacción y valida cada dato del archivo antes de guardarlo (`back/src/backup.js`).
 
+## Qué más hace
+
+- **Rentabilidad**: por periodo, con tus aportaciones (Dietz), ponderada por tiempo, anualizada
+  (TIR, desde tres meses), caída máxima, volatilidad e índices con tus mismas aportaciones.
+- **Proyección** (Resumen): aportación mensual, rentabilidad esperada ±3 puntos y una meta de
+  patrimonio con la fecha en que se alcanza. Lo que escribes se queda en el navegador.
+- **Antes de que acabe el año** (Fiscalidad): qué baja tu cuota si afloras hoy cada pérdida
+  latente (con el límite del 25 % y lo que quedaría pendiente) y cuánta ganancia puedes realizar
+  sin pagar más.
+- **Topes de gasto** (Efectivo → Gastos): al mes, total y por categoría.
+- **Seguimiento** (Posiciones): valores que no tienes, por ISIN, cotizados con tu cartera.
+- **Nota de cada activo** en su ficha.
+
 ## Alertas y avisos
+
+Hay alertas de precio (sube o baja de un nivel) y de movimiento (el valor se mueve más de un
+porcentaje en el día, en cualquier sentido). Cada una salta una sola vez.
+
 
 El servidor cotiza cada pocos minutos (`ALERT_SWEEP_MIN`) los valores con alertas pendientes
 y avisa por Web Push a los dispositivos donde el usuario lo haya activado, aunque la app

@@ -1157,3 +1157,16 @@ button.plain{background:none;border:0;padding:0;text-align:left;border-radius:12
 .bud p b{color:var(--tx)}
 .bud.over p b{color:var(--loss)}
 .form.bud-f{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));margin-top:var(--sp-3)}
+
+/* Seguimiento y nota del activo */
+.watch-l{list-style:none;margin:0;padding:0}
+.watch-l li{display:flex;align-items:center;gap:var(--sp-3);padding:12px 0;border-top:1px solid var(--line)}
+.watch-l li:first-child{border-top:0}
+.watch-n{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.watch-n b,.watch-n .link{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;font-weight:600}
+.watch-n small,.watch-v small{color:var(--mu);font-size:12.5px}
+.watch-v{display:flex;flex-direction:column;align-items:flex-end;gap:2px;font-variant-numeric:tabular-nums}
+.watch-v small.gain{color:var(--gain)}.watch-v small.loss{color:var(--loss)}
+.note-f textarea{width:100%;min-height:84px;resize:vertical;background:var(--surface-2);border:0;border-radius:12px;padding:11px 12px;font:inherit;font-size:14.5px;color:var(--tx);box-shadow:inset 0 0 0 1px var(--edge)}
+.note-f textarea:focus{outline:0;box-shadow:0 0 0 2px var(--acc-tx)}
+.note-f small{display:block;margin-top:6px;color:var(--mu);font-size:12.5px}

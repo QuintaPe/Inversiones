@@ -222,6 +222,12 @@ export function createQuotes({ fetchImpl = fetch, now = () => Date.now(), sleep 
     return { quotes: out, resolved, failed };
   }
 
+  /** Nombre de un valor por su ISIN, o null. */
+  async function nameOf(isin) {
+    const hit = (await search(isin).catch(() => []))[0];
+    return hit?.longname || hit?.shortname || null;
+  }
+
   /** Resuelve los ISIN que falten en `symbols`; devuelve solo los nuevos. */
   async function resolveIsins(isins, symbols = {}) {
     const resolved = {};
@@ -263,7 +269,7 @@ export function createQuotes({ fetchImpl = fetch, now = () => Date.now(), sleep 
   }
 
   return {
-    quoteIsins, resolveIsins, history,
+    quoteIsins, resolveIsins, history, nameOf,
     /** Proveedores en pausa por fallos seguidos: { servidor: milisegundos que faltan }. */
     paused: () => Object.fromEntries([...breakers].filter(([, b]) => now() < b.until).map(([h, b]) => [h, b.until - now()])),
   };

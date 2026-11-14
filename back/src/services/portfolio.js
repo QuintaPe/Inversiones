@@ -46,7 +46,7 @@ export function createPortfolio({ db, quotes, history, watcher }) {
   }
 
   async function portfolio(userId) {
-    const [rows, symbols, { prices, lastUpload, alerts, targets }] = await Promise.all([db.getRows(userId), db.getSymbols(), db.getUserState(userId)]);
+    const [rows, symbols, { prices, lastUpload, alerts, targets }, notes] = await Promise.all([db.getRows(userId), db.getSymbols(), db.getUserState(userId), db.getNotes(userId)]);
     const b = await built(userId, rows, symbols);
     // Copias: las posiciones calculadas se comparten entre peticiones.
     const positions = b.positions.map(({ evs: _e, lots: _l, ...p }) => {
@@ -61,6 +61,7 @@ export function createPortfolio({ db, quotes, history, watcher }) {
         quotable: !!symbols[p.isin]?.symbol, // hay una fuente de precio, aunque ahora mande uno a mano
         sector: symbols[p.isin]?.sector ?? null,
         industry: symbols[p.isin]?.industry ?? null,
+        note: notes[p.isin] ?? null,
       };
     });
     return {
@@ -89,6 +90,8 @@ export function createPortfolio({ db, quotes, history, watcher }) {
         (p.priceSource === 'manual' ? manual : wanted).add(p.isin);
       }
     }
+    // Los valores en seguimiento también se cotizan (su precio se guarda con los demás).
+    for (const isin of await db.getWatchIsins(userIds)) wanted.add(isin);
     const known = await db.getSymbols();
     const { quotes: found, resolved, failed } = await quotes.quoteIsins([...wanted], known);
     // Las que tienen precio a mano también se buscan, para poder ofrecer la vuelta a la cotización.
