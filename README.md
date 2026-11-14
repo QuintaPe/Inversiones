@@ -90,6 +90,9 @@ en una sola transacción y valida cada dato del archivo antes de guardarlo (`bac
 - **Antes de que acabe el año** (Fiscalidad): qué baja tu cuota si afloras hoy cada pérdida
   latente (con el límite del 25 % y lo que quedaría pendiente) y cuánta ganancia puedes realizar
   sin pagar más.
+- **Análisis de riesgo** (Posiciones → Análisis): volatilidad de la cartera, qué parte del riesgo aporta cada
+  valor, posiciones efectivas y correlación entre valores, con las rentabilidades semanales del último año
+  (`GET /api/risk`, `shared/risk.js`). Solo usa el histórico ya guardado.
 - **Simular ventas** (Fiscalidad → Simular): varias ventas a la vez y su efecto conjunto en la declaración
   del año: las pérdidas de unas compensan las ganancias de otras (`shared/sales.js`).
 - **Topes de gasto** (Efectivo → Gastos): al mes, total y por categoría.

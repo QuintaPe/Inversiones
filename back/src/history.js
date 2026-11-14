@@ -278,6 +278,34 @@ export function createHistory({ db, quotes, now = () => Date.now() }) {
       return out;
     },
 
+    /**
+     * Cierres en euros de los últimos `days` días de varios ISIN, con sus fechas y solo con lo
+     * ya guardado (no descarga nada): { ISIN: [[día, precio], …] }. Para el análisis de riesgo.
+     */
+    async closes(isins, days = 370) {
+      const symbols = await db.getSymbols();
+      const bySym = {};
+      for (const isin of isins) {
+        const s = symbols[isin]?.symbol;
+        if (s && !s.startsWith('NAV:')) (bySym[s] ??= []).push(isin);
+      }
+      const syms = Object.keys(bySym);
+      if (!syms.length) return {};
+      const meta = await db.getHistoryMeta();
+      const fxs = [...new Set(syms.map((s) => meta[s]?.currency).filter((c) => c && c !== 'EUR'))].map((c) => `${c}EUR=X`);
+      const from = iso(now() - days * DAY);
+      const hist = { ...(await db.getHistorySince(syms, from)), ...(await db.getHistorySince(fxs, iso(now() - (days + 30) * DAY))) };
+      const out = {};
+      for (const s of syms) {
+        const cur = meta[s]?.currency;
+        if (!cur || !hist[s]) continue;
+        const rate = cur === 'EUR' ? () => 1 : reader(hist[`${cur}EUR=X`] ?? []);
+        const rows = hist[s].map(([d, c]) => { const r = rate(d); return r ? [d, +(c * r).toFixed(4)] : null; }).filter(Boolean);
+        if (rows.length >= 2) for (const isin of bySym[s]) out[isin] = rows;
+      }
+      return out;
+    },
+
     /** Cierres en euros de un ISIN: [[fecha, precio]]. */
     async asset(isin, from) {
       const symbols = await db.getSymbols();

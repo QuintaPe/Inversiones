@@ -1218,3 +1218,12 @@ button.plain{background:none;border:0;padding:0;text-align:left;border-radius:12
 .proj-t b{color:var(--tx);font-variant-numeric:tabular-nums}.proj-t b.gain{color:var(--gain)}.proj-t b.loss{color:var(--loss)}
 .proj-tb{display:flex;gap:var(--sp-2);flex-wrap:wrap}
 .proj-tb .btn{padding:7px 12px;font-size:var(--fs-sm);background:var(--surface-3)}
+
+/* ---------- posiciones: análisis de riesgo (tabla de correlaciones) ---------- */
+.corr-w{overflow-x:auto;margin:0 calc(-1 * var(--sp-2))}
+.corr{border-collapse:separate;border-spacing:3px;width:100%;font-size:var(--fs-xs);font-variant-numeric:tabular-nums}
+.corr th{font-weight:600;color:var(--mu);white-space:nowrap;max-width:76px;overflow:hidden;text-overflow:ellipsis;padding:2px 4px}
+.corr tbody th{text-align:right}
+.corr td{text-align:center;min-width:38px;height:32px;border-radius:8px;color:var(--tx);background:color-mix(in srgb,var(--c,var(--acc)) calc(var(--r,0) * 55%),var(--surface-2))}
+.corr td.self{background:transparent}
+.vals em.mu{font-style:normal;font-size:var(--fs-xs)}

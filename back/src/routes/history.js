@@ -1,6 +1,7 @@
 // Histórico diario de la cartera, previsión de dividendos, mini-gráficas e histórico de un valor.
 import crypto from 'node:crypto';
 import { isDate } from '../lib/validate.js';
+import { riskReport } from '../../../shared/risk.js';
 
 const HISTORY_TTL = 10 * 60_000;
 // Sube al cambiar la forma del histórico (p. ej. series por tipo de activo): invalida lo guardado.
@@ -70,6 +71,19 @@ export default function historyRoutes(api, { db, history, pf, historyWaitMs, log
     const b = await built(req.userId, await db.getRows(req.userId));
     res.set('Cache-Control', 'private, max-age=300');
     res.json({ sparks: await history.sparks(b.positions.filter((p) => p.open).map((p) => p.isin)) });
+  });
+
+  // Riesgo y diversificación de las posiciones abiertas con el último año de cierres guardados:
+  // volatilidad, correlaciones y qué parte del riesgo aporta cada valor (shared/risk.js).
+  // { risk: null } si aún no hay histórico suficiente de al menos dos valores.
+  api.get('/risk', async (req, res) => {
+    if (!history) return res.json({ risk: null });
+    const [rows, prices] = await Promise.all([db.getRows(req.userId), db.getPrices(req.userId)]);
+    const open = (await built(req.userId, rows)).positions.filter((p) => p.open && prices[p.isin]?.price > 0);
+    const closes = await history.closes(open.map((p) => p.isin));
+    const risk = riskReport(open.map((p) => ({ key: p.isin, v: p.sh * prices[p.isin].price, rows: closes[p.isin] ?? [] })));
+    res.set('Cache-Control', 'private, max-age=300');
+    res.json({ risk });
   });
 
   // Cierres en euros de un valor desde una fecha, para la ficha.

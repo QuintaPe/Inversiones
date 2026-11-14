@@ -7,6 +7,7 @@ import { useParam } from '../router.js';
 import { classLabel, sector } from '../lib/countries.js';
 import { sum } from '../../../shared/calc.js';
 import Targets from './Targets.jsx';
+import Risk from './Risk.jsx';
 import Watch from './Watch.jsx';
 import { eur, eurS, pct, pctS, qty, sign, date } from '../lib/format.js';
 
@@ -26,7 +27,7 @@ const GroupHead = ({ g }) => (
 );
 
 export default function Positions({ a, onOpen, onPrice, targets, patch, fail, income }) {
-  const [tab, setTab] = useParam('ver', 'open', { open: 'abiertas', closed: 'cerradas', target: 'objetivo', watch: 'seguimiento' });
+  const [tab, setTab] = useParam('ver', 'open', { open: 'abiertas', closed: 'cerradas', target: 'objetivo', watch: 'seguimiento', risk: 'analisis' });
   const held = useMemo(() => new Set(a.o.map((x) => x.p.isin)), [a.o]);
   const [q, setQ] = useParam('q', '');
   const [view, setView] = useStored('pos-view', 'list');
@@ -82,8 +83,8 @@ export default function Positions({ a, onOpen, onPrice, targets, patch, fail, in
         </>
       )}
 
-      <Sticky><Tabs label="Estado" value={tab} onChange={setTab} items={[['open', `Abiertas · ${a.o.length}`], ['closed', `Cerradas · ${a.c.length}`], ['target', 'Cartera objetivo'], ['watch', 'Seguimiento']]} /></Sticky>
-      {tab !== 'target' && tab !== 'watch' && (
+      <Sticky><Tabs label="Estado" value={tab} onChange={setTab} items={[['open', `Abiertas · ${a.o.length}`], ['closed', `Cerradas · ${a.c.length}`], ['target', 'Cartera objetivo'], ['risk', 'Análisis'], ['watch', 'Seguimiento']]} /></Sticky>
+      {tab !== 'target' && tab !== 'watch' && tab !== 'risk' && (
         <div className="toolbar">
           <Search value={q} onChange={setQ} placeholder="Buscar por nombre o ISIN" label="Buscar posición" />
           {tab === 'open' && (
@@ -107,7 +108,7 @@ export default function Positions({ a, onOpen, onPrice, targets, patch, fail, in
         </div>
       )}
 
-      {tab === 'watch' ? <Watch held={held} onOpen={onOpen} fail={fail} /> : tab === 'target' ? <Targets a={a} targets={targets} patch={patch} fail={fail} onOpen={onOpen} income={income} /> : tab === 'open' && view === 'cards' ? (
+      {tab === 'risk' ? <Risk a={a} onOpen={onOpen} fail={fail} /> : tab === 'watch' ? <Watch held={held} onOpen={onOpen} fail={fail} /> : tab === 'target' ? <Targets a={a} targets={targets} patch={patch} fail={fail} onOpen={onOpen} income={income} /> : tab === 'open' && view === 'cards' ? (
         rows.length ? (
           <div className="pos-groups">
           {groups.map((g) => (
