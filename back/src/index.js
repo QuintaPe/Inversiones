@@ -27,7 +27,7 @@ if (!GOOGLE_CLIENT_ID) log.warn('Aviso: GOOGLE_CLIENT_ID no definido; no se podr
 const db = await openDb();
 log.info(`Base de datos: ${db.url.startsWith('file:') ? `${db.url} (local; define TURSO_DATABASE_URL para usar Turso)` : db.url}`);
 
-const quotes = process.env.LIVE_QUOTES === '0' ? null : createQuotes();
+const quotes = process.env.LIVE_QUOTES === '0' ? null : createQuotes({ log });
 const push = process.env.PUSH === '0' ? null : await createPush({ db }).catch((err) => { log.warn(`Aviso: sin avisos push (${err.message}).`); return null; });
 
 const app = createApp({

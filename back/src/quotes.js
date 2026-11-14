@@ -17,22 +17,66 @@ const QUOTE_TTL = 60_000; // no se pide el mismo símbolo más de una vez por mi
 const PAUSE = 120; // ms entre peticiones, en serie
 const ISIN_RE = /^[A-Z]{2}[A-Z0-9]{9}\d$/;
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// Tipos de cambio de referencia del BCE (uno al día): respaldo si Yahoo no da la divisa.
+const ECB = 'https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml';
+const ECB_TTL = 6 * 3600_000;
+// Fallos pasajeros (red, 429, 5xx): se reintenta con espera creciente.
+const RETRIES = 2;
+const BACKOFF = 400; // ms; se dobla en cada reintento
+// Tras varios fallos seguidos de un proveedor se deja de llamarle un rato (que se dobla si
+// sigue caído): ni se le carga más ni cada petición espera a que venza el tiempo de respuesta.
+const TRIP = 4;
+const COOL = 60_000;
+const MAX_COOL = 15 * 60_000;
 
-export function createQuotes({ fetchImpl = fetch, now = () => Date.now() } = {}) {
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * @param sleep  (ms) => Promise; las esperas entre peticiones y reintentos (los tests no esperan)
+ * @param log    dónde se avisa de que un proveedor se da por caído
+ */
+export function createQuotes({ fetchImpl = fetch, now = () => Date.now(), sleep = wait, log = console } = {}) {
   const cache = new Map(); // símbolo → { at, data }
   let chain = Promise.resolve(); // cola: una petición cada vez
+  const breakers = new Map(); // servidor → { fails, until, cool }
 
-  const get = (url) => {
-    const run = async () => {
-      const res = await fetchImpl(url, { signal: AbortSignal.timeout(10_000), headers: { accept: 'application/json' } });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return res.json();
-    };
+  /** Una petición con reintentos y corte por proveedor. Devuelve el cuerpo (JSON o texto). */
+  async function request(url, opts = {}, as = 'json') {
+    const host = new URL(url).host;
+    let b = breakers.get(host);
+    if (!b) breakers.set(host, (b = { fails: 0, until: 0, cool: COOL }));
+    if (now() < b.until) throw new Error(`${host} no responde: en pausa`);
+    for (let i = 0; ; i++) {
+      try {
+        const res = await fetchImpl(url, { signal: AbortSignal.timeout(10_000), ...opts });
+        if (!res.ok) {
+          const err = new Error(`HTTP ${res.status}`);
+          // Un 4xx (salvo 429) es la respuesta del proveedor, no una caída: ni se reintenta ni cuenta.
+          err.transient = res.status === 429 || res.status >= 500;
+          err.after = Number(res.headers?.get?.('retry-after')) * 1000 || 0;
+          throw err;
+        }
+        const body = await (as === 'text' ? res.text() : res.json());
+        b.fails = 0; b.cool = COOL;
+        return body;
+      } catch (err) {
+        if (err.transient === false) throw err;
+        if (i < RETRIES) { await sleep(Math.min(err.after || BACKOFF * 2 ** i, 5000)); continue; }
+        if (++b.fails >= TRIP) {
+          b.until = now() + b.cool;
+          log.warn(`Cotizaciones: ${host} lleva ${b.fails} fallos seguidos (${err.message}); en pausa ${Math.round(b.cool / 1000)} s.`);
+          b.cool = Math.min(b.cool * 2, MAX_COOL);
+        }
+        throw err;
+      }
+    }
+  }
+  const queued = (run) => {
     const p = chain.then(run, run);
     chain = p.then(() => sleep(PAUSE), () => sleep(PAUSE));
     return p;
   };
+  const get = (url, as) => queued(() => request(url, { headers: { accept: as === 'text' ? '*/*' : 'application/json' } }, as));
 
   const card = (hit) => ({
     symbol: hit.symbol, exchange: hit.exchDisp || hit.exchange || '',
@@ -47,17 +91,11 @@ export function createQuotes({ fetchImpl = fetch, now = () => Date.now() } = {})
    * OpenFIGI da su ticker en EE. UU., que en Yahoo es el mismo símbolo.
    */
   async function usTicker(isin) {
-    const run = async () => {
-      const res = await fetchImpl(FIGI, {
-        method: 'POST', signal: AbortSignal.timeout(10_000), headers: { 'content-type': 'application/json' },
-        body: JSON.stringify([{ idType: 'ID_ISIN', idValue: isin, exchCode: 'US' }]),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return res.json();
-    };
-    const p = chain.then(run, run);
-    chain = p.then(() => sleep(PAUSE), () => sleep(PAUSE));
-    const ticker = (await p)?.[0]?.data?.find((x) => x.ticker && x.marketSector === 'Equity')?.ticker;
+    const j = await queued(() => request(FIGI, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify([{ idType: 'ID_ISIN', idValue: isin, exchCode: 'US' }]),
+    }));
+    const ticker = j?.[0]?.data?.find((x) => x.ticker && x.marketSector === 'Equity')?.ticker;
     return ticker ? ticker.replace('/', '-') : null;
   }
 
@@ -132,10 +170,27 @@ export function createQuotes({ fetchImpl = fetch, now = () => Date.now() } = {})
     return data;
   }
 
-  /** Cuántos euros vale una unidad de la divisa. */
+  /** Tipos de referencia del BCE: { USD: unidades por euro, … }. */
+  let ecb = null; // { at, rates }
+  async function ecbRates() {
+    if (ecb && now() - ecb.at < ECB_TTL) return ecb.rates;
+    const xml = await get(ECB, 'text');
+    const rates = Object.fromEntries([...xml.matchAll(/currency=['"]([A-Z]{3})['"]\s+rate=['"]([\d.]+)['"]/g)].map((m) => [m[1], Number(m[2])]));
+    if (!Object.keys(rates).length) throw new Error('sin tipos de cambio');
+    ecb = { at: now(), rates };
+    return rates;
+  }
+
+  /** Cuántos euros vale una unidad de la divisa. Si Yahoo no la da, el tipo de referencia del BCE. */
   async function eurRate(currency) {
     if (currency === 'EUR') return 1;
-    return (await quote(`${currency}EUR=X`)).price;
+    try {
+      return (await quote(`${currency}EUR=X`)).price;
+    } catch (err) {
+      const perEur = (await ecbRates().catch(() => ({})))[currency];
+      if (!(perEur > 0)) throw err;
+      return 1 / perEur;
+    }
   }
 
   /**
@@ -207,5 +262,9 @@ export function createQuotes({ fetchImpl = fetch, now = () => Date.now() } = {})
     return { currency, rows: [...byDay].sort((a, b) => a[0].localeCompare(b[0])), divs, splits };
   }
 
-  return { quoteIsins, resolveIsins, history };
+  return {
+    quoteIsins, resolveIsins, history,
+    /** Proveedores en pausa por fallos seguidos: { servidor: milisegundos que faltan }. */
+    paused: () => Object.fromEntries([...breakers].filter(([, b]) => now() < b.until).map(([h, b]) => [h, b.until - now()])),
+  };
 }
