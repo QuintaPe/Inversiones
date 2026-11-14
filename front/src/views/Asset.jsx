@@ -485,7 +485,7 @@ export default function Asset({ x, totalVal, yearBase, onBack, onPrice, liveQuot
                 </>
               )} />
           ) : view ? (
-            <Lines x={view.t} height={300} label={`Precio de ${p.name} en euros`} base={p.open ? x.avg : undefined}
+            <Lines x={view.t} height={300} scale={(v) => (isMasked() ? "" : num(v))} label={`Precio de ${p.name} en euros`} base={p.open ? x.avg : undefined}
               onHover={setHover} marks={view.marks}
               series={[{ key: 'c', values: view.c, cls: chg >= 0 ? 'up' : 'down', area: true }]}
               tip={(i) => {

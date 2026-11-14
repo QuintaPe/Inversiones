@@ -6,7 +6,7 @@ import { useParam } from '../router.js';
 import { cashHealth, spendOf, incomeOf, investOf } from '../../../shared/cash.js';
 import Spending from './Spending.jsx';
 import { prettyName, categoryOf, isSpend, CAT } from '../lib/categories.js';
-import { eur, eurS, pct, sign, date, dateLong, month } from '../lib/format.js';
+import { eur, eurS, pct, sign, date, dateLong, month, compact } from '../lib/format.js';
 
 const MONTHS = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 const monthLong = (ym) => { const m = MONTHS[+ym.slice(5, 7) - 1]; return `${m[0].toUpperCase()}${m.slice(1)} de ${ym.slice(0, 4)}`; };
@@ -220,7 +220,7 @@ export default function Cash({ cash, labels, cats = {}, onCats, budgets = {}, on
       {tab === 'resumen' && (
         <>
         <section className="chart-block">
-          <Lines x={series.t} height={220} label="Saldo de efectivo" base={0}
+          <Lines x={series.t} height={220} label="Saldo de efectivo" base={0} scale={compact}
             series={[{ key: 'v', values: series.v, cls: '', step: true, area: true }]}
             tip={(i) => <><small>{dateLong(series.t[i])}</small><b>{eur(series.v[i])}</b></>} />
         </section>

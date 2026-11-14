@@ -8,7 +8,7 @@ import Projection from './Projection.jsx';
 import { RANGE_NAME, useRange } from '../lib/periods.js';
 import { Kpi, Spark, VsBars } from '../components/Kpi.jsx';
 import { country, classLabel, region, sector, industry, currency, exchange } from '../lib/countries.js';
-import { eur, eurS, pct, pctS, sign, date, dateLong, qty, num } from '../lib/format.js';
+import { eur, eurS, pct, pctS, sign, date, dateLong, qty, num, compact } from '../lib/format.js';
 
 const ALLOC = [
   ['pos', 'Posición'], ['sector', 'Sector'], ['industry', 'Industria'], ['country', 'País'],
@@ -190,7 +190,7 @@ export default function Dashboard({ a, hist, histProgress, flt, cash, onOpen, go
       const marks = x.map((_, i) => ({ i, a: net(i + from) })).filter((m) => m.a >= 1)
         .sort((p, q) => q.a - p.a).slice(0, 12).map((m) => ({ key: `ap-${m.i}`, i: m.i, cls: 'buy' }));
       chart = (
-        <Lines x={x} height={280} label="Valor de la cartera" onHover={(i) => setHover(i == null ? null : i + from)} marks={marks}
+        <Lines x={x} height={280} scale={compact} label="Valor de la cartera" onHover={(i) => setHover(i == null ? null : i + from)} marks={marks}
           series={[
             { key: 'v', values: h.v.slice(from), cls: st.gain >= 0 ? 'up' : 'down', area: true },
             { key: 'c', values: h.cost.slice(from), cls: 'muted', step: true },
@@ -211,7 +211,7 @@ export default function Dashboard({ a, hist, histProgress, flt, cash, onOpen, go
       const mine = mineG.map(rel);
       const bs = st.bench.filter((b) => b.g).map((b, k) => ({ key: b.key, name: b.name, cls: `b${k + 1}`, g: b.g, values: b.g.map(rel) }));
       chart = (
-        <Lines x={x} height={280} base={0} label="Resultado acumulado frente a los índices con las mismas aportaciones" onHover={(i) => setHover(i == null ? null : i + from)}
+        <Lines x={x} height={280} base={0} scale={(v) => `${v.toLocaleString("es-ES")} %`} label="Resultado acumulado frente a los índices con las mismas aportaciones" onHover={(i) => setHover(i == null ? null : i + from)}
           series={[{ key: 'me', values: mine, cls: 'vs-me' }, ...bs]}
           tip={(i) => (
             <>

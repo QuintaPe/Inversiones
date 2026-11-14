@@ -281,7 +281,7 @@ export function RankBars({ rows }) {
  * se lee con el cursor, que además avisa por onHover(índice | null).
  * x: ms[]; series: [{ key, values[], cls, step, area }]; tip: (índice) => contenido.
  */
-export function Lines({ x, series, height = 280, tip, label, onHover, base, marks = [] }) {
+export function Lines({ x, series, height = 280, tip, label, onHover, base, marks = [], scale }) {
   const [ref, w] = useWidth();
   const [hi, setHi] = useState(null);
   const keys = useChartKeys(x.length, hi, (i) => { setHi(i); onHover?.(i); }, label);
@@ -307,6 +307,8 @@ export function Lines({ x, series, height = 280, tip, label, onHover, base, mark
       }
       return d;
     };
+    // Escala: unas pocas líneas de referencia con su valor, dentro del dibujo (sin margen propio).
+    const yt = scale ? ticks(lo, top, 3).filter((v) => Y(v) > m.t + 12 && Y(v) < m.t + ih - 6 && v !== base) : [];
     // Las marcas pegadas a los bordes se cortarían: fuera.
     const xt = timeTicks(t0, t1, w).filter((k) => X(k.t) > 28 && X(k.t) < w - 28);
     const move = (ev) => {
@@ -333,6 +335,12 @@ export function Lines({ x, series, height = 280, tip, label, onHover, base, mark
               <path className={`fade ${main.cls}`} fill="url(#lines-fade)" d={`${d0}V${m.t + ih}H${X(x[main.values.findIndex((v) => v != null)])}Z`} />
             </>
           )}
+          {yt.map((v) => (
+            <g key={v}>
+              <line className="grid" x1={0} x2={w} y1={Y(v)} y2={Y(v)} />
+              <text className="axis scale" x={2} y={Y(v) - 5}>{scale(v)}</text>
+            </g>
+          ))}
           {base != null && <line className="base dotted" x1={0} x2={w} y1={Y(base)} y2={Y(base)} />}
           {xt.map((k) => <text key={k.t} className="axis" x={X(k.t)} y={height - 6} textAnchor="middle">{k.s}</text>)}
           {[...series].reverse().map((s) => <path key={s.key} className={`ln ${s.cls}`} d={s === main ? d0 : path(s)} />)}
