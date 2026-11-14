@@ -32,6 +32,12 @@ export function useActions({ setData, apply, confirm, notify, fail, refreshQuote
     }
   }, [fail, setData]);
 
+  /** Guarda un ajuste en la cuenta (se ve al momento; si el servidor lo rechaza, se avisa). */
+  const onSetting = useCallback((key, value) => {
+    setData((d) => d && ({ ...d, settings: { ...d.settings, [key]: value } }));
+    api.setSetting(key, value).catch((err) => fail(err, 'No se guardó: '));
+  }, [fail, setData]);
+
   const saveOp = useCallback(async (op, tid) => {
     apply(await (tid ? api.editTx(tid, op) : api.addTx(op)));
     notify('ok', tid ? 'Operación actualizada.' : 'Operación añadida.');
@@ -63,5 +69,5 @@ export function useActions({ setData, apply, confirm, notify, fail, refreshQuote
     }
   };
 
-  return { onPrice, onNote, saveOp, removeOp, restoreOp, wipe };
+  return { onPrice, onNote, onSetting, saveOp, removeOp, restoreOp, wipe };
 }

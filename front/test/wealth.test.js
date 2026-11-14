@@ -37,3 +37,28 @@ test('evolución del patrimonio: fin de cada mes y hoy, sumando cada parte desde
   // Cambio de año.
   assert.deepEqual(netWorthSeries({ cashDays: [['2024-11-30', 1]] }, '2025-01-02').map((p) => p.d), ['2024-11-30', '2024-12-31', '2025-01-02']);
 });
+
+test('plan frente a realidad: lo que esperabas tener hoy y la diferencia', async () => {
+  const { planProgress, monthsBetween } = await import('../../shared/plan.js');
+  const close = (a, b) => assert.ok(Math.abs(a - b) < 0.01, `${a} ≠ ${b}`);
+  assert.equal(monthsBetween('2026-01-15', '2026-01-15'), 0);
+  assert.equal(monthsBetween('2026-01-15', '2026-02-14'), 0);
+  assert.equal(monthsBetween('2026-01-15', '2026-02-15'), 1);
+  assert.equal(monthsBetween('2025-11-30', '2026-11-14'), 11);
+  assert.equal(monthsBetween('2026-05-01', '2026-01-01'), 0);
+
+  // Sin rentabilidad: partida más las aportaciones de los meses completos.
+  const flat = planProgress({ start: 10000, since: '2026-01-10', monthly: 500, rate: 0 }, 13500, '2026-07-09');
+  assert.equal(flat.months, 5);
+  close(flat.expected, 12500);
+  close(flat.diff, 1000);
+  close(flat.pct, 8);
+  // Con rentabilidad, un año sin aportar es exactamente ese porcentaje.
+  const year = planProgress({ start: 10000, since: '2025-11-14', monthly: 0, rate: 6 }, 10000, '2026-11-14');
+  close(year.expected, 10600);
+  close(year.diff, -600);
+  // Recién fijado: sin diferencia. Sin fijar: nada que medir.
+  close(planProgress({ start: 5000, since: '2026-11-14', monthly: 300, rate: 5 }, 5000, '2026-11-14').diff, 0);
+  assert.equal(planProgress({ monthly: 300, rate: 5, start: null, since: null }, 5000), null);
+  assert.equal(planProgress(undefined, 5000), null);
+});

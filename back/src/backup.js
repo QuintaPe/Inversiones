@@ -2,6 +2,7 @@
 // limpia antes de restaurarla. Nada del archivo llega a la base de datos sin pasar por aquí.
 import { ROW_COLS } from './db.js';
 import { isDate, parsePrice } from './lib/validate.js';
+import { cleanSetting } from './lib/settings.js';
 
 export class BackupError extends Error {}
 
@@ -58,6 +59,8 @@ export function readBackup(text) {
       .filter((x) => /^[a-z]+$/.test(x.category) && x.amount), (x) => x.category),
     watchlist: uniq(list(raw.watchlist).map((x) => ({ isin: isin(x?.isin), name: str(x?.name, 80).trim(), added_at: stamp(x?.added_at) ?? now }))
       .filter((x) => x.isin && x.name), (x) => x.isin).slice(0, 200),
+    settings: uniq(list(raw.settings).map((x) => ({ key: str(x?.key, 40), value: cleanSetting(str(x?.key, 40), x?.value) }))
+      .filter((x) => x.value != null), (x) => x.key),
     accounts: list(raw.accounts).map((a) => ({
       name: str(a?.name, 60).trim(), kind: ACCOUNT_KINDS.includes(a?.kind) ? a.kind : 'other', created_at: stamp(a?.created_at) ?? now,
       balances: uniq(list(a?.balances).map((y) => ({ d: str(y?.d, 10), amount: Number(y?.amount) }))

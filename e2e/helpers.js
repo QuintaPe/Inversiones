@@ -9,6 +9,11 @@ export const SECTIONS = [
   ['efectivo', 'Efectivo'],
 ];
 export const APPLE = 'US0378331005';
+/** Precios fijos de la cartera de ejemplo. */
+export const PRICES = {
+  IE00B4L5Y983: 112.4, IE00BK5BQT80: 141.9, US0378331005: 238.15, US5949181045: 402.3, US67066G1040: 171.2,
+  NL0010273215: 915.6, ES0144580Y14: 17.42, ES0148396007: 48.9, DE0008404005: 371.5, US1912161007: 61.05,
+};
 
 // Con LOGOS=0 y LIVE_QUOTES=0 no hay logotipos ni histórico de precios: esas respuestas son normales.
 const EXPECTED = [/^\/api\/logos\//, /^\/api\/assets\/[^/]+\/history$/, /^\/api\/sparks$/, /^\/api\/dividends\/forecast$/];
@@ -42,9 +47,11 @@ export const overflow = (page) => page.evaluate(() => document.documentElement.s
  * (categorías, topes, restaurar una copia): las seis configuraciones corren a la vez y, con la
  * cuenta compartida, se pisarían unas a otras.
  */
-export async function ownAccount(browser, testInfo) {
+export async function ownAccount(browser, testInfo, { prices = false } = {}) {
   const context = await browser.newContext({ ...testInfo.project.use, storageState: undefined });
   const res = await context.request.post('/api/auth/demo');
   expect(res.ok()).toBeTruthy();
+  // Sin cotizaciones en vivo, precios fijos para que haya valor de cartera (como en la cuenta compartida).
+  if (prices) expect((await context.request.put('/api/prices', { data: { prices: PRICES } })).ok()).toBeTruthy();
   return context.newPage();
 }

@@ -63,7 +63,7 @@ const Chg = ({ n, p, children }) => (
   </span>
 );
 
-export default function Dashboard({ a, hist, histProgress, flt, cash, onOpen, go }) {
+export default function Dashboard({ a, hist, histProgress, flt, cash, onOpen, go, settings, onSetting }) {
   const [by, setBy] = useState('pos');
   const [map, setMap] = useState(false);
   const [span, setSpan] = useState('day');
@@ -458,7 +458,7 @@ export default function Dashboard({ a, hist, histProgress, flt, cash, onOpen, go
           </Card>
         )}
 
-        {!none && a.val > 0 && <Projection value={a.val} all={a.all} />}
+        {!none && a.val > 0 && <Projection value={a.val} all={a.all} plan={settings?.plan} onPlan={flt === 'all' && onSetting ? (plan) => onSetting('plan', plan) : null} />}
       </div>
     </div>
   );

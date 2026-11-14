@@ -83,3 +83,36 @@ test('patrimonio: cuentas con saldos fechados, validación y aislamiento entre u
   server.close();
   await db.close();
 });
+
+test('ajustes: el plan de la proyección se valida, se guarda en la cuenta, viaja con la cartera y con la copia', async () => {
+  const { db, server, client } = await start();
+  const a = client(), b = client();
+  await a('/api/auth/demo', { method: 'POST' });
+  await b('/api/auth/demo', { method: 'POST' });
+  assert.deepEqual((await a('/api/portfolio')).body.settings, {});
+  const today = new Date().toISOString().slice(0, 10);
+
+  assert.equal((await a('/api/settings/otra', json('PUT', { value: 1 }))).status, 400);
+  for (const bad of [5, [], { rate: 99 }, { years: 0 }, { monthly: -1 }, { since: '2999-01-01', start: 1 }, { since: today }, { start: 5 }, { goal: 'mucho' }]) {
+    assert.equal((await a('/api/settings/plan', json('PUT', { value: bad }))).status, 400, JSON.stringify(bad));
+  }
+  let r = await a('/api/settings/plan', json('PUT', { value: { monthly: '500,5', rate: 6, years: 20, goal: '', since: today, start: 41000, extra: 'x' } }));
+  assert.equal(r.status, 200);
+  const plan = { monthly: 500.5, rate: 6, years: 20, goal: null, start: 41000, since: today };
+  assert.deepEqual(r.body.settings, { plan });
+  assert.deepEqual((await a('/api/portfolio')).body.settings, { plan });
+  assert.deepEqual((await b('/api/portfolio')).body.settings, {});
+
+  const exported = (await a('/api/export')).body;
+  assert.deepEqual(exported.settings, [{ key: 'plan', value: plan }]);
+  r = await a('/api/settings/plan', json('PUT', { value: null }));
+  assert.deepEqual(r.body.settings, {});
+  // Al restaurar vuelve; lo que no encaja en la copia se descarta.
+  exported.settings.push({ key: 'plan2', value: 1 }, { key: 'plan', value: { rate: 500 } });
+  assert.equal((await a('/api/import', file(JSON.stringify(exported)))).status, 200);
+  assert.deepEqual((await a('/api/portfolio')).body.settings, { plan });
+  await a('/api/data', { method: 'DELETE' });
+  assert.deepEqual((await a('/api/portfolio')).body.settings, {});
+  server.close();
+  await db.close();
+});

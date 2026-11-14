@@ -144,7 +144,7 @@ export default function App() {
     // El número de operaciones puede coincidir con el de antes: efectivo e histórico se piden a mano.
     onRestored: () => { reloadCash(); reloadHistory(); go('resumen'); },
   });
-  const { onPrice, onNote, saveOp, removeOp, restoreOp, wipe } = useActions({ setData, apply, confirm, notify, fail, refreshQuotes, go });
+  const { onPrice, onNote, onSetting, saveOp, removeOp, restoreOp, wipe } = useActions({ setData, apply, confirm, notify, fail, refreshQuotes, go });
   const [opForm, setOpForm] = useState(null); // null | datos iniciales del formulario
 
   // Sin conexión, el service worker sirve los últimos datos guardados.
@@ -214,7 +214,7 @@ export default function App() {
   const empty = data && !positions.length;
   const unknownRows = Object.values(data?.meta?.unknown ?? {}).reduce((t, n) => t + n, 0);
   const groups = GROUPS.filter(([g]) => g === 'all' || positions.some((p) => p.grp === g));
-  const view = { a, hist, histProgress, flt, meta: data?.meta, onOpen: openAsset, onPrice, go, cash: cash?.cash, income: cash?.income, onAddOp: setOpForm, onRestoreOp: restoreOp, targets: data?.targets ?? {}, alerts: data?.alerts ?? [], patch, fail };
+  const view = { a, hist, histProgress, flt, meta: data?.meta, onOpen: openAsset, onPrice, go, cash: cash?.cash, income: cash?.income, onAddOp: setOpForm, onRestoreOp: restoreOp, targets: data?.targets ?? {}, alerts: data?.alerts ?? [], patch, fail, settings: data?.settings ?? {}, onSetting };
   const section = route === 'activo' ? 'posiciones' : route;
   const nav = (cls, max = NAV.length) => (
     <nav className={cls} aria-label="Secciones">

@@ -46,7 +46,7 @@ export function createPortfolio({ db, quotes, history, watcher }) {
   }
 
   async function portfolio(userId) {
-    const [rows, symbols, { prices, lastUpload, alerts, targets }, notes] = await Promise.all([db.getRows(userId), db.getSymbols(), db.getUserState(userId), db.getNotes(userId)]);
+    const [rows, symbols, { prices, lastUpload, alerts, targets }, notes, settings] = await Promise.all([db.getRows(userId), db.getSymbols(), db.getUserState(userId), db.getNotes(userId), db.getUserSettings(userId)]);
     const b = await built(userId, rows, symbols);
     // Copias: las posiciones calculadas se comparten entre peticiones.
     const positions = b.positions.map(({ evs: _e, lots: _l, ...p }) => {
@@ -65,7 +65,7 @@ export function createPortfolio({ db, quotes, history, watcher }) {
       };
     });
     return {
-      positions, alerts, targets,
+      positions, alerts, targets, settings,
       meta: {
         lastDate: b.lastDate, firstDate: b.firstDate, rows: b.invest, lastUpload, liveQuotes: !!quotes, history: !!history,
         splits: b.splits, unknown: b.unknown, v: db.rowsVersion?.(userId) ?? 0, stream: !!quotes,

@@ -112,6 +112,7 @@ export const setTargets = (targets) => call('/api/targets', json('PUT', { target
 export const clearData = () => full(call('/api/data', { method: 'DELETE' }));
 
 // Patrimonio: otras cuentas, bienes y deudas, con saldos anotados a mano.
+export const setSetting = (key, value) => call(`/api/settings/${key}`, json('PUT', { value }));
 export const getAccounts = () => call('/api/accounts');
 export const addAccount = (account) => call('/api/accounts', json('POST', account));
 export const removeAccount = (id) => call(`/api/accounts/${id}`, { method: 'DELETE' });

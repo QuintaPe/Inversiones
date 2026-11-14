@@ -228,6 +228,17 @@ const MIGRATIONS = [
       ], 'write');
     },
   },
+  {
+    v: 9,
+    name: 'ajustes del usuario (plan de la proyección…)',
+    async up(c) {
+      // Un valor JSON por clave; qué claves hay y qué forma tienen lo decide lib/settings.js.
+      await c.execute(`CREATE TABLE IF NOT EXISTS user_settings (
+         user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+         key TEXT NOT NULL, value TEXT NOT NULL, updated_at TEXT NOT NULL,
+         PRIMARY KEY (user_id, key))`);
+    },
+  },
 ];
 export const SCHEMA_VERSION = MIGRATIONS.at(-1).v;
 
@@ -310,6 +321,13 @@ function makeRepo(client, url, { cache = true } = {}) {
   let seq = 0;
   const rowsVer = new Map();
   let splitsVer = 0;
+  /** { clave: valor } con los ajustes guardados del usuario. */
+  async function getUserSettings(userId) {
+    const r = await client.execute({ sql: 'SELECT key, value FROM user_settings WHERE user_id = ?', args: [userId] });
+    const out = {};
+    for (const x of r.rows) { try { out[x.key] = JSON.parse(x.value); } catch { /* valor ilegible: como si no estuviera */ } }
+    return out;
+  }
   const touchRows = (userId) => { rowsCache.delete(userId); rowsVer.set(userId, ++seq); };
   return {
     url,
@@ -645,7 +663,8 @@ function makeRepo(client, url, { cache = true } = {}) {
         q('SELECT account_id, d, amount FROM account_balances WHERE user_id = ? ORDER BY d'),
       ]);
       const accounts = acc.map(({ id, ...a }) => ({ ...a, balances: bal.filter((b) => b.account_id === id).map((b) => ({ d: b.d, amount: b.amount })) }));
-      return { transactions, prices, valuations, alerts, targets, imports, merchant_categories, budgets, watchlist, asset_notes, accounts };
+      const settings = Object.entries(await getUserSettings(userId)).map(([key, value]) => ({ key, value }));
+      return { transactions, prices, valuations, alerts, targets, imports, merchant_categories, budgets, watchlist, asset_notes, accounts, settings };
     },
 
     // ---------- seguimiento y notas ----------
@@ -853,6 +872,19 @@ function makeRepo(client, url, { cache = true } = {}) {
       await client.execute({ sql: 'DELETE FROM valuations WHERE user_id = ? AND isin = ? AND d = ?', args: [userId, isin, d] });
     },
 
+    // ---------- ajustes del usuario ----------
+    getUserSettings,
+    /** Guarda un ajuste ya validado (lib/settings.js); con null lo quita. */
+    async setUserSetting(userId, key, value) {
+      await client.execute(value == null
+        ? { sql: 'DELETE FROM user_settings WHERE user_id = ? AND key = ?', args: [userId, key] }
+        : {
+          sql: `INSERT INTO user_settings (user_id, key, value, updated_at) VALUES (?, ?, ?, ?)
+                ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+          args: [userId, key, JSON.stringify(value), now()],
+        });
+    },
+
     // ---------- patrimonio: otras cuentas, bienes y deudas ----------
     /** [{ id, name, kind, created_at, balances: [{ d, amount }] }], con los saldos por fecha. */
     async getAccounts(userId) {
@@ -906,7 +938,7 @@ function makeRepo(client, url, { cache = true } = {}) {
     /** Borra cuentas enteras, con todos sus datos. */
     async deleteUsers(ids) {
       if (!ids.length) return;
-      const tables = ['transactions', 'prices', 'imports', 'valuations', 'alerts', 'targets', 'history_cache', 'push_subscriptions', 'merchant_categories', 'budgets', 'watchlist', 'asset_notes', 'account_balances', 'accounts'];
+      const tables = ['transactions', 'prices', 'imports', 'valuations', 'alerts', 'targets', 'history_cache', 'push_subscriptions', 'merchant_categories', 'budgets', 'watchlist', 'asset_notes', 'account_balances', 'accounts', 'user_settings'];
       await client.batch(ids.flatMap((id) => [
         ...tables.map((t) => ({ sql: `DELETE FROM ${t} WHERE user_id = ?`, args: [id] })),
         { sql: 'DELETE FROM users WHERE id = ?', args: [id] },
@@ -919,7 +951,7 @@ function makeRepo(client, url, { cache = true } = {}) {
      * sola transacción: o entra entera o no cambia nada.
      */
     async restoreUser(userId, b) {
-      const del = ['transactions', 'prices', 'imports', 'valuations', 'alerts', 'targets', 'history_cache', 'merchant_categories', 'budgets', 'watchlist', 'asset_notes', 'account_balances', 'accounts']
+      const del = ['transactions', 'prices', 'imports', 'valuations', 'alerts', 'targets', 'history_cache', 'merchant_categories', 'budgets', 'watchlist', 'asset_notes', 'account_balances', 'accounts', 'user_settings']
         .map((t) => ({ sql: `DELETE FROM ${t} WHERE user_id = ?`, args: [userId] }));
       const txSql = `INSERT INTO transactions (user_id, ${ROW_COLS.join(', ')}, source, deleted_at) VALUES (?, ${ROW_COLS.map(() => '?').join(', ')}, ?, ?)`;
       try {
@@ -935,6 +967,7 @@ function makeRepo(client, url, { cache = true } = {}) {
           ...b.watchlist.map((x) => ({ sql: 'INSERT INTO watchlist (user_id, isin, name, added_at) VALUES (?, ?, ?, ?)', args: [userId, x.isin, x.name, x.added_at] })),
           ...b.asset_notes.map((x) => ({ sql: 'INSERT INTO asset_notes (user_id, isin, note, updated_at) VALUES (?, ?, ?, ?)', args: [userId, x.isin, x.note, now()] })),
           ...b.budgets.map((x) => ({ sql: 'INSERT INTO budgets (user_id, category, amount) VALUES (?, ?, ?)', args: [userId, x.category, x.amount] })),
+          ...(b.settings ?? []).map((x) => ({ sql: 'INSERT INTO user_settings (user_id, key, value, updated_at) VALUES (?, ?, ?, ?)', args: [userId, x.key, JSON.stringify(x.value), now()] })),
           // Las cuentas reciben un identificador nuevo: el de la copia podría ser de otra cuenta de usuario.
           ...(b.accounts ?? []).flatMap((x) => {
             const id = crypto.randomUUID();
@@ -951,7 +984,7 @@ function makeRepo(client, url, { cache = true } = {}) {
 
     async clearUserData(userId) {
       await client.batch(
-        ['transactions', 'prices', 'imports', 'valuations', 'alerts', 'targets', 'history_cache', 'merchant_categories', 'budgets', 'watchlist', 'asset_notes', 'account_balances', 'accounts'].map((t) => ({ sql: `DELETE FROM ${t} WHERE user_id = ?`, args: [userId] })),
+        ['transactions', 'prices', 'imports', 'valuations', 'alerts', 'targets', 'history_cache', 'merchant_categories', 'budgets', 'watchlist', 'asset_notes', 'account_balances', 'accounts', 'user_settings'].map((t) => ({ sql: `DELETE FROM ${t} WHERE user_id = ?`, args: [userId] })),
         'write',
       );
       touchRows(userId);

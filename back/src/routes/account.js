@@ -3,6 +3,7 @@ import { buildCash, buildIncome, CASH_LABEL } from '../engine.js';
 import multer from 'multer';
 import { parsePrice, isAssetId, isDate, assetMap, check } from '../lib/validate.js';
 import { readBackup, backupSummary, ACCOUNT_KINDS } from '../backup.js';
+import { cleanSetting, SETTING_KEYS } from '../lib/settings.js';
 
 const backupFile = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
@@ -88,6 +89,15 @@ export default function accountRoutes(api, { db, push, pf, quotes }) {
     check(note.length <= 2000, 'La nota es demasiado larga (máximo 2.000 caracteres).');
     await db.setNote(req.userId, req.params.isin, note);
     res.json({ isin: req.params.isin, note: note || null });
+  });
+
+  // ---------- ajustes guardados en la cuenta: { value } (null lo quita) ----------
+  api.put('/settings/:key', async (req, res) => {
+    check(SETTING_KEYS.includes(req.params.key), 'Ajuste no válido.');
+    const value = req.body?.value == null ? null : cleanSetting(req.params.key, req.body.value);
+    check(value !== undefined, 'Valor no válido.');
+    await db.setUserSetting(req.userId, req.params.key, value);
+    res.json({ settings: await db.getUserSettings(req.userId) });
   });
 
   // ---------- patrimonio: otras cuentas, bienes y deudas, con saldos anotados a mano ----------

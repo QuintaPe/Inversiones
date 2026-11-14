@@ -18,7 +18,7 @@ export function usePortfolio({ user, fail }) {
   }, [user, fail]);
 
   /** Sustituye la cartera por la que devuelve una escritura. */
-  const apply = useCallback((res) => setData({ positions: res.positions, meta: res.meta, alerts: res.alerts, targets: res.targets }), []);
+  const apply = useCallback((res) => setData((d) => ({ positions: res.positions, meta: res.meta, alerts: res.alerts, targets: res.targets, settings: res.settings ?? d?.settings ?? {} })), []);
   const patch = useCallback((part) => setData((d) => ({ ...d, ...part })), []);
   const reload = useCallback(() => api.getPortfolio().then(setData).catch(fail), [fail]);
 

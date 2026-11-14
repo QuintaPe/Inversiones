@@ -1211,3 +1211,10 @@ button.plain{background:none;border:0;padding:0;text-align:left;border-radius:12
 .ssim-u input:focus{outline:0;box-shadow:0 0 0 2px var(--acc-tx)}
 .ssim-u small{font-size:var(--fs-xs);font-variant-numeric:tabular-nums}
 .ssim .calc{margin:var(--sp-3) 0}
+
+/* ---------- proyección: plan frente a realidad ---------- */
+.proj-t{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-4);flex-wrap:wrap;margin-top:var(--sp-4);padding:var(--sp-3) var(--sp-4);border-radius:var(--r-sm);background:var(--surface-2);color:var(--tx-2);font-size:var(--fs-sm)}
+.proj-t p{flex:1 1 280px;line-height:1.5}
+.proj-t b{color:var(--tx);font-variant-numeric:tabular-nums}.proj-t b.gain{color:var(--gain)}.proj-t b.loss{color:var(--loss)}
+.proj-tb{display:flex;gap:var(--sp-2);flex-wrap:wrap}
+.proj-tb .btn{padding:7px 12px;font-size:var(--fs-sm);background:var(--surface-3)}

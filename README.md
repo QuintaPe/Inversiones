@@ -68,6 +68,7 @@ se añade una migración nueva al final; las ya publicadas no se tocan.
 | `alerts`, `targets`, `push_subscriptions` | Alertas, cartera objetivo y dispositivos con avisos |
 | `merchant_categories`, `budgets` | Categoría que el usuario elige para un comercio y topes de gasto al mes |
 | `watchlist`, `asset_notes` | Valores en seguimiento (sin tenerlos) y nota libre de cada activo |
+| `user_settings` | Ajustes guardados en la cuenta (el plan de la proyección); su forma la valida `back/src/lib/settings.js` |
 | `accounts`, `account_balances` | Patrimonio: otras cuentas, bienes y deudas, con el saldo que el usuario anota en cada fecha |
 
 Los importes se guardan como texto decimal exacto, tal cual vienen en el CSV. De los pagos
@@ -84,7 +85,8 @@ en una sola transacción y valida cada dato del archivo antes de guardarlo (`bac
 - **Rentabilidad**: por periodo, con tus aportaciones (Dietz), ponderada por tiempo, anualizada
   (TIR, desde tres meses), caída máxima, volatilidad e índices con tus mismas aportaciones.
 - **Proyección** (Resumen): aportación mensual, rentabilidad esperada ±3 puntos y una meta de
-  patrimonio con la fecha en que se alcanza. Lo que escribes se queda en el navegador.
+  patrimonio con la fecha en que se alcanza. El plan se guarda en tu cuenta y, si lo fijas, la app
+  te dice si vas por delante o por detrás de él (`shared/plan.js`).
 - **Antes de que acabe el año** (Fiscalidad): qué baja tu cuota si afloras hoy cada pérdida
   latente (con el límite del 25 % y lo que quedaría pendiente) y cuánta ganancia puedes realizar
   sin pagar más.
