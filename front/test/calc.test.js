@@ -217,3 +217,38 @@ test('TIR anualizada: interés anual equivalente contando cuándo entra cada eur
   close(periodStats(h, null).irr, (1.05 ** (365 / 99) - 1) * 100);
   assert.equal(periodStats(h, d[60]).irr, null, 'con menos de tres meses no se anualiza');
 });
+
+test('antes de fin de año: ahorro al aflorar una pérdida, tope del 25 % y margen para realizar ganancias', async () => {
+  const { yearEnd } = await import('../src/lib/calc.js');
+  const close = (a, b) => assert.ok(Math.abs(a - b) < 0.005, `${a} ≠ ${b}`);
+  const pos = (isin, sh, unit, price) => {
+    const p = { isin, name: isin, sh, cost: sh * unit, lots: [{ sh, unit, d: '2024-01-10' }], evs: [{ k: 'B', d: '2024-01-10', sh }] };
+    return { p, has: true, v: sh * price };
+  };
+  const lose = pos('L', 10, 100, 50); // −500 latentes (−501 con la comisión)
+  const win = pos('W', 10, 100, 130);
+  const sold = (reF, d = '2026-03-01') => ({ k: 'S', d, sh: 1, net: 1000 + reF, csF: 1000, reF, re: reF, sa: 0, lotsUsed: [], p: { isin: 'Z', name: 'Z', evs: [] } });
+
+  // Con 2.000 € de ganancias ya realizadas, aflorar −501 ahorra el 19 % de 501.
+  const a = yearEnd([lose, win], [sold(2000)], [], {}, '2026-11-14');
+  assert.equal(a.year, '2026');
+  assert.deepEqual(a.losses.map((r) => r.x.p.isin), ['L']);
+  close(a.losses[0].gain, -501);
+  close(a.losses[0].saving, 501 * 0.19);
+  close(a.losses[0].carried, 0);
+  assert.equal(a.room, 0);
+  close(a.rows.find((r) => r.x.p.isin === 'W').saving, -(299 * 0.19)); // vender la ganadora sube la cuota
+  assert.equal(a.noRebuyUntil, '2027-01-14');
+
+  // Sin ganancias, solo compensa el 25 % de los rendimientos (400 € de dividendos → 100 €) y el resto queda pendiente.
+  const div = { k: 'D', d: '2026-05-01', g: 400, tax: 76, net: 324, p: { isin: 'ES0000000001', name: 'D' } };
+  const b = yearEnd([lose], [], [div], {}, '2026-11-14');
+  close(b.losses[0].saving, 100 * 0.19);
+  close(b.losses[0].carried, 401);
+
+  // Con pérdidas ya realizadas hay margen para realizar ganancias gratis; vender la ganadora no cuesta nada.
+  const c = yearEnd([win], [sold(-800)], [], {}, '2026-11-14');
+  close(c.room, 800);
+  assert.equal(c.losses.length, 0);
+  close(c.rows[0].saving, 0);
+});

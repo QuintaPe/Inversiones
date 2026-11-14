@@ -937,7 +937,7 @@ button.plain{background:none;border:0;padding:0;text-align:left;border-radius:12
   .print-h{display:block;margin-bottom:6px}
   .tax-pane.off{display:flex!important}
   .tax-steps.folded{display:block!important}
-  .tax-tabs,.fold,.box-v svg{display:none!important}
+  .tax-tabs,.fold,.box-v svg,.no-print{display:none!important}
   .print-h h1{font-size:22px;letter-spacing:-.03em}
   .print-h p{color:var(--mu)}
   .stack{gap:14px}

@@ -355,6 +355,39 @@ export function taxYears(sl, dv, income = {}) {
   return Object.values(by).sort((a, b) => b.year.localeCompare(a.year));
 }
 
+/**
+ * Antes de que acabe el año: qué cambiaría en la declaración si hoy se vendiera entera cada
+ * posición con precio. Cada venta simulada (FIFO, con `fee` de comisión) pasa por las mismas
+ * cuentas que el resto del ejercicio, así que respeta la compensación con ganancias, el límite
+ * del 25 % de los rendimientos y las pérdidas que quedarían pendientes.
+ *
+ * o: posiciones abiertas de analyze() ({ p, has, v }); today: 'AAAA-MM-DD'.
+ * Devuelve { year, due, rows: [{ x, gain, saving, carried }], losses, room, noRebuyUntil }:
+ *  - gain: resultado FIFO que afloraría; saving: lo que baja (o sube, si es negativo) lo que pagas este año;
+ *  - carried: parte de la pérdida que no compensa este año y queda para los cuatro siguientes;
+ *  - losses: rows con pérdida, de mayor a menor ahorro; room: ganancias que aún se pueden
+ *    realizar este año sin pagar más, porque hay pérdidas (de este año o pendientes) que las absorben.
+ */
+export function yearEnd(o, sl, dv, income = {}, today = new Date().toISOString().slice(0, 10), fee = 1) {
+  const year = today.slice(0, 4);
+  const of = (sales) => taxYears(sales, dv, income).find((r) => r.year === year);
+  const base = of(sl);
+  const due = base?.due ?? 0, carry = base?.carryOut ?? 0;
+  const rows = o.filter((x) => x.has && x.p.sh > 0 && x.p.lots?.length).map((x) => {
+    const sim = simulateSale(x.p.lots, x.p.sh, x.v / x.p.sh, fee);
+    const sale = {
+      id: `sim-${x.p.isin}`, k: 'S', d: today, sh: x.p.sh, net: sim.proceeds, csF: sim.cost, reF: sim.gain,
+      cs: x.p.cost, re: sim.proceeds - x.p.cost, sa: 0, lotsUsed: sim.used, p: x.p,
+    };
+    const y = of([...sl, sale]);
+    return { x, gain: sim.gain, saving: due - y.due, carried: Math.max(0, y.carryOut - carry) };
+  });
+  const losses = rows.filter((r) => r.gain < -0.005).sort((a, b) => b.saving - a.saving || a.gain - b.gain);
+  // Pérdidas netas del año más las pendientes de años anteriores que aún no han compensado nada.
+  const net = base ? base.gainTax - base.carryIn : 0;
+  return { year, due, rows, losses, room: Math.max(0, -net), noRebuyUntil: addMonths(today, 2) };
+}
+
 /** Agrupa posiciones valoradas por una clave y devuelve [{ label, v, w, n }] ordenado. */
 export function allocation(priced, keyOf, top = 8, labelOf = keyOf) {
   const by = {};

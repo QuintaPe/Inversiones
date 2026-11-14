@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Asset, Card, Empty, Icon, Seg, Sticky, Tabs } from '../components/ui.jsx';
 import { Columns } from '../charts.jsx';
 import { useParam } from '../router.js';
-import { taxYears, splitWithholding, TREATY_RATE, SAVINGS_BRACKETS } from '../lib/calc.js';
+import { taxYears, yearEnd, splitWithholding, TREATY_RATE, SAVINGS_BRACKETS } from '../lib/calc.js';
 import { country, classLabel } from '../lib/countries.js';
 import { eur, eurS, num, qty, sign, date, pct, isMasked, compact } from '../lib/format.js';
 
@@ -31,6 +31,8 @@ export default function Tax({ a, income, onOpen }) {
   const [sel, setSel] = useParam('ejercicio', null);
   const [tab, setTab] = useParam('ver', 'resumen', { resumen: 'resumen', ventas: 'ventas', dividendos: 'dividendos', renta: 'renta' });
   const [steps, setSteps] = useState(false);
+  // Antes de fin de año: qué pasaría en la declaración al vender hoy cada posición.
+  const plan = useMemo(() => yearEnd(a.o, a.sl, a.dv, income), [a.o, a.sl, a.dv, income]);
   const [copied, setCopied] = useState(null);
   // Fuera de la pestaña elegida no se ven, pero siguen ahí para el informe en PDF.
   const pane = (k) => `stack tax-pane ${tab === k ? '' : 'off'}`;
@@ -161,6 +163,45 @@ export default function Tax({ a, income, onOpen }) {
           </p>
         </div>
       </section>
+      {y.year === plan.year && (plan.losses.length > 0 || plan.room >= 1) && (
+        <Card className="no-print" title={`Antes de que acabe ${plan.year}`}
+          sub={plan.losses.length
+            ? 'Posiciones en pérdidas: lo que cambiaría tu declaración si las vendieras hoy'
+            : 'Tienes pérdidas que aún pueden compensar ganancias'}>
+          {plan.room >= 1 && (
+            <p className="note">
+              Puedes realizar hasta <b>{eur(plan.room)}</b> de ganancias este año sin pagar más: las absorben tus pérdidas
+              {y.carryIn >= 0.005 ? ' (incluidas las pendientes de años anteriores)' : ''}.
+            </p>
+          )}
+          {plan.losses.length > 0 && (
+            <>
+              <ul className="rows">
+                {plan.losses.map(({ x, gain, saving, carried }) => (
+                  <li key={x.p.isin}>
+                    <button type="button" onClick={() => onOpen(x.p.isin)}>
+                      <Asset p={x.p} size="sm">
+                        Aflorarías {eurS(gain)}
+                        {carried >= 0.005 && <> · {eur(carried)} quedarían pendientes para los próximos años</>}
+                      </Asset>
+                      <span className="row-r">
+                        <span className={`row-v ${saving >= 0.005 ? 'gain' : ''}`}>{saving >= 0.005 ? `−${eur(saving)}` : eur(0)}</span>
+                        <small>en tu cuota de {plan.year}</small>
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              <p className="note">
+                Venta simulada de toda la posición al precio actual, por FIFO y con 1 € de comisión; no se suman entre sí.
+                Para que la pérdida cuente no puedes recomprar el mismo valor en los dos meses siguientes
+                (vendiendo hoy, hasta el {date(plan.noRebuyUntil)}). Vender solo por el impuesto cambia tu cartera: es
+                una decisión de inversión, no solo fiscal.
+              </p>
+            </>
+          )}
+        </Card>
+      )}
       {y.wash.length > 0 && (
         <Card title="Posible regla de los dos meses" sub={`${eurS(y.washLoss)} en pérdidas diferidas, descontadas del resultado del año`}>
           <ul className="rows">
