@@ -8,7 +8,7 @@ test('proyección: cambia con la aportación y dice cuándo se alcanza la meta',
   await settled(page);
   const card = page.locator('.card', { hasText: 'Proyección' }).last();
   await card.scrollIntoViewIfNeeded();
-  await expect(card.getByRole('group', { name: /Proyección del valor/ }).or(card.locator('.chart'))).toBeVisible();
+  await expect(card.getByRole('group', { name: /Proyección a futuro/ }).or(card.locator('.chart'))).toBeVisible();
   const total = card.locator('.proj-s .stat-v').first();
   const before = await total.textContent();
   await card.getByLabel('Aportación al mes (€)').fill('2000');

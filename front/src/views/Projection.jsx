@@ -50,7 +50,7 @@ export default function Projection({ value, all }) {
         <div><span className="stat-l">Lo pone el mercado</span><b className={`stat-v ${end.v >= end.put ? 'gain' : 'loss'}`}>{eur(end.v - end.put)}</b></div>
       </div>
 
-      <Lines x={x} height={240} base={0} label="Proyección del valor de la cartera en tres escenarios"
+      <Lines x={x} height={240} base={0} label="Proyección a futuro en tres escenarios"
         series={[
           { key: 'base', values: base.map((p) => p.v), cls: 'up', area: true },
           { key: 'high', values: high.map((p) => p.v), cls: 'b1' },
