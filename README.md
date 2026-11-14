@@ -4,7 +4,8 @@ Gestor de cartera de inversión a partir de la exportación CSV de Trade Republi
 
 - `back/` — Node + Express. Sesión con Google, datos en Turso (libSQL), motor de cálculo
   (coste medio y FIFO), cotizaciones e histórico de precios, logotipos, vigilancia de
-  alertas y avisos push.
+  alertas y avisos push. `src/app.js` monta la aplicación; las rutas están por dominio en
+  `src/routes/` y la cartera calculada (con su caché) en `src/services/portfolio.js`.
 - `front/` — React + Vite. Resumen, posiciones, ficha de activo, operaciones, dividendos,
   fiscalidad y efectivo con gastos por categoría. Instalable como app (PWA) en la versión compilada.
 
@@ -38,6 +39,10 @@ Sin `GOOGLE_CLIENT_ID` no se puede iniciar sesión. El back no recarga solo al c
 Las fuentes de precios y logotipos son públicas pero no garantizadas: si fallan, la app
 mantiene lo último guardado. `LIVE_QUOTES=0` y `LOGOS=0` las desactivan.
 
+Un fallo pasajero (red, 429, 5xx) se reintenta con espera creciente. Tras cuatro fallos seguidos
+de un proveedor se le deja de llamar un minuto (que se va doblando hasta quince si sigue caído) y
+se avisa en el registro. Si Yahoo no da un tipo de cambio, se usa el de referencia del BCE.
+
 ## Base de datos
 
 El esquema se crea y se actualiza solo al arrancar, con migraciones numeradas
@@ -59,7 +64,9 @@ con tarjeta se guarda el comercio y su código de categoría (MCC), y de las tra
 nombre de la otra parte, para ver y categorizar los gastos; nunca el concepto, el IBAN ni la
 referencia de la transferencia.
 Al subir un CSV se enseña primero qué va a cambiar; `GET /api/export` descarga una copia
-completa de los datos del usuario.
+completa de los datos del usuario, y «Restaurar una copia» (menú de la cuenta,
+`POST /api/import`) la vuelve a cargar: enseña qué trae, sustituye todo lo que hay en la cuenta
+en una sola transacción y valida cada dato del archivo antes de guardarlo (`back/src/backup.js`).
 
 ## Alertas y avisos
 
@@ -133,8 +140,18 @@ Antes de exponerla a internet:
 3. Usa un `SESSION_SECRET` propio (`openssl rand -hex 32`) y Turso como base de datos.
 
 El back ya incluye cabeceras de seguridad con política de contenido (`CSP=0` la desactiva),
-compresión, límite de peticiones y `/api/health`. Define `PUSH_SUBJECT` con un contacto real
-para los avisos.
+compresión y límite de peticiones. Define `PUSH_SUBJECT` con un contacto real para los avisos.
+
+- **Salud**: `/api/health` comprueba que la base de datos responde; devuelve 503 si no, o si el
+  servidor se está apagando.
+- **Apagado**: con SIGTERM deja de aceptar peticiones, cierra los canales de cotizaciones (las
+  pestañas reconectan solas), espera a las peticiones en curso hasta `SHUTDOWN_MS` y cierra la
+  base de datos.
+- **Registro**: con `NODE_ENV=production` (o `LOG_FORMAT=json`) cada línea es un objeto JSON. Los
+  errores sin tratar llevan el identificador de la petición, que también va en la cabecera
+  `X-Request-Id` y en la respuesta 500, para poder buscarlos.
+- **Sesiones**: la cookie dura 30 días. «Cerrar en otros dispositivos» (menú de la cuenta)
+  invalida todas las demás sesiones del usuario.
 Cualquier persona con cuenta de Google puede registrarse: cada usuario solo ve sus datos.
 Desde el acceso también se puede probar una cartera de ejemplo (`back/src/demo.js`): crea una
 cuenta temporal con valores reales y operaciones inventadas, que se borra a la semana (`DEMO=0` la quita).
