@@ -592,7 +592,7 @@ button.kpi:active{transform:scale(.985)}
 .legend-f{padding:0;margin-left:auto;justify-content:flex-end}
 .sw{width:14px;height:3px;border-radius:2px;background:var(--chart)}
 .sw.up{background:var(--gain)}.sw.down{background:var(--loss)}.sw.muted{background:var(--mu)}.sw.b1{background:var(--s1)}.sw.b2{background:var(--s2)}
-.perf{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;padding:4px 0 18px;margin-bottom:6px;border-bottom:1px solid var(--line)}
+.perf{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:16px;padding:4px 0 18px;margin-bottom:6px;border-bottom:1px solid var(--line)}
 .perf>div{display:flex;flex-direction:column;gap:2px;min-width:0}
 .perf .stat-v{font-size:26px}
 .kv small{display:block;color:var(--mu);font-size:12px}

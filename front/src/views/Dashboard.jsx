@@ -352,6 +352,7 @@ export default function Dashboard({ a, hist, histProgress, flt, cash, meta, onOp
             <div className="perf">
               <div><span className="stat-l">Resultado</span><b className={`stat-v ${sign(st.gain)}`}>{eurS(st.gain)}</b></div>
               <div><span className="stat-l">Rentabilidad</span><b className={`stat-v ${sign(st.gain)}`}>{st.mwr != null ? pctS(st.mwr) : '—'}</b></div>
+              {st.irr != null && <div><span className="stat-l">Anualizada (TIR)</span><b className={`stat-v ${sign(st.irr)}`}>{pctS(st.irr)}</b></div>}
               <div><span className="stat-l">Caída máxima</span><b className="stat-v">{pct(st.mdd)}</b></div>
             </div>
             <button type="button" className="fold" aria-expanded={detail} onClick={() => setDetail((d) => !d)}>
@@ -412,7 +413,8 @@ export default function Dashboard({ a, hist, histProgress, flt, cash, meta, onOp
               <summary>Cómo se calcula</summary>
               <p className="note">
                 Resultado = valor final − valor inicial − aportaciones + dividendos. «Con tus aportaciones» divide ese resultado
-                entre el capital medio que has tenido invertido, y la de cada índice se calcula igual: invirtiendo en él el
+                entre el capital medio que has tenido invertido; «Anualizada (TIR)» es el interés anual equivalente a ese resultado,
+                contando el día en que entró cada euro (solo con tres meses o más). La de cada índice se calcula igual: invirtiendo en él el
                 mismo dinero los mismos días; la gráfica de rentabilidad dibuja ese resultado acumulado. «Por tiempo»
                 (ponderada por tiempo) hace que cada día pese igual, hubiera 100 € o 100.000 €: una mala racha con poco
                 capital la hunde aunque apenas te costara euros. La rentabilidad por unidad de riesgo es la anualizada

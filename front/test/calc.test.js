@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { analyze, mergeFills, washBuys, savingsTax, simulateSale, rebalance, taxYears } from '../src/lib/calc.js';
-import { prepare, periodStats } from '../src/lib/perf.js';
+import { prepare, periodStats, xirr } from '../src/lib/perf.js';
 
 test('mergeFills junta ejecuciones del mismo día con una sola comisión', () => {
   const evs = [
@@ -197,4 +197,23 @@ test('analyze reutiliza lo que depende de los eventos, pero no los precios', () 
   assert.notEqual(a3.ops, a1.ops);
   assert.equal(a3.dv.length, 1);
   assert.equal(a3.divN, 4);
+});
+
+test('TIR anualizada: interés anual equivalente contando cuándo entra cada euro', () => {
+  const close = (a, b) => assert.ok(Math.abs(a - b) < 1e-4, `${a} ≠ ${b}`);
+  close(xirr([[0, -1000], [365, 1100]]), 10);
+  close(xirr([[0, -1000], [730, 1210]]), 10); // dos años al 10 %
+  close(xirr([[0, -1000], [365, 900]]), -10);
+  // 1.000 € al inicio y 1.000 € a mitad de año, al 10 % anual: 1.100 + 1.000 × 1,1^0,5
+  close(xirr([[0, -1000], [182.5, -1000], [365, 1100 + 1000 * 1.1 ** 0.5]]), 10);
+  assert.equal(xirr([[0, -1000]]), null);
+  assert.equal(xirr([[0, 500], [10, 600]]), null);
+
+  // En el periodo: 100 días con 1.000 € que acaban en 1.050 → (1,05)^(365/99) − 1
+  const n = 100;
+  const d = Array.from({ length: n }, (_, i) => new Date(Date.UTC(2025, 0, 1) + i * 86400000).toISOString().slice(0, 10));
+  const v = d.map((_, i) => 1000 + (50 * i) / (n - 1));
+  const h = prepare({ d, v, cost: d.map(() => 1000), idx: v.map((x) => x / 10), buy: d.map((_, i) => (i ? 0 : 1000)), sell: d.map(() => 0), div: d.map(() => 0), benchmarks: [] });
+  close(periodStats(h, null).irr, (1.05 ** (365 / 99) - 1) * 100);
+  assert.equal(periodStats(h, d[60]).irr, null, 'con menos de tres meses no se anualiza');
 });

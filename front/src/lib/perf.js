@@ -28,6 +28,24 @@ export function gainBetween(h, i0, i) {
   return h.v[i] - at(h.v, i0) - contrib;
 }
 
+/**
+ * Tasa interna de retorno anualizada (TIR): el interés anual constante que, aplicado a cada
+ * euro desde el día en que entró, da el valor final. flows: [[días desde el inicio, importe]],
+ * negativo lo que pones y positivo lo que recibes (incluido el valor final). null si no hay
+ * solución (sin entradas o sin salidas de dinero).
+ */
+export function xirr(flows) {
+  if (!flows.some(([, a]) => a < 0) || !flows.some(([, a]) => a > 0)) return null;
+  const npv = (r) => flows.reduce((t, [days, a]) => t + a / (1 + r) ** (days / 365), 0);
+  let lo = -0.9999, hi = 100;
+  if (npv(lo) < 0 || npv(hi) > 0) return null; // fuera de −99,99 % … +10.000 %
+  for (let i = 0; i < 100 && hi - lo > 1e-9; i++) {
+    const mid = (lo + hi) / 2;
+    if (npv(mid) > 0) lo = mid; else hi = mid;
+  }
+  return ((lo + hi) / 2) * 100;
+}
+
 export function periodStats(h, start) {
   const i0 = baseIndex(h, start), i1 = h.d.length - 1;
   const v0 = at(h.v, i0), v1 = h.v[i1];
@@ -43,6 +61,19 @@ export function periodStats(h, start) {
     if (cf) weighted += cf * ((i1 - i) / T); // cuanto antes entra el dinero, más pesa
   }
   const mwr = weighted > 0 ? (gain / weighted) * 100 : null;
+
+  // Anualizada (TIR): el interés anual equivalente, contando cuándo entró cada euro. Con menos
+  // de tres meses, anualizar exagera cualquier racha: no se calcula.
+  let irr = null;
+  if (i1 - first >= 90) {
+    const flows = v0 > 0 ? [[0, -v0]] : [];
+    for (let i = i0 + 1; i <= i1; i++) {
+      const cf = h.buy[i] - h.sell[i] - h.div[i];
+      if (cf) flows.push([i - first, -cf]);
+    }
+    flows.push([i1 - first, v1]);
+    irr = xirr(flows);
+  }
 
   // Ponderada por tiempo: no depende de cuándo aportas; es la comparable con un índice.
   const idx0 = i0 < 0 ? 100 : h.idx[i0];
@@ -97,5 +128,5 @@ export function periodStats(h, start) {
     const bGain = g.at(-1);
     return { key: b.key, name: b.name, r: (c1 / c0 - 1) * 100, gain: bGain, mwr: weighted > 0 ? (bGain / weighted) * 100 : null, from: j, g };
   });
-  return { i0, i1, first, v0, v1, bought, sold, divs, contrib: bought - sold, gain, mwr, twr, mdd: mdd * 100, vol, ratio, best, worst, bench, avg: weighted };
+  return { i0, i1, first, v0, v1, bought, sold, divs, contrib: bought - sold, gain, mwr, irr, twr, mdd: mdd * 100, vol, ratio, best, worst, bench, avg: weighted };
 }
