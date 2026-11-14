@@ -194,6 +194,9 @@ export default function App() {
     setToasts([]);
   };
 
+  const leaveDemo = async () => {
+    if (await confirm({ title: '¿Salir de la cartera de ejemplo?', text: 'Son datos inventados para probar la app. Al salir vuelves a la pantalla de acceso.', action: 'Salir del ejemplo' })) logout();
+  };
   const logoutOthers = async () => {
     if (!(await confirm({ title: '¿Cerrar sesión en los demás dispositivos?', text: 'Cualquier otro navegador o móvil donde hayas entrado tendrá que volver a iniciar sesión. Aquí sigues dentro.', action: 'Cerrar las demás' }))) return;
     try { await api.logoutOthers(); notify('ok', 'Sesión cerrada en los demás dispositivos.'); } catch (err) { fail(err); }
@@ -504,6 +507,12 @@ export default function App() {
           <a className="brand" href="/resumen">cartera<i aria-hidden="true">.</i></a>
           {nav('nav')}
           <div className="bar-a">
+            {user.id.startsWith('demo-') && (
+              <button type="button" className="live demo-pill" onClick={leaveDemo}
+                aria-label="Cartera de ejemplo con datos inventados. Salir" title="Cartera de ejemplo con datos inventados: prueba lo que quieras. Pulsa para salir.">
+                <Icon name="logout" size={15} /><span>Ejemplo</span>
+              </button>
+            )}
             {offline && <span className="live off" title="Sin conexión: ves los últimos datos guardados"><span className="live-dot" aria-hidden="true" />Sin conexión</span>}
             {liveOn && !offline && (
               <button type="button" className={`live ${live.error ? 'off' : ''} ${live.busy ? 'busy' : ''}`} onClick={refreshQuotes} disabled={live.busy}
@@ -537,13 +546,6 @@ export default function App() {
           </div>
         )}
 
-        {user.id.startsWith('demo-') && (
-          <p className="banner info" role="status">
-            <Icon name="eye" size={16} />
-            <span>Cartera de ejemplo con datos inventados<span className="hide-s">: prueba lo que quieras</span>.</span>
-            <button type="button" className="link" onClick={logout}>Salir del ejemplo</button>
-          </p>
-        )}
 
         {unknownRows > 0 && route !== 'activo' && (
           <p className="banner" role="status">

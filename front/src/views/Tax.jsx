@@ -222,7 +222,7 @@ export default function Tax({ a, income, onOpen }) {
           </p>
         </Card>
       )}
-      {years.length > 1 && (
+      {years.filter((r) => r.sales.length).length > 1 && (
         <Card title="Resultado realizado por ejercicio" sub="Criterio FIFO">
           <Columns signed height={180} label="Resultado realizado por ejercicio"
             data={[...years].reverse().map((r) => ({ key: r.year, label: r.year, v: r.gainF, n: r.sales.length }))}
@@ -237,8 +237,10 @@ export default function Tax({ a, income, onOpen }) {
           <tbody>
             {years.map((r) => (
               <tr key={r.year} onClick={() => setSel(r.year)} tabIndex={0} onKeyDown={(ev) => ev.key === 'Enter' && setSel(r.year)}>
-                <td className="l"><b>{r.year}</b></td><td className="hide-s">{r.sales.length}</td><td className="hide-s">{eur(r.proceeds)}</td>
-                <td className={sign(r.gainF)}>{eurS(r.gainF)}</td><td className={`hide-m ${sign(r.gainAvg)}`}>{eurS(r.gainAvg)}</td>
+                <td className="l"><b>{r.year}</b></td><td className="hide-s">{r.sales.length || <span className="mu">—</span>}</td><td className="hide-s">{r.sales.length ? eur(r.proceeds) : <span className="mu">—</span>}</td>
+                {/* Sin ventas no hay resultado: una raya, no un «+0,00 €». */}
+                <td className={r.sales.length ? sign(r.gainF) : 'mu'}>{r.sales.length ? eurS(r.gainF) : '—'}</td>
+                <td className={`hide-m ${r.sales.length ? sign(r.gainAvg) : 'mu'}`}>{r.sales.length ? eurS(r.gainAvg) : '—'}</td>
                 <td>{eur(r.divG)}</td><td className="hide-s">{eur(r.divT)}</td>
               </tr>
             ))}

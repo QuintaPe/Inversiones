@@ -19,7 +19,8 @@ for (const [route, title, sub] of CASES) {
     // Las animaciones de entrada desplazan los bloques unos píxeles mientras duran.
     await page.evaluate(() => document.getAnimations().forEach((a) => a.finish()));
     await page.evaluate(() => window.scrollTo(0, 900));
-    await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(400);
+    // Sin el aviso de la cartera de ejemplo las páginas cortas bajan algo menos: basta con pasar la cabecera.
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(250);
     const bar = await box(page, '.bar');
     await expect(page.getByRole('heading', { level: 1, name: title })).toBeInViewport();
     const h = await box(page, '.page-h');

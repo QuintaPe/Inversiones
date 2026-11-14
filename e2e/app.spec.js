@@ -10,7 +10,7 @@ test.describe('sin sesión', () => {
     const btn = page.getByRole('button', { name: /ejemplo/i });
     await expect(btn).toBeVisible();
     await btn.click();
-    await expect(page.getByText(/Cartera de ejemplo con datos inventados/)).toBeVisible();
+    await expect(page.getByRole('button', { name: /Cartera de ejemplo con datos inventados/ })).toBeVisible();
   });
 });
 
