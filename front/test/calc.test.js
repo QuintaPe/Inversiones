@@ -252,3 +252,26 @@ test('antes de fin de año: ahorro al aflorar una pérdida, tope del 25 % y marg
   assert.equal(c.losses.length, 0);
   close(c.rows[0].saving, 0);
 });
+
+test('proyección: interés compuesto con aportaciones, meta y aportación habitual', async () => {
+  const { project, monthsToGoal, monthlyContribution } = await import('../src/lib/calc.js');
+  const close = (a, b) => assert.ok(Math.abs(a - b) < 0.01, `${a} ≠ ${b}`);
+  const flat = project({ start: 1000, monthly: 100, rate: 0, years: 2 });
+  assert.equal(flat.length, 25);
+  close(flat.at(-1).v, 3400);
+  close(flat.at(-1).put, 3400);
+  const one = project({ start: 1000, monthly: 0, rate: 10, years: 3 });
+  close(one[12].v, 1100); close(one[36].v, 1331);
+  // Aportando 100 al final de cada mes al 12 % anual: anualidad con el tipo mensual equivalente.
+  const r = 1.12 ** (1 / 12) - 1;
+  close(project({ start: 0, monthly: 100, rate: 12, years: 1 }).at(-1).v, (100 * ((1 + r) ** 12 - 1)) / r);
+  assert.equal(monthsToGoal(flat, 1000), 0);
+  assert.equal(monthsToGoal(flat, 2000), 10);
+  assert.equal(monthsToGoal(flat, 1e6), null);
+  // Media de los 12 meses completos anteriores: no cuenta el mes en curso ni lo de hace más de un año.
+  const all = [
+    { k: 'B', d: '2026-11-03', net: 9999 }, { k: 'B', d: '2026-10-15', net: 1200 }, { k: 'S', d: '2026-02-01', net: 600 },
+    { k: 'D', d: '2026-03-01', net: 50 }, { k: 'B', d: '2025-11-01', net: 600 }, { k: 'B', d: '2025-10-31', net: 5000 },
+  ];
+  close(monthlyContribution(all, '2026-11-14'), 100);
+});

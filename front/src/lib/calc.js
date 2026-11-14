@@ -388,6 +388,35 @@ export function yearEnd(o, sl, dv, income = {}, today = new Date().toISOString()
   return { year, due, rows, losses, room: Math.max(0, -net), noRebuyUntil: addMonths(today, 2) };
 }
 
+/**
+ * Proyección mes a mes: `start` euros hoy, `monthly` euros al final de cada mes y `rate` % anual
+ * (interés compuesto mensual equivalente). Devuelve [{ m, v, put }] de 0 a years × 12:
+ * v = valor, put = lo aportado (start + aportaciones).
+ */
+export function project({ start, monthly, rate, years }) {
+  const r = (1 + rate / 100) ** (1 / 12) - 1;
+  const out = [{ m: 0, v: start, put: start }];
+  let v = start;
+  for (let m = 1; m <= Math.round(years * 12); m++) {
+    v = v * (1 + r) + monthly;
+    out.push({ m, v, put: start + monthly * m });
+  }
+  return out;
+}
+/** Primer mes en que la proyección llega a `goal` (0 si ya está), o null si no llega en el plazo. */
+export const monthsToGoal = (points, goal) => points.find((p) => p.v >= goal)?.m ?? null;
+
+/** Aportación neta media al mes (compras − ventas) en los últimos `n` meses completos antes de `today`. */
+export function monthlyContribution(all, today = new Date().toISOString().slice(0, 10), n = 12) {
+  const end = `${today.slice(0, 7)}-01`, from = addMonths(end, -n);
+  let net = 0;
+  for (const x of all) {
+    if (x.d < from || x.d >= end) continue;
+    if (x.k === 'B') net += x.net; else if (x.k === 'S') net -= x.net;
+  }
+  return net / n;
+}
+
 /** Agrupa posiciones valoradas por una clave y devuelve [{ label, v, w, n }] ordenado. */
 export function allocation(priced, keyOf, top = 8, labelOf = keyOf) {
   const by = {};

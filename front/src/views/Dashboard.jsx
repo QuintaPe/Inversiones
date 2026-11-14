@@ -4,6 +4,7 @@ import { StepArea, Lines, RankBars, Treemap } from '../charts.jsx';
 import { investedSeries, allocation, monthlyDividends, sum } from '../lib/calc.js';
 import { prepare, periodStats, gainBetween } from '../lib/perf.js';
 import { useTween } from '../hooks.js';
+import Projection from './Projection.jsx';
 import { RANGE_NAME, useRange } from '../lib/periods.js';
 import { Kpi, Spark, VsBars } from '../components/Kpi.jsx';
 import { country, classLabel, region, sector, industry, currency, exchange } from '../lib/countries.js';
@@ -455,6 +456,7 @@ export default function Dashboard({ a, hist, histProgress, flt, cash, meta, onOp
           </Card>
         )}
 
+        {!none && a.val > 0 && <Projection value={a.val} all={a.all} />}
       </div>
     </div>
   );
