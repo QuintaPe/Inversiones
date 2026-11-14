@@ -3,7 +3,7 @@ import { Card, Empty, Search, Seg, Sticky, Tabs } from '../components/ui.jsx';
 import { Kpi, Spark } from '../components/Kpi.jsx';
 import { Lines, Columns, Diverge } from '../charts.jsx';
 import { useParam } from '../router.js';
-import { cashHealth, spendOf, incomeOf, investOf } from '../lib/cash.js';
+import { cashHealth, spendOf, incomeOf, investOf } from '../../../shared/cash.js';
 import Spending from './Spending.jsx';
 import { prettyName, categoryOf, isSpend, CAT } from '../lib/categories.js';
 import { eur, eurS, pct, sign, date, dateLong, month } from '../lib/format.js';

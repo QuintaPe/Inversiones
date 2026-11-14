@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
 import { Asset, Avatar, Card, Empty, Flash, Icon, Seg } from '../components/ui.jsx';
 import { StepArea, Lines, RankBars, Treemap } from '../charts.jsx';
-import { investedSeries, allocation, monthlyDividends, sum } from '../lib/calc.js';
-import { prepare, periodStats, gainBetween } from '../lib/perf.js';
+import { investedSeries, allocation, monthlyDividends, sum } from '../../../shared/calc.js';
+import { prepare, periodStats, gainBetween } from '../../../shared/perf.js';
 import { useTween } from '../hooks.js';
 import Projection from './Projection.jsx';
 import { RANGE_NAME, useRange } from '../lib/periods.js';

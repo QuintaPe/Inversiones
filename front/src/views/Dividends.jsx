@@ -3,7 +3,7 @@ import * as api from '../api.js';
 import { Asset, Avatar, Card, Empty } from '../components/ui.jsx';
 import { Kpi, Spark } from '../components/Kpi.jsx';
 import { Columns } from '../charts.jsx';
-import { monthlyDividends, sum } from '../lib/calc.js';
+import { monthlyDividends, sum } from '../../../shared/calc.js';
 import { eur, pct, month, date, qty, num } from '../lib/format.js';
 
 const ym = (d) => d.slice(0, 7);

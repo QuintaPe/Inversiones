@@ -3,7 +3,7 @@ import { useMemo } from 'react';
 import { Card } from '../components/ui.jsx';
 import { Lines } from '../charts.jsx';
 import { useStored } from '../hooks.js';
-import { project, monthsToGoal, monthlyContribution } from '../lib/calc.js';
+import { project, monthsToGoal, monthlyContribution } from '../../../shared/calc.js';
 import { eur, compact, isMasked } from '../lib/format.js';
 
 const SPREAD = 3; // puntos de rentabilidad anual arriba y abajo del escenario central

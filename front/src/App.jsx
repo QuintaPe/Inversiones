@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as api from './api.js';
-import { analyze, taxYears, GROUPS } from './lib/calc.js';
+import { analyze, taxYears, GROUPS } from '../../shared/calc.js';
 import { time, eur, pctS, setMasked } from './lib/format.js';
 import { useStored, usePullToRefresh, PULL_AT } from './hooks.js';
 import { useRoute, goBack } from './router.js';

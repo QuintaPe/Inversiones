@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { analyze, mergeFills, washBuys, savingsTax, simulateSale, rebalance, taxYears } from '../src/lib/calc.js';
-import { prepare, periodStats, xirr } from '../src/lib/perf.js';
+import { analyze, mergeFills, washBuys, savingsTax, simulateSale, rebalance, taxYears } from '../../shared/calc.js';
+import { prepare, periodStats, xirr } from '../../shared/perf.js';
 
 test('mergeFills junta ejecuciones del mismo día con una sola comisión', () => {
   const evs = [
@@ -118,7 +118,7 @@ test('periodStats: la serie diaria del índice acaba en su resultado y empieza e
 });
 
 test('splitWithholding: separa la retención de origen de la española', async () => {
-  const { splitWithholding } = await import('../src/lib/calc.js');
+  const { splitWithholding } = await import('../../shared/calc.js');
   const near = (a, b) => assert.ok(Math.abs(a - b) < 0.011, `${a} ≈ ${b}`);
   // EE. UU.: 15 % en origen y 19 % sobre el resto (1,73 → 0,26 + 0,28).
   let w = splitWithholding(1.73, 0.54, 'US9252831030');
@@ -219,7 +219,7 @@ test('TIR anualizada: interés anual equivalente contando cuándo entra cada eur
 });
 
 test('antes de fin de año: ahorro al aflorar una pérdida, tope del 25 % y margen para realizar ganancias', async () => {
-  const { yearEnd } = await import('../src/lib/calc.js');
+  const { yearEnd } = await import('../../shared/calc.js');
   const close = (a, b) => assert.ok(Math.abs(a - b) < 0.005, `${a} ≠ ${b}`);
   const pos = (isin, sh, unit, price) => {
     const p = { isin, name: isin, sh, cost: sh * unit, lots: [{ sh, unit, d: '2024-01-10' }], evs: [{ k: 'B', d: '2024-01-10', sh }] };
@@ -254,7 +254,7 @@ test('antes de fin de año: ahorro al aflorar una pérdida, tope del 25 % y marg
 });
 
 test('proyección: interés compuesto con aportaciones, meta y aportación habitual', async () => {
-  const { project, monthsToGoal, monthlyContribution } = await import('../src/lib/calc.js');
+  const { project, monthsToGoal, monthlyContribution } = await import('../../shared/calc.js');
   const close = (a, b) => assert.ok(Math.abs(a - b) < 0.01, `${a} ≠ ${b}`);
   const flat = project({ start: 1000, monthly: 100, rate: 0, years: 2 });
   assert.equal(flat.length, 25);

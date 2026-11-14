@@ -5,7 +5,7 @@ import { Kpi } from '../components/Kpi.jsx';
 import { Lines } from '../charts.jsx';
 import { useParam } from '../router.js';
 import { country, classLabel, sector } from '../lib/countries.js';
-import { simulateSale, savingsTax } from '../lib/calc.js';
+import { simulateSale, savingsTax } from '../../../shared/calc.js';
 import { eur, eurS, num, pct, pctS, qty, sign, date, dateLong, time, isMasked, MASK, maskText } from '../lib/format.js';
 // Base del ahorro del año si se añade un resultado: las pérdidas compensan hasta el 25 % de los rendimientos.
 const saleBase = (b, gain) => { const g = b.gains + gain; return Math.max(0, g) + b.divs - Math.min(Math.max(0, -g), 0.25 * b.divs); };

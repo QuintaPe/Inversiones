@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Asset, Card, Empty, Icon, Seg, Sticky, Tabs } from '../components/ui.jsx';
 import { Columns } from '../charts.jsx';
 import { useParam } from '../router.js';
-import { taxYears, yearEnd, splitWithholding, TREATY_RATE, SAVINGS_BRACKETS } from '../lib/calc.js';
+import { taxYears, yearEnd, splitWithholding, TREATY_RATE, SAVINGS_BRACKETS } from '../../../shared/calc.js';
 import { country, classLabel } from '../lib/countries.js';
 import { eur, eurS, num, qty, sign, date, pct, isMasked, compact } from '../lib/format.js';
 

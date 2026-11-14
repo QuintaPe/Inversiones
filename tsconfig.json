@@ -20,6 +20,7 @@
     "back/src/alerts.js",
     "back/src/log.js",
     "back/src/lib/*.js",
-    "front/src/lib/*.js"
+    "front/src/lib/*.js",
+    "shared/*.js"
   ]
 }

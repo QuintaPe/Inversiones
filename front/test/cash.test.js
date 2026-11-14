@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { cashHealth, averageBalance } from '../src/lib/cash.js';
+import { cashHealth, averageBalance } from '../../shared/cash.js';
 
 test('saldo medio con el saldo escalonado día a día', () => {
   const days = [['2025-01-01', 100], ['2025-01-11', 200]];

@@ -6,6 +6,8 @@ Gestor de cartera de inversión a partir de la exportación CSV de Trade Republi
   (coste medio y FIFO), cotizaciones e histórico de precios, logotipos, vigilancia de
   alertas y avisos push. `src/app.js` monta la aplicación; las rutas están por dominio en
   `src/routes/` y la cartera calculada (con su caché) en `src/services/portfolio.js`.
+- `shared/` — cálculos en JavaScript puro, sin dependencias, que usan el front y el back:
+  agregados y fiscalidad (`calc.js`), rentabilidad por periodo (`perf.js`) y salud del efectivo (`cash.js`).
 - `front/` — React + Vite. Resumen, posiciones, ficha de activo, operaciones, dividendos,
   fiscalidad y efectivo con gastos por categoría. Instalable como app (PWA) en la versión compilada.
 

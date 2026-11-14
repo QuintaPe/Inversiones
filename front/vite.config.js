@@ -41,6 +41,8 @@ export default defineConfig({
     host: process.env.HOST || 'localhost',
     port: 5173,
     strictPort: true,
+    // Los cálculos compartidos con el back viven fuera de front/ (shared/).
+    fs: { allow: ['..'] },
     proxy: { '/api': `http://127.0.0.1:${process.env.API_PORT || 3001}` },
   },
 });

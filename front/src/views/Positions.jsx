@@ -5,7 +5,7 @@ import { Kpi, Spark } from '../components/Kpi.jsx';
 import { useStored } from '../hooks.js';
 import { useParam } from '../router.js';
 import { classLabel, sector } from '../lib/countries.js';
-import { sum } from '../lib/calc.js';
+import { sum } from '../../../shared/calc.js';
 import Targets from './Targets.jsx';
 import Watch from './Watch.jsx';
 import { eur, eurS, pct, pctS, qty, sign, date } from '../lib/format.js';

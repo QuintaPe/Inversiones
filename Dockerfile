@@ -4,6 +4,8 @@ WORKDIR /app/front
 COPY front/package*.json ./
 RUN npm ci
 COPY front/ ./
+# Cálculos que comparten el front y el back.
+COPY shared/ /app/shared/
 RUN npm run build
 
 FROM node:24-alpine
@@ -12,6 +14,7 @@ WORKDIR /app/back
 COPY back/package*.json ./
 RUN npm ci --omit=dev
 COPY back/src ./src
+COPY shared/ /app/shared/
 COPY --from=front /app/front/dist /app/front/dist
 # Sin Turso configurado, la base de datos local vive aquí (monta un volumen para conservarla).
 RUN mkdir -p /app/back/data && chown node:node /app/back/data

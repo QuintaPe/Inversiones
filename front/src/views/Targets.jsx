@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import * as api from '../api.js';
 import { Asset, Empty } from '../components/ui.jsx';
-import { rebalance } from '../lib/calc.js';
+import { rebalance } from '../../../shared/calc.js';
 import { eur, pct, qty, sign, isMasked, MASK } from '../lib/format.js';
 
 const n = (v) => parseFloat(String(v).replace(',', '.')) || 0;

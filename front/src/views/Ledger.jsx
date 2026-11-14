@@ -3,7 +3,7 @@ import * as api from '../api.js';
 import { Asset, Empty, Icon, Kind, Search, Seg, Sticky } from '../components/ui.jsx';
 import { Kpi } from '../components/Kpi.jsx';
 import { useParam } from '../router.js';
-import { sum } from '../lib/calc.js';
+import { sum } from '../../../shared/calc.js';
 import { eur, eurS, qty, sign, date } from '../lib/format.js';
 
 const MONTHS = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
