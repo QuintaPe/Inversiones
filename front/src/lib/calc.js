@@ -319,12 +319,12 @@ export function taxYears(sl, dv, income = {}) {
 
     carry = carry.filter((c) => Number(r.year) - Number(c.year) <= CARRY_YEARS);
     r.carryIn = sum(carry, (c) => c.amt);
-    const use = (limit) => {
+    const consume = (limit) => {
       let used = 0;
       for (const c of carry) { const t = Math.min(c.amt, limit - used); c.amt -= t; used += t; }
       return used;
     };
-    r.usedPrev = r.gainTax > 0 ? use(r.gainTax) : 0; // contra las ganancias del año
+    r.usedPrev = r.gainTax > 0 ? consume(r.gainTax) : 0; // contra las ganancias del año
     const net = r.gainTax - r.usedPrev;
     let cap = 0.25 * Math.max(0, r.rcm); // contra los rendimientos, con el límite del 25 %
     r.offsetRcm = 0;
@@ -333,7 +333,7 @@ export function taxYears(sl, dv, income = {}) {
       r.offsetRcm += o; cap -= o;
       if (-net - o > 0.005) carry.push({ year: r.year, amt: -net - o });
     }
-    r.offsetRcm += use(cap);
+    r.offsetRcm += consume(cap);
     carry = carry.filter((c) => c.amt > 0.005);
     r.carryOut = sum(carry, (c) => c.amt);
     r.base = Math.max(0, net) + r.rcm - r.offsetRcm;

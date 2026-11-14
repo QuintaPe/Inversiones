@@ -1,0 +1,4 @@
+#!/bin/sh
+# Antes de subir: lint, tipos, pruebas y build con sus presupuestos. Se activa una vez con
+#   git config core.hooksPath .githooks
+exec npm run check --silent

@@ -10,6 +10,7 @@ export const isDate = (d) => /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date
  * Identificador de un activo: casi siempre un ISIN, pero las operaciones a mano admiten
  * cualquier texto corto (un inmueble, una cripto). Sin caracteres de control.
  */
+// eslint-disable-next-line no-control-regex -- justo lo que se quiere rechazar
 export const isAssetId = (s) => typeof s === 'string' && s.length >= 1 && s.length <= 20 && s === s.trim() && !/[\x00-\x1f\x7f]/.test(s);
 
 /** Error de validación: el middleware de errores lo devuelve como 400 con su mensaje. */

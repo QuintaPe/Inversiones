@@ -33,8 +33,8 @@ export default function Positions({ a, onOpen, onPrice, targets, patch, fail }) 
   const open = useSort('v');
   const closed = useSort('real');
   const match = (x) => !q || `${x.p.name} ${x.p.isin}`.toLowerCase().includes(q.trim().toLowerCase());
-  const rows = useMemo(() => open.apply(a.o.filter(match), (x, k) => GET[k](x)), [a.o, q, open.sort]);
-  const crow = useMemo(() => closed.apply(a.c.filter(match), (x, k) => GET[k](x)), [a.c, q, closed.sort]);
+  const rows = useMemo(() => open.apply(a.o.filter(match), (x, k) => GET[k](x)), [a.o, q, open.sort]); // eslint-disable-line react-hooks/exhaustive-deps -- match depende de q; open.apply, de open.sort
+  const crow = useMemo(() => closed.apply(a.c.filter(match), (x, k) => GET[k](x)), [a.c, q, closed.sort]); // eslint-disable-line react-hooks/exhaustive-deps -- igual que la anterior
   const s = open, c = closed;
   const [groupBy, setGroupBy] = useStored('pos-group', 'none');
   // Mini-gráficas de 30 días: solo se piden al ver las tarjetas.

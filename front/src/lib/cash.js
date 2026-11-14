@@ -30,8 +30,8 @@ export function averageBalance(days, from, to) {
 }
 
 /**
- * @param cash  { balance, months: { 'AAAA-MM': { concepto: importe } }, days: [[fecha, saldo]] }
- * @returns { asOf, months: [...completos], avgSpend, avgIncome, saveRate, cushion, yieldPct, now: {...} }
+ * @param cash  efectivo: { balance, months: { 'AAAA-MM': { concepto: importe } }, days: [[fecha, saldo]] }
+ * @returns resumen: { asOf, months: [...completos], avgSpend, avgIncome, saveRate, cushion, yieldPct, now: {...} }
  */
 export function cashHealth(cash) {
   const asOf = cash.days.at(-1)?.[0]; // fecha del último movimiento: hasta ahí llega el CSV

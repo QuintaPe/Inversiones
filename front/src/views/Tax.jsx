@@ -59,7 +59,7 @@ export default function Tax({ a, income, onOpen }) {
   ].filter(([, , v]) => v >= 0.005).map(([k, label, v]) => ({ k, label, v }));
   let prev = 0;
   const ranges = SAVINGS_BRACKETS.map(([top, rate]) => { const r = [prev, top, rate]; prev = top; return r; });
-  const cur = Math.max(0, ranges.findIndex(([from, to]) => base <= to));
+  const cur = Math.max(0, ranges.findIndex(([, to]) => base <= to));
   const shown = ranges.slice(0, Math.min(ranges.length, Math.max(2, cur + 2))).map(([f, t, r]) => [f, t === Infinity ? Math.max(f * 1.5, base) : t, r]);
   const marginal = ranges[cur][2];
   // Lo que se traslada a Renta Web. Solo llevan número las casillas contrastadas; el resto se

@@ -196,11 +196,11 @@ export function createHistory({ db, quotes, now = () => Date.now() }) {
 
   /** Cierres en euros de un símbolo desde una fecha (descarga lo que falte). */
   async function symbolRows(s, from) {
-    let meta = await ensure({ [s]: from });
+    const meta = await ensure({ [s]: from });
     const cur = meta[s]?.currency;
     if (!cur) return null;
     const fxs = cur === 'EUR' ? null : `${cur}EUR=X`;
-    if (fxs) meta = await ensure({ [fxs]: from });
+    if (fxs) await ensure({ [fxs]: from });
     const hist = await db.getHistory(fxs ? [s, fxs] : [s]);
     const rate = fxs ? reader(hist[fxs]) : () => 1;
     return {

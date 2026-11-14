@@ -19,7 +19,7 @@ function slowQuotes(delay) {
       return Object.fromEntries(isins.filter((i) => known[i] === undefined).map((i) => [i, { symbol: 'ACME', exchange: 'X' }]));
     },
     async quoteIsins(isins) { return { quotes: Object.fromEntries(isins.map((i) => [i, { price: 12 }])), resolved: {}, failed: [] }; },
-    async history(symbol) {
+    async history(_symbol) {
       q.downloads++;
       await new Promise((r) => setTimeout(r, delay));
       return { currency: 'EUR', rows: [['2025-01-02', 10], ['2025-06-02', 11]], divs: [] };

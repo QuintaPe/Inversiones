@@ -50,6 +50,7 @@ const TITLES = Object.fromEntries(NAV);
 // Secciones con el título (y sus pestañas o filtros) fijos arriba al hacer scroll.
 const STICKY = new Set(['resumen', 'posiciones', 'operaciones', 'dividendos', 'fiscalidad', 'efectivo']);
 const THEMES = [['auto', 'Auto'], ['light', 'Claro'], ['dark', 'Oscuro']];
+const NONE = []; // la misma lista vacía en cada pintado, para no invalidar lo calculado con ella
 let toastId = 0;
 
 export default function App() {
@@ -401,7 +402,7 @@ export default function App() {
   const reloadAll = useCallback(() => (liveOn ? refreshQuotes() : api.getPortfolio().then(setData).catch(fail)), [liveOn, refreshQuotes, fail]);
   const ptr = usePullToRefresh(reloadAll, !!user && !!data && !opForm && !palette && !imp && !bak && !question);
 
-  const positions = data?.positions ?? [];
+  const positions = data?.positions ?? NONE;
   const a = useMemo(() => analyze(positions, flt), [positions, flt]);
   // La ficha busca el activo en toda la cartera, sin el filtro de tipo.
   const whole = useMemo(() => (flt === 'all' ? a : analyze(positions, 'all')), [a, flt, positions]);

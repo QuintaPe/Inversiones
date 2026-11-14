@@ -1,0 +1,25 @@
+{
+  // Comprobación de tipos del JavaScript (npm run types), a partir de los JSDoc. No genera nada.
+  // Empieza por el código de cálculo, que no depende ni de React ni de Express; al tocar un
+  // archivo nuevo, añádelo aquí.
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "strict": false,
+    "target": "ES2024",
+    "lib": ["ES2024", "DOM", "DOM.Iterable"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "types": ["node"],
+    "skipLibCheck": true
+  },
+  "include": [
+    "back/src/engine.js",
+    "back/src/autobackup.js",
+    "back/src/alerts.js",
+    "back/src/log.js",
+    "back/src/lib/*.js",
+    "front/src/lib/*.js"
+  ]
+}

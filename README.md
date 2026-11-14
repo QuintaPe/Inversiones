@@ -18,9 +18,14 @@ npm run dev:back                 # API en http://127.0.0.1:3001
 npm run dev:front                # web en http://localhost:5173
 npm test                         # tests del back y de los cálculos del front
 npm run e2e                      # la app real en Chromium: escritorio, tableta y móvil, claro y oscuro
+npm run check                    # lint, tipos, tests y build con sus presupuestos: lo que se pasa antes de subir
 ```
 
 La primera vez, `npx playwright install chromium-headless-shell` descarga el navegador de las pruebas.
+
+`npm run lint` (ESLint, `eslint.config.mjs`) y `npm run types` (TypeScript sobre los JSDoc del código
+de cálculo, `tsconfig.json`) no admiten avisos. `git config core.hooksPath .githooks` hace que
+`npm run check` se ejecute solo antes de cada `git push`.
 
 Sin `TURSO_DATABASE_URL` el back usa un SQLite local (`back/data/local.db`).
 Sin `GOOGLE_CLIENT_ID` no se puede iniciar sesión. El back no recarga solo al cambiar `.env`.

@@ -63,7 +63,7 @@ const Chg = ({ n, p, children }) => (
   </span>
 );
 
-export default function Dashboard({ a, hist, histProgress, flt, cash, meta, onOpen, go }) {
+export default function Dashboard({ a, hist, histProgress, flt, cash, onOpen, go }) {
   const [by, setBy] = useState('pos');
   const [map, setMap] = useState(false);
   const [span, setSpan] = useState('day');

@@ -63,7 +63,7 @@ function start() {
   window.addEventListener('pagehide', () => saveScroll(window.scrollY));
   document.addEventListener('click', (ev) => {
     if (ev.defaultPrevented || ev.button !== 0 || ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey) return;
-    const a = ev.target.closest?.('a[href]');
+    const a = /** @type {HTMLAnchorElement | null} */ (/** @type {Element} */ (ev.target).closest?.('a[href]'));
     if (!a || a.target || a.hasAttribute('download') || a.getAttribute('href').startsWith('#')) return;
     const url = new URL(a.href, window.location.href);
     if (url.origin !== window.location.origin || url.pathname.startsWith('/api/')) return;

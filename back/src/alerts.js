@@ -18,8 +18,8 @@ export function alertText(al, name, current, dayPct) {
 export function createAlertWatcher({ db, quotes, push = null, log = console }) {
   /**
    * Marca como saltadas las alertas de un usuario que se cumplen con estas cotizaciones.
-   * @param found  { ISIN: { price } }
-   * @param names  { ISIN: nombre }
+   * @param found  cotizaciones { ISIN: { price } }
+   * @param names  nombres { ISIN: nombre }
    * @param notify enviar además el aviso a sus dispositivos
    */
   async function fire(userId, alerts, found, names, notify) {

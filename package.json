@@ -8,11 +8,20 @@
     "build": "npm run build --prefix front",
     "start": "npm run start --prefix back",
     "test": "npm test --prefix back && node --test front/test/*.test.js",
+    "lint": "eslint . --max-warnings 0",
+    "types": "tsc -p .",
+    "check": "npm run lint && npm run types && npm test && npm run build",
     "e2e": "playwright test",
     "e2e:visual:base": "VISUAL=1 playwright test visual --update-snapshots",
     "e2e:visual": "VISUAL=1 playwright test visual"
   },
   "devDependencies": {
-    "@playwright/test": "^1.65.0"
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.65.0",
+    "@types/node": "^26.6.6",
+    "eslint": "^10.15.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.14.0",
+    "typescript": "^7.0.2"
   }
 }

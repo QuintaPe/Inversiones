@@ -105,7 +105,7 @@ export function isShareSplit(ratio) {
 
 /**
  * @param rows    filas guardadas del CSV y operaciones a mano
- * @param splits  { ISIN: [[fecha, ratio], …] }; ratio = acciones nuevas por cada acción antigua
+ * @param splits  por valor: { ISIN: [[fecha, ratio], …] }; ratio = acciones nuevas por cada acción antigua
  */
 export function buildPortfolio(rows, splits = {}) {
   const sorted = [...rows].sort(byTime);
