@@ -138,6 +138,7 @@ export default function App() {
 
   const { live, liveOn, refreshQuotes } = useLiveQuotes({ data, setData, apply, fail, notify, hidden });
   const bakInput = useRef(null);
+  const csvInput = useRef(null);
   const { busy, imp, upload, runImport, cancelImport, bak, pickBackup, runRestore, cancelRestore } = useImports({
     apply, fail, notify,
     // El número de operaciones puede coincidir con el de antes: efectivo e histórico se piden a mano.
@@ -224,6 +225,11 @@ export default function App() {
       ))}
     </nav>
   );
+  // Lo que el buscador (Ctrl+K) puede hacer además de navegar; los textos están en Palette.jsx.
+  const cmd = {
+    addOp: () => setOpForm({}), pickCsv: () => csvInput.current?.click(), refresh: liveOn && !offline ? refreshQuotes : null,
+    hidden: !!hidden, toggleHidden, theme, themes: THEMES, setTheme, exportUrl: api.EXPORT_URL, restore: () => bakInput.current?.click(), logout,
+  };
   const liveText = live.busy && !live.at ? 'Cotizando…' : live.error ? 'Sin precios' : live.at ? time(live.at) : 'En vivo';
 
   const account = (
@@ -360,12 +366,14 @@ export default function App() {
       <Suspense fallback={null}>
         {opForm && !hidden && <OpForm initial={opForm} positions={positions} onSubmit={saveOp} onClose={() => setOpForm(null)} />}
         {palette && data && (
-          <Palette sections={NAV} positions={positions} onClose={() => setPalette(false)}
+          <Palette sections={NAV} positions={positions} cmd={cmd} onClose={() => setPalette(false)}
             onGo={(to) => { setPalette(false); go(to); }} />
         )}
       </Suspense>
       {imp && <ImportPreview preview={imp.preview} hasData={!empty} onImport={runImport} onClose={cancelImport} />}
       {bak && <RestorePreview name={bak.file.name} preview={bak.preview} onRestore={runRestore} onClose={cancelRestore} />}
+      <input ref={csvInput} type="file" accept=".csv,text/csv" hidden aria-label="Archivo CSV"
+        onChange={(ev) => { const f = ev.target.files[0]; ev.target.value = ''; if (f) upload(f); }} />
       <input ref={bakInput} type="file" accept=".json,application/json" hidden aria-label="Archivo de la copia"
         onChange={(ev) => { const f = ev.target.files[0]; ev.target.value = ''; if (f) pickBackup(f); }} />
       {question && <Confirm {...question} onAnswer={answer} />}
