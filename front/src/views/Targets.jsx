@@ -2,13 +2,14 @@ import { useEffect, useMemo, useState } from 'react';
 import * as api from '../api.js';
 import { Asset, Empty } from '../components/ui.jsx';
 import { rebalance } from '../../../shared/calc.js';
-import { eur, pct, qty, sign, isMasked, MASK } from '../lib/format.js';
+import { simulateSales } from '../../../shared/sales.js';
+import { eur, eurS, pct, qty, sign, isMasked, MASK } from '../lib/format.js';
 
 const n = (v) => parseFloat(String(v).replace(',', '.')) || 0;
 const show = (w) => (w ? String(+w.toFixed(2)).replace('.', ',') : '');
 
 /** Cartera objetivo: peso deseado por posición y qué comprar o vender para acercarte. */
-export default function Targets({ a, targets, patch, fail, onOpen }) {
+export default function Targets({ a, targets, patch, fail, onOpen, income }) {
   const rows = a.priced;
   const [draft, setDraft] = useState({}); // lo que hay escrito en cada campo
   const [extra, setExtra] = useState('');
@@ -17,6 +18,13 @@ export default function Targets({ a, targets, patch, fail, onOpen }) {
   const weights = Object.fromEntries(rows.map((x) => [x.p.isin, n(draft[x.p.isin])]));
   const total = Object.values(weights).reduce((t, w) => t + w, 0);
   const plan = useMemo(() => rebalance(rows.map((x) => ({ isin: x.p.isin, v: x.v, price: x.p.price })), weights, n(extra)), [rows, draft, extra]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Lo que costaría en impuestos vender lo que el ajuste propone (todas las ventas a la vez).
+  const tax = useMemo(() => {
+    const picks = rows.filter((x) => plan.rows[x.p.isin]?.delta <= -0.5 && x.p.price > 0)
+      .map((x) => ({ isin: x.p.isin, sh: Math.min(x.p.sh, -plan.rows[x.p.isin].delta / x.p.price) }));
+    return picks.length ? simulateSales(a.o, picks, a.sl, a.dv, income) : null;
+  }, [rows, plan, a.o, a.sl, a.dv, income]);
 
   const save = async (next) => {
     try { patch(await api.setTargets(next)); } catch (e) { fail(e); }
@@ -98,6 +106,16 @@ export default function Targets({ a, targets, patch, fail, onOpen }) {
           })}
         </ul>
       </section>
+      {tax && ok && !isMasked() && (
+        <p className="callout">
+          <span>
+            Vender lo que propone el ajuste afloraría <b className={sign(tax.gain)}>{eurS(tax.gain)}</b>
+            {tax.tax >= 0.005 ? <> y añadiría unos <b>{eur(tax.tax)}</b> de impuesto este año</> : tax.tax <= -0.005 ? <> y te ahorraría unos <b>{eur(-tax.tax)}</b> de impuesto este año</> : ' sin cambiar tu impuesto de este año'}
+            {' '}(FIFO, 1 € de comisión por venta). Con una aportación nueva te acercas al objetivo sin vender.
+            {' '}<a className="link" href="/fiscalidad?ver=simular">Abrir el simulador de ventas</a>
+          </span>
+        </p>
+      )}
       <p className="note">
         {!ok && 'Los objetivos deben sumar 100 % para que el ajuste tenga sentido. '}
         {n(extra) > 0

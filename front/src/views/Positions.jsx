@@ -25,7 +25,7 @@ const GroupHead = ({ g }) => (
   </div>
 );
 
-export default function Positions({ a, onOpen, onPrice, targets, patch, fail }) {
+export default function Positions({ a, onOpen, onPrice, targets, patch, fail, income }) {
   const [tab, setTab] = useParam('ver', 'open', { open: 'abiertas', closed: 'cerradas', target: 'objetivo', watch: 'seguimiento' });
   const held = useMemo(() => new Set(a.o.map((x) => x.p.isin)), [a.o]);
   const [q, setQ] = useParam('q', '');
@@ -107,7 +107,7 @@ export default function Positions({ a, onOpen, onPrice, targets, patch, fail }) 
         </div>
       )}
 
-      {tab === 'watch' ? <Watch held={held} onOpen={onOpen} fail={fail} /> : tab === 'target' ? <Targets a={a} targets={targets} patch={patch} fail={fail} onOpen={onOpen} /> : tab === 'open' && view === 'cards' ? (
+      {tab === 'watch' ? <Watch held={held} onOpen={onOpen} fail={fail} /> : tab === 'target' ? <Targets a={a} targets={targets} patch={patch} fail={fail} onOpen={onOpen} income={income} /> : tab === 'open' && view === 'cards' ? (
         rows.length ? (
           <div className="pos-groups">
           {groups.map((g) => (
