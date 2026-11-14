@@ -10,6 +10,8 @@ Gestor de cartera de inversión a partir de la exportación CSV de Trade Republi
   agregados y fiscalidad (`calc.js`), rentabilidad por periodo (`perf.js`) y salud del efectivo (`cash.js`).
 - `front/` — React + Vite. Resumen, posiciones, ficha de activo, operaciones, dividendos,
   fiscalidad y efectivo con gastos por categoría. Instalable como app (PWA) en la versión compilada.
+  El estado de la app está en hooks (`front/src/state/`): sesión, cartera con su histórico y efectivo,
+  cotización en vivo, importaciones y lo que se cambia a mano; `App.jsx` los une y pinta la barra y las rutas.
 
 ## Puesta en marcha
 

@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as api from './api.js';
 import { analyze, taxYears, GROUPS } from '../../shared/calc.js';
-import { time, eur, pctS, setMasked } from './lib/format.js';
+import { time, setMasked } from './lib/format.js';
 import { useStored, usePullToRefresh, PULL_AT } from './hooks.js';
 import { useRoute, goBack } from './router.js';
 import { RANGES, useRange } from './lib/periods.js';
@@ -9,6 +9,11 @@ import { Icon, Menu, Seg, Skeleton, Toasts, UploadButton } from './components/ui
 import ErrorBoundary from './components/ErrorBoundary.jsx';
 import { Confirm, ImportPreview, Locked, RestorePreview } from './components/Dialogs.jsx';
 import { pushSupported, pushEnabled, enablePush, disablePush } from './lib/push.js';
+import { useSession } from './state/useSession.js';
+import { usePortfolio } from './state/usePortfolio.js';
+import { useLiveQuotes } from './state/useLiveQuotes.js';
+import { useImports } from './state/useImports.js';
+import { useActions } from './state/useActions.js';
 
 // Cada sección se descarga al abrirla (y las demás en cuanto la app queda libre).
 const VIEWS = {
@@ -54,12 +59,7 @@ const NONE = []; // la misma lista vacía en cada pintado, para no invalidar lo 
 let toastId = 0;
 
 export default function App() {
-  const [auth, setAuth] = useState(null); // null = cargando; { user, clientId }
-  const [data, setData] = useState(null);
-  const [hist, setHist] = useState(undefined); // undefined = cargando; null = no disponible
   const [toasts, setToasts] = useState([]);
-  const [loginErr, setLoginErr] = useState(null);
-  const [busy, setBusy] = useState(false);
   const [flt, setFlt] = useState('all');
   const [over, setOver] = useState(false);
   const [path, go] = useRoute([...NAV.map((n) => n[0]), 'activo'], 'resumen');
@@ -75,7 +75,6 @@ export default function App() {
   }, []);
   const [theme, setTheme] = useStored('theme', 'auto');
   const [hidden, setHidden] = useStored('hide-amounts', false);
-  const user = auth?.user ?? null;
 
   useEffect(() => {
     if (theme === 'auto') delete document.documentElement.dataset.theme;
@@ -95,78 +94,15 @@ export default function App() {
   const notify = useCallback((kind, text) => setToasts((t) => [...t.slice(-3), { id: ++toastId, kind, text }]), []);
   const closeToast = useCallback((id) => setToasts((t) => t.filter((x) => x.id !== id)), []);
 
+  // ---------- sesión y datos (front/src/state) ----------
+  const { auth, user, error: loginErr, login, loginDemo, leave } = useSession();
   // Cualquier 401 (sesión caducada) devuelve a la pantalla de acceso.
   const fail = useCallback((err, prefix = '') => {
-    if (err instanceof api.Unauthorized) {
-      navigator.serviceWorker?.controller?.postMessage('clear-data'); // la copia sin conexión era de esa sesión
-      api.resetEvents();
-      setAuth((a) => ({ ...a, user: null }));
-      setData(null);
-      setLoginErr('Tu sesión ha caducado. Vuelve a iniciar sesión.');
-    } else {
-      notify('err', prefix + err.message);
-    }
-  }, [notify]);
-
-  useEffect(() => {
-    Promise.all([api.getConfig(), api.getMe()])
-      .then(([cfg, me]) => setAuth({ user: me.user, clientId: cfg.googleClientId, pushKey: cfg.pushKey ?? null, demo: !!cfg.demo }))
-      .catch((err) => { setAuth({ user: null, clientId: null }); setLoginErr(err.message); });
-  }, []);
-
-  useEffect(() => {
-    if (!user) return;
-    api.getPortfolio().then(setData).catch(fail);
-    prefetchViews();
-  }, [user, fail]);
-
-  // Histórico diario: se recalcula cuando cambian las operaciones o un precio manual.
-  const histKey = data ? `${data.meta.rows}|${data.positions.filter((p) => p.priceSource === 'manual').map((p) => p.isin + p.price).join()}` : null;
-  const [histTick, setHistTick] = useState(0);
-  const [histProgress, setHistProgress] = useState(null); // { done, total } mientras se reconstruye
-  const reloadHistory = useCallback(() => setHistTick((n) => n + 1), []);
-  useEffect(() => {
-    if (!histKey || !data.meta.history || !data.meta.rows) { setHist(histKey ? null : undefined); return undefined; }
-    let alive = true, timer = null;
-    // Si el servidor aún la está reconstruyendo, enseña la última guardada (si hay) y se vuelve a preguntar.
-    const ask = () => api.getHistory()
-      .then((r) => {
-        if (!alive) return;
-        if (r.pending) {
-          if (r.history) setHist(r.history);
-          setHistProgress(r.progress ?? { done: 0, total: 0 });
-          timer = setTimeout(ask, 1500);
-          return;
-        }
-        setHistProgress(null);
-        setHist(r.history);
-        // El histórico acaba de descubrir un split: las posiciones se piden otra vez, ya ajustadas.
-        if (r.history && (r.history.splits ?? 0) !== (data.meta.splits ?? 0)) api.getPortfolio().then((d) => alive && setData(d)).catch(() => {});
-      })
-      .catch((err) => { if (alive) { setHist(null); setHistProgress(null); if (err instanceof api.Unauthorized) fail(err); } });
-    ask();
-    return () => { alive = false; clearTimeout(timer); };
-  }, [histKey, histTick]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const login = async (credential) => {
-    setLoginErr(null);
-    try {
-      const { user: u } = await api.loginGoogle(credential);
-      setAuth((a) => ({ ...a, user: u }));
-    } catch (err) {
-      setLoginErr(err.message);
-    }
-  };
-
-  const loginDemo = async () => {
-    setLoginErr(null);
-    try {
-      const { user: u } = await api.loginDemo();
-      setAuth((a) => ({ ...a, user: u }));
-    } catch (err) {
-      setLoginErr(err.message);
-    }
-  };
+    if (err instanceof api.Unauthorized) leave('Tu sesión ha caducado. Vuelve a iniciar sesión.');
+    else notify('err', prefix + err.message);
+  }, [leave, notify]);
+  const { data, setData, apply, patch, reload, hist, histProgress, reloadHistory, cash, setCash, reloadCash } = usePortfolio({ user, fail });
+  useEffect(() => { if (user) prefetchViews(); }, [user]);
 
   // Pregunta de confirmación: `await confirm({ title, text, action, danger })` → true | false.
   const [question, setQuestion] = useState(null);
@@ -187,11 +123,8 @@ export default function App() {
     await disablePush().catch(() => {}); // los avisos de esta cuenta no deben llegar a quien use después el dispositivo
     setPushOn(false);
     await api.logout().catch(() => {});
-    api.resetEvents();
-    navigator.serviceWorker?.controller?.postMessage('clear-data');
     window.google?.accounts.id.disableAutoSelect();
-    setAuth((a) => ({ ...a, user: null }));
-    setData(null);
+    leave();
     setToasts([]);
   };
 
@@ -203,174 +136,15 @@ export default function App() {
     try { await api.logoutOthers(); notify('ok', 'Sesión cerrada en los demás dispositivos.'); } catch (err) { fail(err); }
   };
 
-  // Subir un CSV: primero se enseña qué va a cambiar; solo se guarda al confirmar.
-  const [imp, setImp] = useState(null); // { file, preview }
-  const upload = async (file) => {
-    setBusy(true);
-    try {
-      setImp({ file, preview: (await api.previewCsv(file)).preview });
-    } catch (err) {
-      fail(err);
-    } finally {
-      setBusy(false);
-    }
-  };
-  const runImport = async (replace) => {
-    try {
-      const res = await api.uploadCsv(imp.file, replace);
-      setData({ positions: res.positions, meta: res.meta, alerts: res.alerts, targets: res.targets });
-      const u = res.upload;
-      notify('ok', `${u.name}: ${u.added} ${u.added === 1 ? 'operación nueva' : 'operaciones nuevas'} de ${u.total} filas.`);
-    } catch (err) {
-      fail(err);
-    } finally {
-      setImp(null);
-    }
-  };
-
-  // Restaurar una copia descargada: igual, primero se enseña qué trae y qué sustituye.
-  const [bak, setBak] = useState(null); // { file, preview }
+  const { live, liveOn, refreshQuotes } = useLiveQuotes({ data, setData, apply, fail, notify, hidden });
   const bakInput = useRef(null);
-  const pickBackup = async (file) => {
-    try {
-      setBak({ file, preview: (await api.previewBackup(file)).preview });
-    } catch (err) {
-      fail(err);
-    }
-  };
-  const runRestore = async () => {
-    try {
-      const res = await api.restoreBackup(bak.file);
-      setData({ positions: res.positions, meta: res.meta, alerts: res.alerts, targets: res.targets });
-      api.getCash().then(setCash).catch(() => {}); // el número de operaciones puede coincidir: se pide a mano
-      reloadHistory();
-      go('resumen');
-      notify('ok', `Copia restaurada: ${res.restored.transactions} ${res.restored.transactions === 1 ? 'operación' : 'operaciones'}.`);
-    } catch (err) {
-      fail(err);
-    } finally {
-      setBak(null);
-    }
-  };
-
-  // ---------- cotización en vivo ----------
-  const [live, setLive] = useState({ at: null, failed: [], busy: false, error: null });
-  const liveBusy = useRef(false);
-  const liveOn = !!data?.meta?.liveQuotes && (data?.positions ?? []).some((p) => p.open);
-  // Alertas de precio que acaban de saltar: aviso en la app y, si hay permiso, del sistema.
-  const announce = useCallback((fired = []) => {
-    for (const f of fired) {
-      const text = f.dir === 'move'
-        ? `${f.name} se mueve un ${pctS(f.dayPct ?? 0)} hoy, hasta ${eur(f.current)}.`
-        : `${f.name} ha ${f.dir === 'above' ? 'subido hasta' : 'bajado hasta'} ${eur(f.current)} (alerta en ${eur(f.price)}).`;
-      notify('ok', text);
-      if (window.Notification?.permission === 'granted') new Notification('Alerta de precio', { body: hidden ? `Ha saltado una alerta de ${f.name}.` : text, icon: '/icon-192.png' });
-    }
-  }, [notify, hidden]);
-  const refreshQuotes = useCallback(async () => {
-    if (liveBusy.current) return;
-    liveBusy.current = true;
-    setLive((l) => ({ ...l, busy: true }));
-    try {
-      const res = await api.refreshQuotes();
-      setData({ positions: res.positions, meta: res.meta, alerts: res.alerts, targets: res.targets });
-      setLive({ at: res.refresh.at, failed: res.refresh.failed, busy: false, error: null });
-      announce(res.fired);
-    } catch (err) {
-      if (err instanceof api.Unauthorized) fail(err);
-      setLive((l) => ({ ...l, busy: false, error: err.message }));
-    } finally {
-      liveBusy.current = false;
-    }
-  }, [fail, announce]);
-
-  // Al entrar (y al volver a la pestaña) se cotiza; después el servidor envía los precios
-  // por su canal mientras la pestaña está visible. Sin canal, se pide cada minuto.
-  const rowsLoaded = data?.meta?.rows ?? 0;
-  const streamOn = !!data?.meta?.stream && typeof window.EventSource === 'function';
-  const dataV = useRef(null);
-  dataV.current = data?.meta?.v;
-  useEffect(() => {
-    if (!liveOn) return undefined;
-    let es = null, poll = null;
-    const open = () => {
-      if (!streamOn) { poll ??= setInterval(refreshQuotes, 60_000); return; }
-      es = new EventSource('/api/stream');
-      es.addEventListener('quotes', (ev) => {
-        const q = JSON.parse(ev.data);
-        setData((d) => d && ({
-          ...d,
-          alerts: q.alerts ?? d.alerts,
-          positions: d.positions.map((p) => (q.prices[p.isin] && p.priceSource !== 'manual'
-            ? { ...p, price: q.prices[p.isin].price, priceAt: q.prices[p.isin].at, priceSource: 'live', priceInfo: q.prices[p.isin].info }
-            : p)),
-        }));
-        setLive({ at: q.at, failed: q.failed, busy: false, error: null });
-        announce(q.fired);
-      });
-      // Otra pestaña u otro dispositivo ha cambiado las operaciones.
-      es.addEventListener('changed', (ev) => {
-        if (JSON.parse(ev.data).v !== dataV.current) api.getPortfolio().then(setData).catch(fail);
-      });
-      // El navegador reintenta solo; si el servidor cierra del todo, se vuelve a pedir cada minuto.
-      es.onerror = () => { if (es.readyState === EventSource.CLOSED) { es = null; poll ??= setInterval(refreshQuotes, 60_000); } };
-    };
-    const close = () => { es?.close(); es = null; clearInterval(poll); poll = null; };
-    const onVis = () => {
-      if (document.visibilityState === 'visible') { refreshQuotes(); if (!es && !poll) open(); } else close();
-    };
-    if (document.visibilityState === 'visible') { refreshQuotes(); open(); }
-    document.addEventListener('visibilitychange', onVis);
-    return () => { close(); document.removeEventListener('visibilitychange', onVis); };
-  }, [liveOn, rowsLoaded, streamOn, refreshQuotes, announce, fail]);
-
-  const onPrice = useCallback(async (isin, price) => {
-    try {
-      const r = await api.setPrice(isin, price);
-      setData((d) => ({
-        ...d,
-        positions: d.positions.map((p) => (p.isin === isin ? { ...p, price: r.price, priceAt: r.at, priceSource: r.source, priceInfo: null } : p)),
-      }));
-      if (price == null) refreshQuotes(); // sin precio manual, vuelve la cotización en vivo
-    } catch (err) {
-      fail(err, 'No se guardó el precio: ');
-    }
-  }, [fail, refreshQuotes]);
-
-  const onNote = useCallback(async (isin, note) => {
-    try {
-      const r = await api.setNote(isin, note);
-      setData((d) => ({ ...d, positions: d.positions.map((p) => (p.isin === isin ? { ...p, note: r.note } : p)) }));
-      return true;
-    } catch (err) {
-      fail(err, 'No se guardó la nota: ');
-      return false;
-    }
-  }, [fail]);
-
-  const wipe = async () => {
-    if (!(await confirm({ title: '¿Borrar todos tus datos?', text: 'Se eliminan tus operaciones, precios, valoraciones, alertas y objetivos. No se puede deshacer: descarga antes una copia si quieres conservarlos.', action: 'Borrar todo', danger: true }))) return;
-    try {
-      setData(await api.clearData());
-      go('resumen');
-      notify('ok', 'Datos borrados.');
-    } catch (err) {
-      fail(err);
-    }
-  };
-
-  // ---------- operaciones a mano y efectivo ----------
+  const { busy, imp, upload, runImport, cancelImport, bak, pickBackup, runRestore, cancelRestore } = useImports({
+    apply, fail, notify,
+    // El número de operaciones puede coincidir con el de antes: efectivo e histórico se piden a mano.
+    onRestored: () => { reloadCash(); reloadHistory(); go('resumen'); },
+  });
+  const { onPrice, onNote, saveOp, removeOp, restoreOp, wipe } = useActions({ setData, apply, confirm, notify, fail, refreshQuotes, go });
   const [opForm, setOpForm] = useState(null); // null | datos iniciales del formulario
-  const [cash, setCash] = useState(undefined);
-  const txRows = data?.meta?.rows;
-  useEffect(() => {
-    if (txRows == null) return undefined;
-    let alive = true;
-    api.getCash().then((r) => alive && setCash(r)).catch(() => alive && setCash({ cash: null, labels: {} }));
-    return () => { alive = false; };
-  }, [txRows, data?.meta?.lastUpload?.at]);
-  const apply = useCallback((res) => setData({ positions: res.positions, meta: res.meta, alerts: res.alerts, targets: res.targets }), []);
-  const patch = useCallback((part) => setData((d) => ({ ...d, ...part })), []);
 
   // Sin conexión, el service worker sirve los últimos datos guardados.
   const [offline, setOffline] = useState(false);
@@ -380,26 +154,9 @@ export default function App() {
     window.addEventListener('online-data', on);
     return () => { window.removeEventListener('offline-data', off); window.removeEventListener('online-data', on); };
   }, []);
-  const saveOp = useCallback(async (op, tid) => {
-    apply(await (tid ? api.editTx(tid, op) : api.addTx(op)));
-    notify('ok', tid ? 'Operación actualizada.' : 'Operación añadida.');
-  }, [apply, notify]);
-  const removeOp = useCallback(async (x) => {
-    const tids = (x.parts ?? [x]).map((e) => e.tid);
-    if (!(await confirm({ title: `¿Quitar esta operación${tids.length > 1 ? ` (${tids.length} ejecuciones)` : ''}?`, text: 'Dejará de contar en tus posiciones. Podrás restaurarla desde Operaciones.', action: 'Quitar', danger: true }))) return;
-    try {
-      let res;
-      for (const tid of tids) res = await api.deleteTx(tid);
-      apply(res);
-      notify('ok', 'Operación quitada.');
-    } catch (err) { fail(err); }
-  }, [apply, notify, fail, confirm]);
-  const restoreOp = useCallback(async (tid) => {
-    try { apply(await api.restoreTx(tid)); notify('ok', 'Operación restaurada.'); } catch (err) { fail(err); }
-  }, [apply, notify, fail]);
 
   // Deslizar hacia abajo: cotiza si hay precios en vivo y, si no, vuelve a pedir la cartera.
-  const reloadAll = useCallback(() => (liveOn ? refreshQuotes() : api.getPortfolio().then(setData).catch(fail)), [liveOn, refreshQuotes, fail]);
+  const reloadAll = useCallback(() => (liveOn ? refreshQuotes() : reload()), [liveOn, refreshQuotes, reload]);
   const ptr = usePullToRefresh(reloadAll, !!user && !!data && !opForm && !palette && !imp && !bak && !question);
 
   const positions = data?.positions ?? NONE;
@@ -607,8 +364,8 @@ export default function App() {
             onGo={(to) => { setPalette(false); go(to); }} />
         )}
       </Suspense>
-      {imp && <ImportPreview preview={imp.preview} hasData={!empty} onImport={runImport} onClose={() => setImp(null)} />}
-      {bak && <RestorePreview name={bak.file.name} preview={bak.preview} onRestore={runRestore} onClose={() => setBak(null)} />}
+      {imp && <ImportPreview preview={imp.preview} hasData={!empty} onImport={runImport} onClose={cancelImport} />}
+      {bak && <RestorePreview name={bak.file.name} preview={bak.preview} onRestore={runRestore} onClose={cancelRestore} />}
       <input ref={bakInput} type="file" accept=".json,application/json" hidden aria-label="Archivo de la copia"
         onChange={(ev) => { const f = ev.target.files[0]; ev.target.value = ''; if (f) pickBackup(f); }} />
       {question && <Confirm {...question} onAnswer={answer} />}
