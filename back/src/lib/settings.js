@@ -32,6 +32,10 @@ const SHAPES = {
     if (Math.abs(parts.reduce((t, p) => t + p.w, 0) - 100) > 0.05) return undefined;
     return { parts };
   },
+  // Resumen periódico por aviso push: cada semana o cada mes.
+  digest(v) {
+    return v && typeof v === 'object' && ['week', 'month'].includes(v.every) ? { every: v.every } : undefined;
+  },
 };
 
 export const SETTING_KEYS = Object.keys(SHAPES);

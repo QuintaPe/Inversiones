@@ -323,3 +323,30 @@ test('alerta de movimiento: salta cuando la variación del día llega al porcent
   assert.deepEqual((await db.getAlerts('u')).filter((a) => a.triggered_at).map((a) => a.isin), ['XX0000000001']);
   db.close();
 });
+
+test('alerta de caída desde máximos: compara la cotización, en su divisa, con el cierre más alto del último año', async () => {
+  const db = await openDb({ url: ':memory:' });
+  await db.upsertUser({ id: 'u', email: 'u@example.com' });
+  for (const isin of ['XX0000000001', 'XX0000000002', 'XX0000000003', 'XX0000000004']) await db.addAlert('u', { isin, dir: 'drop', price: 20 });
+  await db.saveSymbols({ XX0000000001: { symbol: 'AAA', exchange: 'X' }, XX0000000002: { symbol: 'BBB', exchange: 'X' }, XX0000000004: { symbol: 'DDD', exchange: 'X' } });
+  const d = (n) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
+  await db.saveHistory('AAA', { currency: 'USD', from: d(500), rows: [[d(450), 500], [d(200), 100], [d(10), 90]] }); // el máximo de hace más de un año no cuenta
+  await db.saveHistory('BBB', { currency: 'EUR', from: d(500), rows: [[d(200), 100], [d(10), 90]] });
+  await db.saveHistory('DDD', { currency: 'EUR', from: d(500), rows: [[d(100), 50]] });
+  const sent = [];
+  const push = await createPush({ db, send: async (_s, payload) => { sent.push(JSON.parse(payload)); } });
+  await db.addPushSub('u', { endpoint: 'https://push.example/a', p256dh: 'k', auth: 'a' });
+  const now = {
+    XX0000000001: { price: 68, info: { raw: 75, currency: 'USD' } }, // −25 % en dólares (en euros parecería más)
+    XX0000000002: { price: 85 }, // −15 %: no llega
+    XX0000000003: { price: 1 }, // sin histórico: no se puede saber
+    XX0000000004: { price: 40, info: { raw: 40 } }, // −20 % justo
+  };
+  const quotes = { async quoteIsins(isins) { return { quotes: Object.fromEntries(isins.map((i) => [i, now[i]])), resolved: {}, failed: [] }; } };
+  const watcher = createAlertWatcher({ db, quotes, push });
+  assert.equal(await watcher.sweep(), 2);
+  assert.deepEqual((await db.getAlerts('u')).filter((a) => a.triggered_at).map((a) => a.isin).sort(), ['XX0000000001', 'XX0000000004']);
+  assert.match(sent.find((s) => s.url.endsWith('0001')).body, /cae un 25 % desde su máximo del último año, hasta 68 € \(alerta en −20 %\)/);
+  assert.equal(await watcher.sweep(), 0);
+  db.close();
+});

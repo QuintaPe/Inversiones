@@ -2,7 +2,7 @@
 // envía los precios por su canal mientras la pestaña está visible. Sin canal, se pide cada minuto.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import * as api from '../api.js';
-import { eur, pctS } from '../lib/format.js';
+import { eur, pct, pctS } from '../lib/format.js';
 
 /**
  * @param data     cartera cargada (o null)
@@ -18,7 +18,9 @@ export function useLiveQuotes({ data, setData, apply, fail, notify, hidden }) {
   // Alertas de precio que acaban de saltar: aviso en la app y, si hay permiso, del sistema.
   const announce = useCallback((fired = []) => {
     for (const f of fired) {
-      const text = f.dir === 'move'
+      const text = f.dir === 'drop'
+        ? `${f.name} cae un ${pct(f.drop ?? f.price)} desde su máximo del último año, hasta ${eur(f.current)}.`
+        : f.dir === 'move'
         ? `${f.name} se mueve un ${pctS(f.dayPct ?? 0)} hoy, hasta ${eur(f.current)}.`
         : `${f.name} ha ${f.dir === 'above' ? 'subido hasta' : 'bajado hasta'} ${eur(f.current)} (alerta en ${eur(f.price)}).`;
       notify('ok', text);

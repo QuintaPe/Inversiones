@@ -236,13 +236,16 @@ function Simulator({ p, yearBase }) {
 }
 
 /** Alertas de precio: avisan (con la app abierta) cuando la cotización cruza el nivel. */
+// Alertas cuyo nivel es un porcentaje (no un precio).
+const pctDir = (d) => d === 'move' || d === 'drop';
+
 function Alerts({ p, alerts, patch, fail }) {
   const [dir, setDir] = useState('below');
   const [price, setPrice] = useState('');
   const add = async (ev) => {
     ev.preventDefault();
     const n = parseFloat(price.replace(',', '.'));
-    if (!(n > 0) || (dir === 'move' && n > 100)) return;
+    if (!(n > 0) || (pctDir(dir) && n > 100)) return;
     try {
       patch(await api.addAlert({ isin: p.isin, dir, price: n }));
       setPrice('');
@@ -254,12 +257,12 @@ function Alerts({ p, alerts, patch, fail }) {
   const day = p.priceInfo?.dayPct;
   const pending = alerts.filter((al) => !al.triggered_at), fired = alerts.filter((al) => al.triggered_at);
   const item = (al) => {
-    const dist = p.price > 0 && al.dir !== 'move' ? (al.price / p.price - 1) * 100 : null;
+    const dist = p.price > 0 && !pctDir(al.dir) ? (al.price / p.price - 1) * 100 : null;
     return (
       <li key={al.id} className={al.triggered_at ? 'fired' : ''}>
         <span className={`al-i ${al.dir}`} aria-hidden="true"><Icon name="bell" size={15} /></span>
         <span className="al-t">
-          {al.dir === 'move' ? <>Si se mueve un <b>±{pct(al.price)}</b> en un día</> : <>{al.dir === 'above' ? 'Si sube de' : 'Si baja de'} <b>{eur(al.price)}</b></>}
+          {al.dir === 'move' ? <>Si se mueve un <b>±{pct(al.price)}</b> en un día</> : al.dir === 'drop' ? <>Si cae un <b>{pct(al.price)}</b> desde su máximo del último año</> : <>{al.dir === 'above' ? 'Si sube de' : 'Si baja de'} <b>{eur(al.price)}</b></>}
           <small>{al.triggered_at ? `Saltó el ${date(al.triggered_at)}`
             : al.dir === 'move' ? (Number.isFinite(day) ? `hoy lleva ${pctS(day)}` : 'pendiente')
             : dist != null ? `a ${pctS(dist)} del precio actual` : 'pendiente'}</small>
@@ -270,15 +273,15 @@ function Alerts({ p, alerts, patch, fail }) {
   };
   return (
     <div className="cols">
-      <Card title="Nueva alerta" sub="Te avisa cuando la cotización cruza el nivel o se mueve más de un porcentaje en el día. Con los avisos activados en el menú de tu cuenta, también con la app cerrada">
+      <Card title="Nueva alerta" sub="Te avisa cuando la cotización cruza el nivel, se mueve más de un porcentaje en el día o cae desde su máximo del último año. Con los avisos activados en el menú de tu cuenta, también con la app cerrada">
         {p.price > 0 && <p className="al-now">Precio actual <b>{eur(p.price)}</b></p>}
         <form className="val-f" onSubmit={add}>
-          <Seg label="Sentido de la alerta" options={[['below', 'Baja de'], ['above', 'Sube de'], ['move', 'Se mueve ±']]} value={dir} onChange={(d) => { if ((d === 'move') !== (dir === 'move')) setPrice(''); setDir(d); }} />
-          <input type="text" inputMode="decimal" placeholder={dir === 'move' ? '% en un día' : 'Precio €'} value={price} onChange={(ev) => setPrice(ev.target.value)}
-            aria-label={dir === 'move' ? 'Variación del día en porcentaje' : 'Precio de la alerta en euros'} required />
+          <Seg label="Sentido de la alerta" options={[['below', 'Baja de'], ['above', 'Sube de'], ['move', 'Se mueve ±'], ['drop', 'Cae desde máximos']]} value={dir} onChange={(d) => { if (d !== dir && (pctDir(d) || pctDir(dir))) setPrice(''); setDir(d); }} />
+          <input type="text" inputMode="decimal" placeholder={dir === 'move' ? '% en un día' : dir === 'drop' ? '% de caída' : 'Precio €'} value={price} onChange={(ev) => setPrice(ev.target.value)}
+            aria-label={dir === 'move' ? 'Variación del día en porcentaje' : dir === 'drop' ? 'Caída desde el máximo en porcentaje' : 'Precio de la alerta en euros'} required />
           <button type="submit" className="btn pri">Crear</button>
         </form>
-        {p.price > 0 && (
+        {p.price > 0 && !pctDir(dir) && (
           <div className="al-q">
             <span className="mu">Rápido:</span>
             {[-10, -5, 5, 10].map((d) => <button key={d} type="button" className="btn soft" onClick={() => quick(d)}>{d > 0 ? '+' : '−'}{Math.abs(d)} %</button>)}

@@ -108,8 +108,14 @@ en una sola transacción y valida cada dato del archivo antes de guardarlo (`bac
 
 ## Alertas y avisos
 
-Hay alertas de precio (sube o baja de un nivel) y de movimiento (el valor se mueve más de un
-porcentaje en el día, en cualquier sentido). Cada una salta una sola vez.
+Hay alertas de precio (sube o baja de un nivel), de movimiento (el valor se mueve más de un
+porcentaje en el día, en cualquier sentido) y de caída desde máximos (cae un porcentaje desde su
+cierre más alto del último año, con el histórico guardado). Cada una salta una sola vez.
+
+**Resumen periódico** (menú de la cuenta, con los avisos activados): una vez a la semana o al mes llega
+un aviso con el valor de la cartera, el resultado del periodo, lo mejor y lo peor y, si lo hay, el mayor
+desvío de la cartera objetivo (`back/src/digest.js`). El servidor comprueba cada hora si toca enviarlo
+(a partir de las 7:00 UTC del lunes o del día 1); «Enviar un resumen ahora» lo manda al momento.
 
 
 El servidor cotiza cada pocos minutos (`ALERT_SWEEP_MIN`) los valores con alertas pendientes

@@ -17,6 +17,7 @@ import { timing, instrument } from './timing.js';
 import { createStream } from './stream.js';
 import { Invalid, isAssetId, isDate } from './lib/validate.js';
 import { createPortfolio } from './services/portfolio.js';
+import { createDigest } from './digest.js';
 import sessionRoutes from './routes/session.js';
 import portfolioRoutes from './routes/portfolio.js';
 import transactionRoutes from './routes/transactions.js';
@@ -131,7 +132,10 @@ export function createApp({ db: rawDb, verifyGoogle, googleClientId, sessionSecr
   api.param('d', (req, res, next, v) => (isDate(v) ? next() : res.status(400).json({ error: 'Fecha no válida.' })));
   api.param('tid', (req, res, next, v) => (v.length <= 200 ? next() : res.status(400).json({ error: 'Operación no válida.' })));
 
-  const ctx = { db, quotes, history, logos, push, stream, pf, historyWaitMs, log };
+  // Resumen semanal o mensual por aviso push (index.js lo pone en marcha).
+  const digest = createDigest({ db, quotes, history, push, pf, log });
+  app.locals.digest = digest;
+  const ctx = { db, quotes, history, logos, push, stream, pf, historyWaitMs, log, digest };
   portfolioRoutes(api, ctx);
   transactionRoutes(api, ctx);
   const hist = historyRoutes(api, ctx);

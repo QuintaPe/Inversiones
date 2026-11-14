@@ -3,19 +3,39 @@
 
 const eur = (n) => n.toLocaleString('es-ES', { maximumFractionDigits: 2 });
 const pct = (n) => n.toLocaleString('es-ES', { maximumFractionDigits: 2, signDisplay: 'always' });
+const DAY = 86400000;
+/** Caída (en %) de una cotización respecto al máximo del último año, o null si no se puede saber. */
+export const dropFrom = (q, high) => {
+  const raw = q.info?.raw ?? q.price; // el máximo está en la divisa del valor, como `raw`
+  return high > 0 && raw > 0 ? Math.max(0, (1 - raw / high) * 100) : null;
+};
 // 'above' y 'below': el precio cruza un nivel en euros. 'move': la variación del día, hacia
-// arriba o hacia abajo, llega al porcentaje guardado en `price`.
-const hit = (al, q) => {
+// arriba o hacia abajo, llega al porcentaje guardado en `price`. 'drop': el valor cae ese
+// porcentaje desde su cierre más alto del último año.
+const hit = (al, q, high) => {
   if (al.dir === 'move') return Number.isFinite(q.info?.dayPct) && Math.abs(q.info.dayPct) >= al.price;
+  if (al.dir === 'drop') { const d = dropFrom(q, high); return d != null && d >= al.price - 1e-9; }
   return al.dir === 'above' ? q.price >= al.price : q.price <= al.price;
 };
 
-export function alertText(al, name, current, dayPct) {
+export function alertText(al, name, current, dayPct, drop) {
+  if (al.dir === 'drop') return `${name} cae un ${eur(drop ?? al.price)} % desde su máximo del último año, hasta ${eur(current)} € (alerta en −${eur(al.price)} %).`;
   if (al.dir === 'move') return `${name} se mueve un ${pct(dayPct)} % hoy, hasta ${eur(current)} € (alerta en ±${eur(al.price)} %).`;
   return `${name} ha ${al.dir === 'above' ? 'subido hasta' : 'bajado hasta'} ${eur(current)} € (alerta en ${eur(al.price)} €).`;
 }
 
 export function createAlertWatcher({ db, quotes, push = null, log = console }) {
+  /** Cierre más alto del último año de cada ISIN (en la divisa del valor), con el histórico guardado. */
+  async function highsOf(isins) {
+    if (!isins.length) return {};
+    const symbols = await db.getSymbols();
+    const bySym = Map.groupBy(isins.filter((i) => symbols[i]?.symbol), (i) => symbols[i].symbol);
+    const highs = await db.getHighs([...bySym.keys()], new Date(Date.now() - 365 * DAY).toISOString().slice(0, 10));
+    const out = {};
+    for (const [s, list] of bySym) if (highs[s] > 0) for (const i of list) out[i] = highs[s];
+    return out;
+  }
+
   /**
    * Marca como saltadas las alertas de un usuario que se cumplen con estas cotizaciones.
    * @param found  cotizaciones { ISIN: { price } }
@@ -23,12 +43,17 @@ export function createAlertWatcher({ db, quotes, push = null, log = console }) {
    * @param notify enviar además el aviso a sus dispositivos
    */
   async function fire(userId, alerts, found, names, notify) {
-    const fired = alerts.filter((al) => !al.triggered_at && found[al.isin] && hit(al, found[al.isin]))
-      .map((al) => ({ ...al, name: names[al.isin] ?? al.isin, current: found[al.isin].price, dayPct: found[al.isin].info?.dayPct ?? null }));
+    const live = alerts.filter((al) => !al.triggered_at && found[al.isin]);
+    const highs = await highsOf(live.filter((al) => al.dir === 'drop').map((al) => al.isin));
+    const fired = live.filter((al) => hit(al, found[al.isin], highs[al.isin]))
+      .map((al) => ({
+        ...al, name: names[al.isin] ?? al.isin, current: found[al.isin].price, dayPct: found[al.isin].info?.dayPct ?? null,
+        ...(al.dir === 'drop' && { drop: dropFrom(found[al.isin], highs[al.isin]) }),
+      }));
     await db.triggerAlerts(userId, fired.map((al) => al.id));
     if (notify && push) {
       for (const al of fired) {
-        await push.notify(userId, { title: 'Alerta de precio', body: alertText(al, al.name, al.current, al.dayPct), url: `/activo/${al.isin}`, tag: `alert-${al.id}` });
+        await push.notify(userId, { title: 'Alerta de precio', body: alertText(al, al.name, al.current, al.dayPct, al.drop), url: `/activo/${al.isin}`, tag: `alert-${al.id}` });
       }
     }
     return fired;
@@ -57,7 +82,7 @@ export function createAlertWatcher({ db, quotes, push = null, log = console }) {
   }
 
   return {
-    fire, sweep,
+    fire, sweep, highsOf,
     /** Vigila cada `minutes` minutos. Devuelve la función que lo detiene. */
     start(minutes) {
       const id = setInterval(() => sweep().catch((err) => log.error('Alertas:', err.message)), minutes * 60_000);

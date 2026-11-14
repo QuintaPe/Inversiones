@@ -55,6 +55,7 @@ const TITLES = Object.fromEntries(NAV);
 // Secciones con el título (y sus pestañas o filtros) fijos arriba al hacer scroll.
 const STICKY = new Set(['resumen', 'posiciones', 'operaciones', 'dividendos', 'fiscalidad', 'efectivo']);
 const THEMES = [['auto', 'Auto'], ['light', 'Claro'], ['dark', 'Oscuro']];
+const DIGESTS = [['off', 'No'], ['week', 'Semanal'], ['month', 'Mensual']];
 const NONE = []; // la misma lista vacía en cada pintado, para no invalidar lo calculado con ella
 let toastId = 0;
 
@@ -117,6 +118,12 @@ export default function App() {
       if (pushOn) { await disablePush(); setPushOn(false); notify('ok', 'Avisos desactivados en este dispositivo.'); }
       else { await enablePush(auth.pushKey); setPushOn(true); notify('ok', 'Avisos activados: te llegarán las alertas de precio aunque la app esté cerrada.'); }
     } catch (err) { notify('err', err.message); }
+  };
+
+  // Resumen semanal o mensual por aviso (se guarda en la cuenta; llega a los dispositivos con avisos).
+  const digestOn = data?.settings?.digest?.every ?? null;
+  const tryDigest = async () => {
+    try { const r = await api.sendDigest(digestOn); notify('ok', r.sent ? 'Resumen enviado a tus dispositivos.' : 'No se pudo entregar: revisa que los avisos sigan activados.'); } catch (err) { fail(err); }
   };
 
   const logout = async () => {
@@ -250,6 +257,15 @@ export default function App() {
             <button type="button" role="menuitem" onClick={() => { close(); togglePush(); }}>
               <Icon name="bell" size={17} />{pushOn ? 'Desactivar avisos aquí' : 'Avisos en este dispositivo'}
             </button>
+          )}
+          {pushOn && (
+            <>
+              <div className="menu-s">
+                <span>Resumen por aviso</span>
+                <Seg label="Resumen periódico por aviso" options={DIGESTS} value={digestOn ?? 'off'} onChange={(v) => onSetting('digest', v === 'off' ? null : { every: v })} />
+              </div>
+              {digestOn && <button type="button" role="menuitem" onClick={() => { close(); tryDigest(); }}><Icon name="bell" size={17} />Enviar un resumen ahora</button>}
+            </>
           )}
           <a role="menuitem" href={api.EXPORT_URL} download onClick={close}><Icon name="download" size={17} />Descargar una copia</a>
           <button type="button" role="menuitem" onClick={() => { close(); bakInput.current?.click(); }}><Icon name="undo" size={17} />Restaurar una copia</button>

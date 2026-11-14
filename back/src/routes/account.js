@@ -9,13 +9,13 @@ const backupFile = multer({ storage: multer.memoryStorage(), limits: { fileSize:
 
 const ISIN_RE = /^[A-Z]{2}[A-Z0-9]{9}\d$/;
 
-export default function accountRoutes(api, { db, push, pf, quotes }) {
+export default function accountRoutes(api, { db, push, pf, quotes, digest }) {
   const { portfolio } = pf;
 
   // ---------- alertas de precio y cartera objetivo ----------
   api.post('/alerts', async (req, res) => {
     const price = parsePrice(req.body?.price), dir = req.body?.dir, isin = String(req.body?.isin ?? '');
-    if (!price || !['above', 'below', 'move'].includes(dir) || !isAssetId(isin) || (dir === 'move' && price > 100)) return res.status(400).json({ error: 'Alerta no válida.' });
+    if (!price || !['above', 'below', 'move', 'drop'].includes(dir) || !isAssetId(isin) || ((dir === 'move' || dir === 'drop') && price > 100)) return res.status(400).json({ error: 'Alerta no válida.' });
     if ((await db.getAlerts(req.userId)).length >= 200) return res.status(400).json({ error: 'Has llegado al máximo de alertas.' });
     await db.addAlert(req.userId, { isin, dir, price });
     res.json({ alerts: await db.getAlerts(req.userId) });
@@ -190,6 +190,15 @@ export default function accountRoutes(api, { db, push, pf, quotes }) {
     if (!push) return res.status(503).json({ error: 'Los avisos están desactivados en el servidor.' });
     const sent = await push.notify(req.userId, { title: 'Avisos activados', body: 'Te avisaremos aquí cuando salte una alerta de precio.', url: '/', tag: 'test' });
     res.json({ sent });
+  });
+
+  // Envía ahora el resumen periódico a los dispositivos del usuario, para ver cómo es.
+  api.post('/digest/test', async (req, res) => {
+    if (!push) return res.status(503).json({ error: 'Los avisos están desactivados en el servidor.' });
+    const every = req.body?.every === 'month' ? 'month' : 'week';
+    const r = await digest.send(req.userId, every);
+    if (!r) return res.status(400).json({ error: 'Todavía no hay posiciones con precio que resumir.' });
+    res.json({ sent: r.sent, title: r.title, body: r.body });
   });
 
   api.delete('/data', async (req, res) => {

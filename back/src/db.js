@@ -325,7 +325,10 @@ function makeRepo(client, url, { cache = true } = {}) {
   async function getUserSettings(userId) {
     const r = await client.execute({ sql: 'SELECT key, value FROM user_settings WHERE user_id = ?', args: [userId] });
     const out = {};
-    for (const x of r.rows) { try { out[x.key] = JSON.parse(x.value); } catch { /* valor ilegible: como si no estuviera */ } }
+    for (const x of r.rows) {
+      if (x.key.startsWith('_')) continue; // estado interno del servidor (p. ej. último resumen enviado)
+      try { out[x.key] = JSON.parse(x.value); } catch { /* valor ilegible: como si no estuviera */ }
+    }
     return out;
   }
   const touchRows = (userId) => { rowsCache.delete(userId); rowsVer.set(userId, ++seq); };
@@ -819,6 +822,20 @@ function makeRepo(client, url, { cache = true } = {}) {
       return out;
     },
 
+    /** Cierre más alto de cada símbolo desde una fecha: { símbolo: máximo }. */
+    async getHighs(symbols, from) {
+      const out = {};
+      for (let i = 0; i < symbols.length; i += 40) {
+        const part = symbols.slice(i, i + 40);
+        const r = await client.execute({
+          sql: `SELECT symbol, MAX(c) AS high FROM price_history WHERE d >= ? AND symbol IN (${part.map(() => '?').join(',')}) GROUP BY symbol`,
+          args: [from, ...part],
+        });
+        for (const x of r.rows) out[x.symbol] = x.high;
+      }
+      return out;
+    },
+
     /** Todos los splits conocidos: { símbolo: [[fecha, ratio], …] } ordenado por fecha. */
     async getSplits() {
       const hit = globals.get('splits');
@@ -883,6 +900,15 @@ function makeRepo(client, url, { cache = true } = {}) {
                 ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
           args: [userId, key, JSON.stringify(value), now()],
         });
+    },
+
+    /** Quién tiene activado el resumen periódico: [{ userId, every, sent }] (sent = periodo del último enviado, o ''). */
+    async getDigestUsers() {
+      const r = await client.execute(`SELECT s.user_id, s.value,
+        (SELECT x.value FROM user_settings x WHERE x.user_id = s.user_id AND x.key = '_digest_sent') AS sent
+        FROM user_settings s WHERE s.key = 'digest'`);
+      const read = (v) => { try { return JSON.parse(v); } catch { return null; } };
+      return r.rows.map((x) => ({ userId: x.user_id, every: read(x.value)?.every, sent: read(x.sent) ?? '' })).filter((x) => x.every);
     },
 
     // ---------- patrimonio: otras cuentas, bienes y deudas ----------
