@@ -2,6 +2,7 @@ import { useId, useState } from 'react';
 import { useWidth } from './hooks.js';
 import { compact } from './lib/format.js';
 import { decimate } from './lib/decimate.js';
+import { timeTicks } from './lib/ticks.js';
 
 /**
  * Recorrido con teclado de una gráfica de n puntos: ← → de uno en uno, RePág/AvPág un 10 %,
@@ -84,15 +85,7 @@ export function StepArea({ points, height = 220, tip, label, bare = false }) {
     const idx = decimate(points.length, (i) => points[i].v, (i) => X(points[i].t));
     let d = `M${X(points[0].t)},${Y(points[0].v)}`;
     for (const i of idx) if (i > 0) d += `H${X(points[i].t).toFixed(1)}V${Y(points[i].v).toFixed(1)}`;
-    // Marcas del eje X: inicio de mes, espaciadas para que quepan.
-    const xt = [];
-    const start = new Date(t0), end = new Date(t1);
-    const months = (end.getUTCFullYear() - start.getUTCFullYear()) * 12 + end.getUTCMonth() - start.getUTCMonth();
-    const every = Math.max(1, Math.ceil(months / Math.max(2, Math.floor(iw / 70))));
-    for (let i = 1; i <= months; i += every) {
-      const dt = Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + i, 1);
-      xt.push({ t: dt, s: new Date(dt).toLocaleDateString('es-ES', { month: 'short', year: '2-digit', timeZone: 'UTC' }) });
-    }
+    const xt = timeTicks(t0, t1, iw, 70);
     const move = (ev) => {
       const r = ev.currentTarget.getBoundingClientRect();
       const t = t0 + ((ev.clientX - r.left - m.l) / iw) * (t1 - t0);
@@ -314,22 +307,8 @@ export function Lines({ x, series, height = 280, tip, label, onHover, base, mark
       }
       return d;
     };
-    const months = Math.round((t1 - t0) / (30.44 * 86400000));
-    const start = new Date(t0);
-    const every = Math.max(1, Math.ceil(months / Math.max(2, Math.floor(w / 80))));
-    const xt = [];
-    for (let i = 1; i <= months; i += every) {
-      const dt = Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + i, 1);
-      if (X(dt) > 28 && X(dt) < w - 28) xt.push({ t: dt, s: new Date(dt).toLocaleDateString('es-ES', { month: 'short', year: '2-digit', timeZone: 'UTC' }) });
-    }
-    // Periodos cortos: se rotulan días en vez de meses.
-    if (!xt.length) {
-      const n = Math.max(2, Math.floor(w / 90));
-      for (let k = 1; k < n; k++) {
-        const t = t0 + ((t1 - t0) * k) / n;
-        xt.push({ t, s: new Date(t).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', timeZone: 'UTC' }) });
-      }
-    }
+    // Las marcas pegadas a los bordes se cortarían: fuera.
+    const xt = timeTicks(t0, t1, w).filter((k) => X(k.t) > 28 && X(k.t) < w - 28);
     const move = (ev) => {
       const r = ev.currentTarget.getBoundingClientRect();
       const t = t0 + ((ev.clientX - r.left) / w) * (t1 - t0);
