@@ -488,6 +488,10 @@ export default function Asset({ x, totalVal, yearBase, onBack, onPrice, liveQuot
             <Lines x={view.t} height={300} scale={(v) => (isMasked() ? "" : num(v))} label={`Precio de ${p.name} en euros`} base={p.open ? x.avg : undefined}
               onHover={setHover} marks={view.marks}
               series={[{ key: 'c', values: view.c, cls: chg >= 0 ? 'up' : 'down', area: true }]}
+              span={(i0, i1) => {
+                const r = (view.c[i1] / view.c[i0] - 1) * 100;
+                return <><small>{dateLong(view.t[i0])} → {dateLong(view.t[i1])}</small><b className={sign(r)}>{pctS(r)}</b><small>de {eur(view.c[i0])} a {eur(view.c[i1])}</small></>;
+              }}
               tip={(i) => {
                 const ms = view.marks.filter((k) => k.i === i);
                 return (

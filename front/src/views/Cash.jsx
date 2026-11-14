@@ -223,6 +223,13 @@ export default function Cash({ cash, labels, cats = {}, onCats, budgets = {}, on
         <section className="chart-block">
           <Lines x={series.t} height={220} label="Saldo de efectivo" base={0} scale={compact}
             series={[{ key: 'v', values: series.v, cls: '', step: true, area: true }]}
+            span={(i0, i1) => (
+              <>
+                <small>{dateLong(series.t[i0])} → {dateLong(series.t[i1])}</small>
+                <b className={sign(series.v[i1] - series.v[i0])}>{eurS(series.v[i1] - series.v[i0])}</b>
+                <small>de {eur(series.v[i0])} a {eur(series.v[i1])}</small>
+              </>
+            )}
             tip={(i) => <><small>{dateLong(series.t[i])}</small><b>{eur(series.v[i])}</b></>} />
         </section>
 

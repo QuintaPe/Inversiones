@@ -195,6 +195,17 @@ export default function Dashboard({ a, hist, histProgress, flt, cash, onOpen, go
             { key: 'v', values: h.v.slice(from), cls: st.gain >= 0 ? 'up' : 'down', area: true },
             { key: 'c', values: h.cost.slice(from), cls: 'muted', step: true },
           ]}
+          span={(i0, i1) => {
+            const g = gainBetween(h, i0 + from, i1 + from), put = h.cost[i1 + from] - h.cost[i0 + from];
+            return (
+              <>
+                <small>{date(h.d[i0 + from])} → {date(h.d[i1 + from])}</small>
+                <b className={sign(g)}>{eurS(g)}</b>
+                <small>de {eur(h.v[i0 + from])} a {eur(h.v[i1 + from])}</small>
+                {Math.abs(put) >= 1 && <small>{put > 0 ? 'invertiste' : 'retiraste'} {eur(Math.abs(put))} entre medias</small>}
+              </>
+            );
+          }}
           tip={(i) => (
             <>
               <small>{dateLong(x[i])}</small><b>{eur(h.v[i + from])}</b><small>invertido {eur(h.cost[i + from])}</small>

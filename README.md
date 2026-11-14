@@ -133,6 +133,9 @@ hoy, así que las capturas solo sirven para comparar el mismo día y no se versi
   compartir. Al volver atrás se recupera el scroll, y los enlaces antiguos con `#/` siguen
   funcionando (`front/src/router.js`, sin dependencias).
 - **Estilos**: una sola hoja, `front/src/styles.css` (ver Diseño).
+- **Gráficas**: escala de valores dentro del dibujo, eje de fechas según el tramo (días, meses o años) y, con el
+  ratón, arrastrar marca un tramo y dice lo que cambió entre sus dos extremos (valor de la cartera, precio de un
+  activo y saldo de efectivo).
 - **Accesibilidad**: enlace para saltar al contenido, foco y aviso al cambiar de sección, y
   gráficas que se recorren con las flechas y anuncian el punto activo.
 - **Móvil**: deslizar hacia abajo desde arriba actualiza las cotizaciones sin recargar la app,

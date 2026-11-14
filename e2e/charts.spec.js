@@ -36,3 +36,22 @@ test('la gráfica de líneas del efectivo también', async ({ page, isMobile }) 
   await page.keyboard.press('Tab'); // al salir desaparece el cursor
   await expect(chart.locator('.tip')).toHaveCount(0);
 });
+
+test('arrastrar sobre la gráfica marca un tramo y dice lo que cambió entre sus extremos', async ({ page }) => {
+  await page.goto('/efectivo');
+  await settled(page);
+  const svg = page.locator('.chart-block .chart svg').first();
+  const box = await svg.boundingBox();
+  const y = box.y + box.height / 2;
+  await page.mouse.move(box.x + box.width * 0.3, y);
+  await expect(page.locator('.chart-block .tip')).not.toContainText('→');
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * 0.7, y, { steps: 5 });
+  await expect(page.locator('.chart-block .tip')).toContainText(/→.*de .*€ a .*€/s);
+  await expect(svg.locator('.band')).toHaveCount(1);
+  // Al soltar vuelve el valor de un solo día.
+  await page.mouse.up();
+  await page.mouse.move(box.x + box.width * 0.6, y);
+  await expect(svg.locator('.band')).toHaveCount(0);
+  await expect(page.locator('.chart-block .tip')).not.toContainText('→');
+});

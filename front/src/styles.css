@@ -1227,3 +1227,7 @@ button.plain{background:none;border:0;padding:0;text-align:left;border-radius:12
 .corr td{text-align:center;min-width:38px;height:32px;border-radius:8px;color:var(--tx);background:color-mix(in srgb,var(--c,var(--acc)) calc(var(--r,0) * 55%),var(--surface-2))}
 .corr td.self{background:transparent}
 .vals em.mu{font-style:normal;font-size:var(--fs-xs)}
+
+/* gráficas: tramo marcado al arrastrar */
+.chart .band{fill:color-mix(in srgb,var(--acc) 12%,transparent)}
+.chart svg.can-span{cursor:crosshair;user-select:none}

@@ -281,9 +281,11 @@ export function RankBars({ rows }) {
  * se lee con el cursor, que además avisa por onHover(índice | null).
  * x: ms[]; series: [{ key, values[], cls, step, area }]; tip: (índice) => contenido.
  */
-export function Lines({ x, series, height = 280, tip, label, onHover, base, marks = [], scale }) {
+export function Lines({ x, series, height = 280, tip, label, onHover, base, marks = [], scale, span }) {
   const [ref, w] = useWidth();
   const [hi, setHi] = useState(null);
+  // Con `span`, arrastrar con el ratón marca un tramo y se enseña lo que pasó entre sus dos extremos.
+  const [anchor, setAnchor] = useState(null);
   const keys = useChartKeys(x.length, hi, (i) => { setHi(i); onHover?.(i); }, label);
   const m = { t: 14, b: 26 };
   let body = null;
@@ -318,12 +320,25 @@ export function Lines({ x, series, height = 280, tip, label, onHover, base, mark
       while (lo2 < hi2) { const mid = (lo2 + hi2 + 1) >> 1; if (x[mid] <= t) lo2 = mid; else hi2 = mid - 1; }
       if (lo2 !== hi) { setHi(lo2); onHover?.(lo2); }
     };
-    const leave = () => { setHi(null); onHover?.(null); };
+    const leave = () => { setHi(null); setAnchor(null); onHover?.(null); };
+    const down = (ev) => {
+      move(ev);
+      if (!span || ev.pointerType !== 'mouse' || ev.button !== 0) return;
+      const r = ev.currentTarget.getBoundingClientRect();
+      const t = t0 + ((ev.clientX - r.left) / w) * (t1 - t0);
+      let a = 0, b = x.length - 1;
+      while (a < b) { const mid = (a + b + 1) >> 1; if (x[mid] <= t) a = mid; else b = mid - 1; }
+      setAnchor(a);
+      ev.currentTarget.setPointerCapture?.(ev.pointerId);
+    };
+    const sel = anchor != null && hi != null && anchor !== hi ? [Math.min(anchor, hi), Math.max(anchor, hi)] : null;
     const main = series[0];
     const d0 = path(main);
     body = (
       <>
-        <svg width={w} height={height} aria-hidden="true" onPointerMove={move} onPointerDown={move} onPointerLeave={leave}>
+        <svg width={w} height={height} aria-hidden="true" className={span ? 'can-span' : undefined}
+          onPointerMove={move} onPointerDown={down} onPointerUp={() => setAnchor(null)} onPointerCancel={() => setAnchor(null)} onPointerLeave={leave}>
+          {sel && <rect className="band" x={X(x[sel[0]])} y={m.t} width={X(x[sel[1]]) - X(x[sel[0]])} height={ih} />}
           {main.area && (
             <>
               <defs>
@@ -350,11 +365,13 @@ export function Lines({ x, series, height = 280, tip, label, onHover, base, mark
           {hi != null && (
             <>
               <line className="cross" x1={X(x[hi])} x2={X(x[hi])} y1={m.t} y2={m.t + ih} />
+              {sel && <line className="cross" x1={X(x[anchor])} x2={X(x[anchor])} y1={m.t} y2={m.t + ih} />}
+              {sel && main.values[anchor] != null && <circle className={`pt ${main.cls}`} cx={X(x[anchor])} cy={Y(main.values[anchor])} r="4.5" />}
               {series.map((s) => s.values[hi] != null && <circle key={s.key} className={`pt ${s.cls}`} cx={X(x[hi])} cy={Y(s.values[hi])} r="4.5" />)}
             </>
           )}
         </svg>
-        {hi != null && tip && <Tip x={X(x[hi])} y={2} w={w}>{tip(hi)}</Tip>}
+        {hi != null && tip && <Tip x={sel ? (X(x[sel[0]]) + X(x[sel[1]])) / 2 : X(x[hi])} y={2} w={w}>{sel ? span(sel[0], sel[1]) : tip(hi)}</Tip>}
       </>
     );
   }
