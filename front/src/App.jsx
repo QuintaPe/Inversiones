@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as api from './api.js';
 import { analyze, taxYears, GROUPS } from './lib/calc.js';
-import { time, eur, setMasked } from './lib/format.js';
+import { time, eur, pctS, setMasked } from './lib/format.js';
 import { useStored, usePullToRefresh, PULL_AT } from './hooks.js';
 import { useRoute, goBack } from './router.js';
 import { RANGES, useRange } from './lib/periods.js';
@@ -256,7 +256,9 @@ export default function App() {
   // Alertas de precio que acaban de saltar: aviso en la app y, si hay permiso, del sistema.
   const announce = useCallback((fired = []) => {
     for (const f of fired) {
-      const text = `${f.name} ha ${f.dir === 'above' ? 'subido hasta' : 'bajado hasta'} ${eur(f.current)} (alerta en ${eur(f.price)}).`;
+      const text = f.dir === 'move'
+        ? `${f.name} se mueve un ${pctS(f.dayPct ?? 0)} hoy, hasta ${eur(f.current)}.`
+        : `${f.name} ha ${f.dir === 'above' ? 'subido hasta' : 'bajado hasta'} ${eur(f.current)} (alerta en ${eur(f.price)}).`;
       notify('ok', text);
       if (window.Notification?.permission === 'granted') new Notification('Alerta de precio', { body: hidden ? `Ha saltado una alerta de ${f.name}.` : text, icon: '/icon-192.png' });
     }

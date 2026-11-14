@@ -385,6 +385,7 @@ button.kv:hover svg{transform:translateX(3px);color:var(--tx)}
 .al-i{display:grid;place-items:center;width:32px;height:32px;border-radius:50%;flex:none;background:var(--surface-2);color:var(--tx-2)}
 .al-i.above{color:var(--gain);background:color-mix(in srgb,var(--gain) 14%,transparent)}
 .al-i.below{color:var(--loss);background:color-mix(in srgb,var(--loss) 14%,transparent)}
+.al-i.move{color:var(--warn);background:color-mix(in srgb,var(--warn) 14%,transparent)}
 .al-t{flex:1;min-width:0;color:var(--tx-2);font-variant-numeric:tabular-nums}
 .al-t b{color:var(--tx)}
 .al-t small{display:block;color:var(--mu);font-size:var(--fs-xs)}

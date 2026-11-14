@@ -12,7 +12,7 @@ export default function accountRoutes(api, { db, push, pf }) {
   // ---------- alertas de precio y cartera objetivo ----------
   api.post('/alerts', async (req, res) => {
     const price = parsePrice(req.body?.price), dir = req.body?.dir, isin = String(req.body?.isin ?? '');
-    if (!price || !['above', 'below'].includes(dir) || !isAssetId(isin)) return res.status(400).json({ error: 'Alerta no válida.' });
+    if (!price || !['above', 'below', 'move'].includes(dir) || !isAssetId(isin) || (dir === 'move' && price > 100)) return res.status(400).json({ error: 'Alerta no válida.' });
     if ((await db.getAlerts(req.userId)).length >= 200) return res.status(400).json({ error: 'Has llegado al máximo de alertas.' });
     await db.addAlert(req.userId, { isin, dir, price });
     res.json({ alerts: await db.getAlerts(req.userId) });

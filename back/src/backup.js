@@ -42,7 +42,7 @@ export function readBackup(text) {
     valuations: uniq(list(raw.valuations).map((v) => ({ isin: isin(v?.isin), d: str(v?.d, 10), price: parsePrice(v?.price) }))
       .filter((v) => v.isin && v.price && isDate(v.d)), (v) => `${v.isin}|${v.d}`),
     alerts: list(raw.alerts).map((a) => ({ isin: isin(a?.isin), dir: a?.dir, price: parsePrice(a?.price), created_at: stamp(a?.created_at) ?? now, triggered_at: stamp(a?.triggered_at) }))
-      .filter((a) => a.isin && a.price && (a.dir === 'above' || a.dir === 'below')).slice(0, 200),
+      .filter((a) => a.isin && a.price && ['above', 'below', 'move'].includes(a.dir)).slice(0, 200),
     targets: uniq(list(raw.targets).map((t) => ({ isin: isin(t?.isin), weight: Number(t?.weight) }))
       .filter((t) => t.isin && t.weight >= 0 && t.weight <= 100), (t) => t.isin),
     imports: list(raw.imports).map((i) => ({

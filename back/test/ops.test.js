@@ -65,6 +65,8 @@ test('validación: activos, fechas y tamaños de lo que llega', async () => {
   assert.equal((await call('PUT', '/api/valuations/US0378331005/2025-02-03', { price: '12,5' }))[0], 200);
   assert.deepEqual(await call('POST', '/api/alerts', { isin: long, dir: 'above', price: 1 }), [400, 'Alerta no válida.']);
   assert.deepEqual(await call('DELETE', '/api/alerts/1;DROP'), [400, 'Alerta no válida.']);
+  assert.deepEqual(await call('POST', '/api/alerts', { isin: 'US0378331005', dir: 'move', price: 150 }), [400, 'Alerta no válida.']);
+  assert.equal((await call('POST', '/api/alerts', { isin: 'US0378331005', dir: 'move', price: 5 }))[0], 200);
   assert.deepEqual(await call('PUT', '/api/targets', { targets: { [long]: 10 } }), [400, 'Activo no válido.']);
   assert.deepEqual(await call('PUT', '/api/targets', {}), [400, 'Faltan pesos.']);
   assert.deepEqual(await call('PUT', '/api/prices', { prices: Object.fromEntries(Array.from({ length: 1001 }, (_, i) => [`A${i}`, 1])) }), [400, 'Demasiados precios en una sola petición.']);

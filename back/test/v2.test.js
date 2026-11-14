@@ -305,3 +305,21 @@ test('categoría de un comercio: se guarda, se lee con el efectivo y se puede vo
   assert.deepEqual(await db.getMerchantCategories('u1'), {});
   db.close();
 });
+
+test('alerta de movimiento: salta cuando la variación del día llega al porcentaje, suba o baje', async () => {
+  const db = await openDb({ url: ':memory:' });
+  await db.upsertUser({ id: 'u', email: 'u@example.com' });
+  await db.addAlert('u', { isin: 'XX0000000001', dir: 'move', price: 5 });
+  await db.addAlert('u', { isin: 'XX0000000002', dir: 'move', price: 5 });
+  await db.addAlert('u', { isin: 'XX0000000003', dir: 'move', price: 5 });
+  const sent = [];
+  const push = await createPush({ db, send: async (_s, payload) => { sent.push(JSON.parse(payload)); } });
+  await db.addPushSub('u', { endpoint: 'https://push.example/a', p256dh: 'k', auth: 'a' });
+  const day = { XX0000000001: -6.5, XX0000000002: 4.9, XX0000000003: null };
+  const quotes = { async quoteIsins(isins) { return { quotes: Object.fromEntries(isins.map((i) => [i, { price: 20, info: { dayPct: day[i] } }])), resolved: {}, failed: [] }; } };
+  const watcher = createAlertWatcher({ db, quotes, push });
+  assert.equal(await watcher.sweep(), 1);
+  assert.match(sent[0].body, /XX0000000001 se mueve un -6,5 % hoy, hasta 20 € \(alerta en ±5 %\)/);
+  assert.deepEqual((await db.getAlerts('u')).filter((a) => a.triggered_at).map((a) => a.isin), ['XX0000000001']);
+  db.close();
+});

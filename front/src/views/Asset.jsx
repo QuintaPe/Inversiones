@@ -242,7 +242,7 @@ function Alerts({ p, alerts, patch, fail }) {
   const add = async (ev) => {
     ev.preventDefault();
     const n = parseFloat(price.replace(',', '.'));
-    if (!(n > 0)) return;
+    if (!(n > 0) || (dir === 'move' && n > 100)) return;
     try {
       patch(await api.addAlert({ isin: p.isin, dir, price: n }));
       setPrice('');
@@ -251,15 +251,18 @@ function Alerts({ p, alerts, patch, fail }) {
   };
   const del = async (id) => { try { patch(await api.deleteAlert(id)); } catch (e) { fail(e); } };
   const quick = (d) => { setDir(d < 0 ? 'below' : 'above'); setPrice(String(+(p.price * (1 + d / 100)).toFixed(2))); };
+  const day = p.priceInfo?.dayPct;
   const pending = alerts.filter((al) => !al.triggered_at), fired = alerts.filter((al) => al.triggered_at);
   const item = (al) => {
-    const dist = p.price > 0 ? (al.price / p.price - 1) * 100 : null;
+    const dist = p.price > 0 && al.dir !== 'move' ? (al.price / p.price - 1) * 100 : null;
     return (
       <li key={al.id} className={al.triggered_at ? 'fired' : ''}>
         <span className={`al-i ${al.dir}`} aria-hidden="true"><Icon name="bell" size={15} /></span>
         <span className="al-t">
-          {al.dir === 'above' ? 'Si sube de' : 'Si baja de'} <b>{eur(al.price)}</b>
-          <small>{al.triggered_at ? `Saltó el ${date(al.triggered_at)}` : dist != null ? `a ${pctS(dist)} del precio actual` : 'pendiente'}</small>
+          {al.dir === 'move' ? <>Si se mueve un <b>±{pct(al.price)}</b> en un día</> : <>{al.dir === 'above' ? 'Si sube de' : 'Si baja de'} <b>{eur(al.price)}</b></>}
+          <small>{al.triggered_at ? `Saltó el ${date(al.triggered_at)}`
+            : al.dir === 'move' ? (Number.isFinite(day) ? `hoy lleva ${pctS(day)}` : 'pendiente')
+            : dist != null ? `a ${pctS(dist)} del precio actual` : 'pendiente'}</small>
         </span>
         <button type="button" className="icon" aria-label="Borrar alerta" onClick={() => del(al.id)}><Icon name="trash" size={16} /></button>
       </li>
@@ -267,11 +270,12 @@ function Alerts({ p, alerts, patch, fail }) {
   };
   return (
     <div className="cols">
-      <Card title="Nueva alerta" sub="Te avisa cuando la cotización cruza el nivel. Con los avisos activados en el menú de tu cuenta, también con la app cerrada">
+      <Card title="Nueva alerta" sub="Te avisa cuando la cotización cruza el nivel o se mueve más de un porcentaje en el día. Con los avisos activados en el menú de tu cuenta, también con la app cerrada">
         {p.price > 0 && <p className="al-now">Precio actual <b>{eur(p.price)}</b></p>}
         <form className="val-f" onSubmit={add}>
-          <Seg label="Sentido de la alerta" options={[['below', 'Baja de'], ['above', 'Sube de']]} value={dir} onChange={setDir} />
-          <input type="text" inputMode="decimal" placeholder="Precio €" value={price} onChange={(ev) => setPrice(ev.target.value)} aria-label="Precio de la alerta en euros" required />
+          <Seg label="Sentido de la alerta" options={[['below', 'Baja de'], ['above', 'Sube de'], ['move', 'Se mueve ±']]} value={dir} onChange={(d) => { if ((d === 'move') !== (dir === 'move')) setPrice(''); setDir(d); }} />
+          <input type="text" inputMode="decimal" placeholder={dir === 'move' ? '% en un día' : 'Precio €'} value={price} onChange={(ev) => setPrice(ev.target.value)}
+            aria-label={dir === 'move' ? 'Variación del día en porcentaje' : 'Precio de la alerta en euros'} required />
           <button type="submit" className="btn pri">Crear</button>
         </form>
         {p.price > 0 && (
