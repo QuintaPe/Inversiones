@@ -253,6 +253,30 @@ test('antes de fin de año: ahorro al aflorar una pérdida, tope del 25 % y marg
   close(c.rows[0].saving, 0);
 });
 
+test('tramos del ahorro: cada ejercicio con su tarifa', async () => {
+  const { savingsTax, savingsBrackets, taxYears } = await import('../../shared/calc.js');
+  const close = (a, b) => assert.ok(Math.abs(a - b) < 0.005, `${a} ≠ ${b}`);
+  // Hasta 200.000 € todos los años desde 2016 coinciden.
+  close(savingsTax(60000, 2018), 6000 * 0.19 + 44000 * 0.21 + 10000 * 0.23);
+  close(savingsTax(60000, 2026), savingsTax(60000, 2018));
+  // El tramo alto ha ido subiendo: 23 % (2020), 26 % (2021-22), 27/28 % (2023-24) y 27/30 % (desde 2025).
+  const low = 6000 * 0.19 + 44000 * 0.21 + 150000 * 0.23;
+  close(savingsTax(400000, 2020), low + 200000 * 0.23);
+  close(savingsTax(400000, 2022), low + 200000 * 0.26);
+  close(savingsTax(400000, 2024), low + 100000 * 0.27 + 100000 * 0.28);
+  close(savingsTax(400000, 2025), low + 100000 * 0.27 + 100000 * 0.30);
+  close(savingsTax(400000), savingsTax(400000, 2099));
+  close(savingsTax(1000, 2015), 195);
+  close(savingsTax(1000, '2010'), 195);
+  assert.equal(savingsBrackets('2024').at(-1)[1], 0.28);
+  assert.equal(savingsTax(-5, 2024), 0);
+  // taxYears aplica a cada ejercicio la suya.
+  const sale = (d, reF) => ({ k: 'S', d, sh: 1, net: 1e6, csF: 1e6 - reF, reF, re: reF, sa: 0, lotsUsed: [], p: { isin: 'Z', name: 'Z', evs: [] } });
+  const ys = taxYears([sale('2022-05-01', 400000), sale('2025-05-01', 400000)], []);
+  close(ys.find((r) => r.year === '2022').quota, savingsTax(400000, 2022));
+  close(ys.find((r) => r.year === '2025').quota, savingsTax(400000, 2025));
+});
+
 test('simulador de ventas de cartera: las pérdidas de unas ventas compensan las ganancias de otras', async () => {
   const { simulateSales } = await import('../../shared/sales.js');
   const { simulateSale, savingsTax } = await import('../../shared/calc.js');

@@ -190,13 +190,28 @@ export function washBuys(sale) {
   ));
 }
 
-/** Tramos de la base del ahorro (IRPF estatal + autonómico, desde 2025). */
-const SAVINGS = [[6000, 0.19], [50000, 0.21], [200000, 0.23], [300000, 0.27], [Infinity, 0.30]];
-/** Tramos de la base del ahorro: [hasta, tipo]. */
-export const SAVINGS_BRACKETS = SAVINGS;
-export function savingsTax(base) {
+/**
+ * Tramos de la base del ahorro (IRPF estatal + autonómico) según el ejercicio: [desde el año, [[hasta, tipo]]].
+ * Cada ejercicio se calcula con la tarifa que tenía, no con la de hoy.
+ */
+const SAVINGS_BY_YEAR = [
+  [2025, [[6000, 0.19], [50000, 0.21], [200000, 0.23], [300000, 0.27], [Infinity, 0.30]]],
+  [2023, [[6000, 0.19], [50000, 0.21], [200000, 0.23], [300000, 0.27], [Infinity, 0.28]]],
+  [2021, [[6000, 0.19], [50000, 0.21], [200000, 0.23], [Infinity, 0.26]]],
+  [2016, [[6000, 0.19], [50000, 0.21], [Infinity, 0.23]]],
+  [2015, [[6000, 0.195], [50000, 0.215], [Infinity, 0.235]]],
+];
+/** Tramos de un ejercicio: [[hasta, tipo]]. Sin año, los vigentes; antes de 2015, los de 2015. */
+export function savingsBrackets(year) {
+  const y = Number(year) || Infinity;
+  return (SAVINGS_BY_YEAR.find(([from]) => y >= from) ?? SAVINGS_BY_YEAR.at(-1))[1];
+}
+/** Tramos vigentes: [hasta, tipo]. */
+export const SAVINGS_BRACKETS = SAVINGS_BY_YEAR[0][1];
+/** Cuota de la base del ahorro con la tarifa del ejercicio `year` (sin año, la vigente). */
+export function savingsTax(base, year) {
   let tax = 0, prev = 0;
-  for (const [top, rate] of SAVINGS) {
+  for (const [top, rate] of savingsBrackets(year)) {
     if (base <= prev) break;
     tax += (Math.min(base, top) - prev) * rate;
     prev = top;
@@ -339,7 +354,7 @@ export function taxYears(sl, dv, income = {}) {
     r.base = Math.max(0, net) + r.rcm - r.offsetRcm;
     // Cuota y deducción por doble imposición internacional (art. 80 LIRPF): lo menor entre el
     // impuesto pagado fuera (hasta el convenio) y el tipo medio efectivo sobre esa renta.
-    r.quota = savingsTax(r.base);
+    r.quota = savingsTax(r.base, r.year);
     r.avgRate = r.base > 0 ? r.quota / r.base : 0;
     r.dii = Math.min(r.forDed, r.avgRate * r.forGross);
     r.forExcess = r.divFor - r.forDed; // retenido en origen por encima del convenio

@@ -3,7 +3,7 @@ import { Asset, Card, Empty, Icon, Seg, Sticky, Tabs } from '../components/ui.js
 import { Columns } from '../charts.jsx';
 import SaleSim from './SaleSim.jsx';
 import { useParam } from '../router.js';
-import { taxYears, yearEnd, splitWithholding, TREATY_RATE, SAVINGS_BRACKETS } from '../../../shared/calc.js';
+import { taxYears, yearEnd, splitWithholding, TREATY_RATE, savingsBrackets } from '../../../shared/calc.js';
 import { country, classLabel } from '../lib/countries.js';
 import { eur, eurS, num, qty, sign, date, pct, isMasked, compact } from '../lib/format.js';
 
@@ -59,7 +59,7 @@ export default function Tax({ a, income, onOpen }) {
     ['int', 'Intereses', y.intG ?? 0], ['rew', 'Saveback y bonus', y.rewG ?? 0],
   ].filter(([, , v]) => v >= 0.005).map(([k, label, v]) => ({ k, label, v }));
   let prev = 0;
-  const ranges = SAVINGS_BRACKETS.map(([top, rate]) => { const r = [prev, top, rate]; prev = top; return r; });
+  const ranges = savingsBrackets(y.year).map(([top, rate]) => { const r = [prev, top, rate]; prev = top; return r; });
   const cur = Math.max(0, ranges.findIndex(([, to]) => base <= to));
   const shown = ranges.slice(0, Math.min(ranges.length, Math.max(2, cur + 2))).map(([f, t, r]) => [f, t === Infinity ? Math.max(f * 1.5, base) : t, r]);
   const marginal = ranges[cur][2];
