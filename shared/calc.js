@@ -194,6 +194,7 @@ export function washBuys(sale) {
  * Tramos de la base del ahorro (IRPF estatal + autonómico) según el ejercicio: [desde el año, [[hasta, tipo]]].
  * Cada ejercicio se calcula con la tarifa que tenía, no con la de hoy.
  */
+/** @type {[number, [number, number][]][]} */
 const SAVINGS_BY_YEAR = [
   [2025, [[6000, 0.19], [50000, 0.21], [200000, 0.23], [300000, 0.27], [Infinity, 0.30]]],
   [2023, [[6000, 0.19], [50000, 0.21], [200000, 0.23], [300000, 0.27], [Infinity, 0.28]]],
