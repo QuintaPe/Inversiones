@@ -253,6 +253,64 @@ test('antes de fin de año: ahorro al aflorar una pérdida, tope del 25 % y marg
   close(c.rows[0].saving, 0);
 });
 
+test('simulador de ventas de cartera: las pérdidas de unas ventas compensan las ganancias de otras', async () => {
+  const { simulateSales } = await import('../../shared/sales.js');
+  const { simulateSale, savingsTax } = await import('../../shared/calc.js');
+  const close = (a, b) => assert.ok(Math.abs(a - b) < 0.005, `${a} ≠ ${b}`);
+  const pos = (isin, lots, price, evs = lots.map((l) => ({ k: 'B', d: l.d, sh: l.sh }))) => {
+    const sh = lots.reduce((t, l) => t + l.sh, 0);
+    const p = { isin, name: isin, sh, cost: lots.reduce((t, l) => t + l.sh * l.unit, 0), lots, evs };
+    return { p, has: true, v: sh * price };
+  };
+  const win = pos('W', [{ sh: 10, unit: 100, d: '2024-01-10' }], 200); // +1.000 latentes
+  const lose = pos('L', [{ sh: 10, unit: 100, d: '2024-01-10' }], 60); // −400 latentes
+  const two = pos('T', [{ sh: 5, unit: 50, d: '2023-01-10' }, { sh: 5, unit: 150, d: '2026-10-20' }], 100);
+  const o = [win, lose, two];
+
+  // Sola, la ganadora paga el 19 % de 999 (1 € de comisión).
+  const a = simulateSales(o, [{ isin: 'W', sh: 10 }], [], [], {}, '2026-11-14');
+  assert.equal(a.year, '2026');
+  close(a.gain, 999);
+  close(a.tax, 999 * 0.19);
+  close(a.keep, 1999 - 999 * 0.19);
+  close(a.before, 0);
+
+  // Con la perdedora a la vez, solo tributa la diferencia: 999 − 401.
+  const b = simulateSales(o, [{ isin: 'W', sh: 10 }, { isin: 'L', sh: 10 }], [], [], {}, '2026-11-14');
+  close(b.gain, 598);
+  close(b.tax, 598 * 0.19);
+  close(b.proceeds, 1999 + 599);
+  close(b.carried, 0);
+  assert.deepEqual(b.rows.map((r) => [r.x.p.isin, Math.round(r.gain)]), [['W', 999], ['L', -401]]);
+
+  // Solo la perdedora y sin rendimientos: no ahorra nada este año y queda pendiente.
+  const c = simulateSales(o, [{ isin: 'L', sh: 10 }], [], [], {}, '2026-11-14');
+  close(c.tax, 0);
+  close(c.carried, 401);
+
+  // Venta parcial con precio propio: FIFO consume primero el lote antiguo; más de lo que hay se recorta.
+  const d = simulateSales(o, [{ isin: 'T', sh: 5, price: 120 }, { isin: 'T2', sh: 1 }, { isin: 'W', sh: 0 }], [], [], {}, '2026-11-14');
+  assert.equal(d.rows.length, 1);
+  close(d.rows[0].gain, simulateSale(two.p.lots, 5, 120).gain);
+  close(d.rows[0].gain, 5 * 120 - 1 - 5 * 50);
+  assert.equal(simulateSales(o, [{ isin: 'T', sh: 99 }], [], [], {}, '2026-11-14').rows[0].sh, 10);
+
+  // Regla de los dos meses: vender con pérdida el lote antiguo habiendo comprado hace menos de dos meses.
+  const e = simulateSales([pos('T', two.p.lots, 40)], [{ isin: 'T', sh: 5 }], [], [], {}, '2026-11-14');
+  assert.ok(e.rows[0].gain < 0);
+  assert.deepEqual(e.rows[0].wash.map((x) => x.d), ['2026-10-20']);
+  assert.deepEqual(b.rows[1].wash, []);
+
+  // Sobre un año que ya tiene ganancias realizadas, el impuesto es el marginal.
+  const sold = { k: 'S', d: '2026-03-01', sh: 1, net: 7000, csF: 1000, reF: 6000, re: 6000, sa: 0, lotsUsed: [], p: { isin: 'Z', name: 'Z', evs: [] } };
+  const f = simulateSales(o, [{ isin: 'W', sh: 10 }], [sold], [], {}, '2026-11-14');
+  close(f.before, savingsTax(6000));
+  close(f.tax, 999 * 0.21);
+  // Sin ventas elegidas no cambia nada.
+  const g = simulateSales(o, [], [sold], [], {}, '2026-11-14');
+  assert.deepEqual([g.rows.length, g.tax, g.proceeds, g.keep], [0, 0, 0, 0]);
+});
+
 test('proyección: interés compuesto con aportaciones, meta y aportación habitual', async () => {
   const { project, monthsToGoal, monthlyContribution } = await import('../../shared/calc.js');
   const close = (a, b) => assert.ok(Math.abs(a - b) < 0.01, `${a} ≠ ${b}`);

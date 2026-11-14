@@ -10,6 +10,7 @@ test('patrimonio: se añaden un bien y una deuda, se actualiza un saldo y se qui
   const card = (label) => page.locator('.kpi', { has: page.locator('.kpi-l', { hasText: new RegExp(`^${label}$`) }) });
   const kpi = (label) => card(label).locator('.kpi-v');
   await expect(kpi('Patrimonio neto')).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Patrimonio' })).toBeInViewport({ ratio: 1 });
   await expect(card('Debes')).toHaveCount(0);
   const before = await kpi('Tienes').textContent();
 

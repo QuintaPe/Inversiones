@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Asset, Card, Empty, Icon, Seg, Sticky, Tabs } from '../components/ui.jsx';
 import { Columns } from '../charts.jsx';
+import SaleSim from './SaleSim.jsx';
 import { useParam } from '../router.js';
 import { taxYears, yearEnd, splitWithholding, TREATY_RATE, SAVINGS_BRACKETS } from '../../../shared/calc.js';
 import { country, classLabel } from '../lib/countries.js';
@@ -29,7 +30,7 @@ function exportYear(y) {
 export default function Tax({ a, income, onOpen }) {
   const years = useMemo(() => taxYears(a.sl, a.dv, income), [a.sl, a.dv, income]);
   const [sel, setSel] = useParam('ejercicio', null);
-  const [tab, setTab] = useParam('ver', 'resumen', { resumen: 'resumen', ventas: 'ventas', dividendos: 'dividendos', renta: 'renta' });
+  const [tab, setTab] = useParam('ver', 'resumen', { resumen: 'resumen', ventas: 'ventas', dividendos: 'dividendos', renta: 'renta', simular: 'simular' });
   const [steps, setSteps] = useState(false);
   // Antes de fin de año: qué pasaría en la declaración al vender hoy cada posición.
   const plan = useMemo(() => yearEnd(a.o, a.sl, a.dv, income), [a.o, a.sl, a.dv, income]);
@@ -88,8 +89,9 @@ export default function Tax({ a, income, onOpen }) {
         <p>Generado el {date(new Date().toISOString())} a partir de tus operaciones. Orientativo: no es asesoramiento fiscal.</p>
       </header>
       <Sticky className="tax-tabs">
-        <Tabs label="Apartado" value={tab} onChange={setTab} items={[['resumen', 'Resumen'], ['ventas', `Ventas · ${y.sales.length}`], ['dividendos', `Dividendos · ${y.divs.length}`], ['renta', 'Renta Web']]} />
+        <Tabs label="Apartado" value={tab} onChange={setTab} items={[['resumen', 'Resumen'], ['ventas', `Ventas · ${y.sales.length}`], ['dividendos', `Dividendos · ${y.divs.length}`], ['renta', 'Renta Web'], ['simular', 'Simular']]} />
       </Sticky>
+      {tab === 'simular' && <SaleSim a={a} income={income} onOpen={onOpen} />}
       <div className={pane('resumen')}>
       <section className="card tax-hero">
         <div className="tax-top">

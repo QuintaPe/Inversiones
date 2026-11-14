@@ -6,7 +6,7 @@ import path from 'node:path';
 import zlib from 'node:zlib';
 
 const BUDGET_KB = {
-  initial: 95, // JS que pide la página al abrir (React y react-dom ya son ~60 KB)
+  initial: 97, // JS que pide la página al abrir (React y react-dom ya son ~60 KB); subió de 95 con el buscador con acciones y las pestañas deslizantes
   js: 185, // todo el JavaScript, con las secciones que se cargan bajo demanda (las funciones nuevas van ahí; subió con Patrimonio)
   css: 16, // con el rediseño (redesign.css)
   fonts: 140, // woff2 ya comprimido: se cuenta tal cual

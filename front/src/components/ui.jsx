@@ -293,8 +293,18 @@ export function Tabs({ items, value, onChange, label }) {
     onChange(items[to][0]);
     refs.current[to]?.focus();
   };
+  // En pantallas estrechas las pestañas se deslizan: la elegida siempre queda a la vista
+  // (moviendo solo la fila, no la página).
+  const row = useRef(null);
+  useEffect(() => {
+    const box = row.current, el = refs.current[items.findIndex(([k]) => k === value)];
+    if (!box || !el || box.scrollWidth <= box.clientWidth) return;
+    const left = el.getBoundingClientRect().left - box.getBoundingClientRect().left + box.scrollLeft;
+    if (left < box.scrollLeft) box.scrollLeft = Math.max(0, left - 24);
+    else if (left + el.offsetWidth > box.scrollLeft + box.clientWidth) box.scrollLeft = left + el.offsetWidth - box.clientWidth + 24;
+  }, [value, items]);
   return (
-    <div className="utabs" role="tablist" aria-label={label}>
+    <div className="utabs" role="tablist" aria-label={label} ref={row}>
       {items.map(([k, l], i) => (
         <button key={k} ref={(el) => { refs.current[i] = el; }} type="button" role="tab" aria-selected={value === k}
           tabIndex={value === k ? 0 : -1} className={value === k ? 'on' : ''} onClick={() => onChange(k)} onKeyDown={(ev) => key(ev, i)}>{l}</button>
