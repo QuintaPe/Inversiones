@@ -173,7 +173,9 @@ export default function Dashboard({ a, hist, histProgress, flt, cash, meta, onOp
         </>
       ) });
     } else if (cash && flt === 'all') { // el efectivo es de toda la cuenta, no de un tipo de activo
-      out.push({ key: 'cash', label: 'Efectivo', value: eur(cash.balance), sub: `${pct((cash.balance / (a.val + cash.balance)) * 100)} del patrimonio`, onClick: () => go('efectivo') });
+      out.push({ key: 'cash', label: 'Efectivo', value: eur(cash.balance), sub: `${pct((cash.balance / (a.val + cash.balance)) * 100)} del patrimonio`, onClick: () => go('efectivo'),
+        // Saldo de los últimos tres meses, para que la tarjeta no quede vacía junto a las demás.
+        spark: cash.days?.length > 2 && <Spark values={cash.days.slice(-90).map((d) => d[1])} /> });
     }
     return out;
   }, [none, h, a.total, a.dv, a.priced, a.val, st, range, cash, flt, dayLabel, go, onOpen]);
