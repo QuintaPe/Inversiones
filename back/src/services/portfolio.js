@@ -108,6 +108,8 @@ export function createPortfolio({ db, quotes, history, watcher }) {
       const fired = await watcher.fire(id, pf.alerts, got, names, false);
       out.set(id, {
         pf, at, fired, resolved: Object.keys(resolved).length,
+        // Proveedores de precios en pausa por fallos seguidos (se reintentan solos).
+        paused: Object.keys(quotes.paused?.() ?? {}),
         prices: Object.fromEntries(Object.entries(got).map(([isin, q]) => [isin, { price: q.price, at, info: q.info ?? null }])),
         updated: Object.keys(got).length,
         // Solo cuentan como fallo los que tienen ISIN cotizable (no cripto, etc.).

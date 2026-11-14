@@ -53,5 +53,16 @@ export default function sessionRoutes(app, { db, session, verifyGoogle, googleCl
     res.json({ ok: true });
   });
 
+  // Elimina la cuenta entera: todos sus datos, sus dispositivos con avisos y el propio usuario.
+  app.delete('/api/account', async (req, res) => {
+    const user = await session.user(req, db);
+    if (!user) return res.status(401).json({ error: 'Inicia sesión para continuar.' });
+    await db.deleteUsers([user.id]);
+    forget(user.id);
+    stream?.drop(user.id);
+    session.clear(res);
+    res.json({ ok: true });
+  });
+
   return { cleanDemo };
 }

@@ -73,6 +73,8 @@ export function createAutoBackup({ db, dir, daily = 14, weekly = 8, skip = 'demo
 
   return {
     run,
+    /** ¿Falta la copia de hoy? (Un día sin cuentas que copiar no deja carpeta: se vuelve a mirar, y es barato.) */
+    due: () => fs.access(path.join(dir, new Date(now()).toISOString().slice(0, 10))).then(() => false, () => true),
     /** Resultado de la última pasada, o null si aún no ha habido ninguna. */
     last: () => last,
     /** Copia al arrancar si falta la de hoy y después cada `hours` horas. Devuelve la función que lo detiene. */

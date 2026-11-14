@@ -11,7 +11,7 @@ import { eur, pct, pctS } from '../lib/format.js';
  * @param hidden   importes ocultos: los avisos del sistema no llevan cifras
  */
 export function useLiveQuotes({ data, setData, apply, fail, notify, hidden }) {
-  const [live, setLive] = useState({ at: null, failed: [], busy: false, error: null });
+  const [live, setLive] = useState({ at: null, failed: [], paused: [], busy: false, error: null });
   const liveBusy = useRef(false);
   const liveOn = !!data?.meta?.liveQuotes && (data?.positions ?? []).some((p) => p.open);
 
@@ -35,7 +35,7 @@ export function useLiveQuotes({ data, setData, apply, fail, notify, hidden }) {
     try {
       const res = await api.refreshQuotes();
       apply(res);
-      setLive({ at: res.refresh.at, failed: res.refresh.failed, busy: false, error: null });
+      setLive({ at: res.refresh.at, failed: res.refresh.failed, paused: res.refresh.paused ?? [], busy: false, error: null });
       announce(res.fired);
     } catch (err) {
       if (err instanceof api.Unauthorized) fail(err);
@@ -64,7 +64,7 @@ export function useLiveQuotes({ data, setData, apply, fail, notify, hidden }) {
             ? { ...p, price: q.prices[p.isin].price, priceAt: q.prices[p.isin].at, priceSource: 'live', priceInfo: q.prices[p.isin].info }
             : p)),
         }));
-        setLive({ at: q.at, failed: q.failed, busy: false, error: null });
+        setLive({ at: q.at, failed: q.failed, paused: q.paused ?? [], busy: false, error: null });
         announce(q.fired);
       });
       // Otra pestaña u otro dispositivo ha cambiado las operaciones.

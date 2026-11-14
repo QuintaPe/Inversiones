@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createAutoBackup } from './autobackup.js';
+import { createJobs } from './jobs.js';
 import { createApp } from './app.js';
 import { openDb } from './db.js';
 import { googleVerifier } from './auth.js';
@@ -50,30 +51,41 @@ const app = createApp({
 });
 const server = app.listen(PORT, HOST, () => log.info(`API en http://${HOST}:${PORT}`));
 
+// Tareas programadas (jobs.js): cada una apunta cuándo corrió y cómo acabó (GET /api/status).
+const jobs = createJobs({ log });
+app.locals.jobs = jobs;
+const MIN = 60_000;
+
 // Vigilante de alertas: cotiza los valores con alertas pendientes aunque nadie tenga la app abierta.
 const sweepMin = Number(process.env.ALERT_SWEEP_MIN ?? 5);
-const stops = [];
-if (quotes && sweepMin > 0) stops.push(app.locals.watcher.start(sweepMin));
-
-// Resumen semanal o mensual por aviso push para quien lo tenga activado.
-if (push) stops.push(app.locals.digest.start(60));
+if (quotes && sweepMin > 0) jobs.add('alertas', sweepMin * MIN, () => app.locals.watcher.sweep());
 
 // Cotizaciones para las pestañas abiertas: una sola consulta por valor para todos los usuarios.
 const streamSec = Number(process.env.QUOTE_STREAM_SEC ?? 60);
-if (app.locals.stream && streamSec > 0) stops.push(app.locals.stream.start(streamSec));
+if (app.locals.stream && streamSec > 0) jobs.add('cotizaciones', streamSec * 1000, () => app.locals.stream.tick());
+
+// Resumen semanal o mensual por aviso push para quien lo tenga activado.
+if (push) jobs.add('resumen', 60 * MIN, () => app.locals.digest.run());
 
 // Las cuentas de la cartera de ejemplo se borran solas pasada una semana.
-const cleanDemo = () => app.locals.cleanDemo().then((n) => n && log.info(`Borradas ${n} carteras de ejemplo.`)).catch((err) => log.error('Ejemplo:', err.message));
-cleanDemo();
-const demoTimer = setInterval(cleanDemo, 6 * 3600_000);
-demoTimer.unref();
+jobs.add('ejemplo', 6 * 60 * MIN, async () => {
+  const n = await app.locals.cleanDemo();
+  if (n) log.info(`Borradas ${n} carteras de ejemplo.`);
+  return n;
+}, { atStart: true });
 
 // Copia diaria de cada cuenta en back/data/backups (o BACKUP_DIR). BACKUP=0 la desactiva.
-// Con la base de datos en memoria (pruebas) no hay nada que conservar.
+// Con la base de datos en memoria (pruebas) no hay nada que conservar. Se mira cada hora si
+// falta la de hoy: así se hace al arrancar y poco después de cada medianoche (UTC).
 if (process.env.BACKUP !== '0' && db.url !== ':memory:') {
   const dir = process.env.BACKUP_DIR || path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'data', 'backups');
   const backups = createAutoBackup({ db, dir, daily: Number(process.env.BACKUP_DAILY ?? 14), weekly: Number(process.env.BACKUP_WEEKLY ?? 8), log });
-  stops.push(backups.start());
+  jobs.add('copias', 60 * MIN, async () => {
+    if (!(await backups.due())) return null;
+    const r = await backups.run();
+    if (r.users) log.info(`Copia automática: ${r.users} ${r.users === 1 ? 'cuenta' : 'cuentas'} en ${path.join(dir, r.day)}.`);
+    return r;
+  }, { atStart: true });
 }
 
 // Apagado ordenado (despliegues, Ctrl+C): se deja de aceptar tráfico, se cierran los canales de
@@ -88,8 +100,7 @@ async function shutdown(signal) {
   log.info(`${signal}: apagando…`);
   const force = setTimeout(() => { log.warn('Apagado forzado: quedaban peticiones en curso.'); process.exit(1); }, SHUTDOWN_MS);
   force.unref();
-  for (const stop of stops) stop();
-  clearInterval(demoTimer);
+  jobs.stop();
   app.locals.stream?.close();
   await new Promise((resolve) => { server.close(resolve); server.closeIdleConnections?.(); });
   try { await db.close(); } catch (err) { log.warn('Al cerrar la base de datos:', err); }

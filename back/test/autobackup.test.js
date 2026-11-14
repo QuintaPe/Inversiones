@@ -39,8 +39,10 @@ test('copia automática: un archivo por cuenta real, restaurable, y limpieza de 
     let t = Date.parse('2026-03-10T08:00:00Z');
     const backups = createAutoBackup({ db, dir, daily: 1, weekly: 0, now: () => t });
     assert.equal(backups.last(), null);
+    assert.equal(await backups.due(), true);
     assert.deepEqual(await backups.run(), { at: '2026-03-10T08:00:00.000Z', day: '2026-03-10', users: 1 });
     assert.deepEqual(await fs.readdir(path.join(dir, '2026-03-10')), ['u1.json.gz']);
+    assert.equal(await backups.due(), false);
     // Lo que no es una carpeta de día no se toca; la copia vieja sí se quita.
     assert.deepEqual((await fs.readdir(dir)).sort(), ['2026-03-10', 'otra-cosa']);
 

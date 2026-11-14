@@ -9,8 +9,11 @@ const backupFile = multer({ storage: multer.memoryStorage(), limits: { fileSize:
 
 const ISIN_RE = /^[A-Z]{2}[A-Z0-9]{9}\d$/;
 
-export default function accountRoutes(api, { db, push, pf, quotes, digest }) {
+export default function accountRoutes(api, { db, push, pf, quotes, digest, jobs }) {
   const { portfolio } = pf;
+
+  // Estado del servidor: proveedores de precios en pausa (milisegundos que faltan) y tareas programadas.
+  api.get('/status', (_req, res) => res.json({ providers: quotes?.paused?.() ?? {}, jobs: jobs?.() ?? [] }));
 
   // ---------- alertas de precio y cartera objetivo ----------
   api.post('/alerts', async (req, res) => {

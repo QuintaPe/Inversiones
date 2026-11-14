@@ -135,6 +135,17 @@ export default function App() {
     setToasts([]);
   };
 
+  const removeAccount = async () => {
+    if (!(await confirm({ title: '¿Eliminar tu cuenta?', text: 'Se borran todos tus datos y la propia cuenta, y se cierra la sesión en todos tus dispositivos. No se puede deshacer: descarga antes una copia si quieres conservarlos.', action: 'Eliminar la cuenta', danger: true }))) return;
+    try {
+      await disablePush().catch(() => {});
+      await api.deleteAccount();
+      window.google?.accounts.id.disableAutoSelect();
+      leave('Tu cuenta se ha eliminado.');
+      setToasts([]);
+    } catch (err) { fail(err); }
+  };
+
   const leaveDemo = async () => {
     if (await confirm({ title: '¿Salir de la cartera de ejemplo?', text: 'Son datos inventados para probar la app. Al salir vuelves a la pantalla de acceso.', action: 'Salir del ejemplo' })) logout();
   };
@@ -237,7 +248,8 @@ export default function App() {
     addOp: () => setOpForm({}), pickCsv: () => csvInput.current?.click(), refresh: liveOn && !offline ? refreshQuotes : null,
     hidden: !!hidden, toggleHidden, theme, themes: THEMES, setTheme, exportUrl: api.EXPORT_URL, restore: () => bakInput.current?.click(), logout,
   };
-  const liveText = live.busy && !live.at ? 'Cotizando…' : live.error ? 'Sin precios' : live.at ? time(live.at) : 'En vivo';
+  const paused = live.paused?.length > 0; // la fuente de precios está en pausa tras varios fallos: se reintenta sola
+  const liveText = live.busy && !live.at ? 'Cotizando…' : live.error ? 'Sin precios' : paused ? 'En pausa' : live.at ? time(live.at) : 'En vivo';
 
   const account = (
     <Menu label="Cuenta" button={user.picture
@@ -271,6 +283,9 @@ export default function App() {
           <button type="button" role="menuitem" onClick={() => { close(); bakInput.current?.click(); }}><Icon name="undo" size={17} />Restaurar una copia</button>
           <button type="button" role="menuitem" onClick={() => { close(); wipe(); }} className="danger"><Icon name="trash" size={17} />Borrar mis datos</button>
           {!user.id.startsWith('demo-') && (
+            <button type="button" role="menuitem" onClick={() => { close(); removeAccount(); }} className="danger"><Icon name="trash" size={17} />Eliminar mi cuenta</button>
+          )}
+          {!user.id.startsWith('demo-') && (
             <button type="button" role="menuitem" onClick={() => { close(); logoutOthers(); }}><Icon name="logout" size={17} />Cerrar en otros dispositivos</button>
           )}
           <button type="button" role="menuitem" onClick={logout}><Icon name="logout" size={17} />Cerrar sesión</button>
@@ -295,9 +310,10 @@ export default function App() {
             )}
             {offline && <span className="live off" title="Sin conexión: ves los últimos datos guardados"><span className="live-dot" aria-hidden="true" />Sin conexión</span>}
             {liveOn && !offline && (
-              <button type="button" className={`live ${live.error ? 'off' : ''} ${live.busy ? 'busy' : ''}`} onClick={refreshQuotes} disabled={live.busy}
+              <button type="button" className={`live ${live.error || paused ? 'off' : ''} ${live.busy ? 'busy' : ''}`} onClick={refreshQuotes} disabled={live.busy}
                 title={live.error
                   ? `No se pudo actualizar: ${live.error}`
+                  : paused ? `La fuente de precios no responde (${live.paused.join(', ')}): se reintenta sola en unos minutos; mientras, ves los últimos precios guardados`
                   : live.failed.length ? `Sin cotización: ${live.failed.join(', ')}` : 'Cotización en vivo. Pulsa para actualizar ahora'}>
                 <span className="live-dot" aria-hidden="true" />{liveText}
               </button>

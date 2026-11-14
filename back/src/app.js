@@ -103,7 +103,7 @@ export function createApp({ db: rawDb, verifyGoogle, googleClientId, sessionSecr
       const out = new Map();
       for (const [id, r] of await quoteUsers(ids)) {
         const alerts = r.fired.length ? (await db.getAlerts(id)) : undefined;
-        out.set(id, { at: r.at, prices: r.prices, updated: r.updated, failed: r.failed, fired: r.fired, alerts });
+        out.set(id, { at: r.at, prices: r.prices, updated: r.updated, failed: r.failed, fired: r.fired, alerts, paused: r.paused });
       }
       return out;
     },
@@ -135,7 +135,7 @@ export function createApp({ db: rawDb, verifyGoogle, googleClientId, sessionSecr
   // Resumen semanal o mensual por aviso push (index.js lo pone en marcha).
   const digest = createDigest({ db, quotes, history, push, pf, log });
   app.locals.digest = digest;
-  const ctx = { db, quotes, history, logos, push, stream, pf, historyWaitMs, log, digest };
+  const ctx = { db, quotes, history, logos, push, stream, pf, historyWaitMs, log, digest, jobs: () => app.locals.jobs?.status() ?? [] };
   portfolioRoutes(api, ctx);
   transactionRoutes(api, ctx);
   const hist = historyRoutes(api, ctx);

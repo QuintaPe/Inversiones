@@ -201,6 +201,12 @@ compresión y límite de peticiones. Define `PUSH_SUBJECT` con un contacto real 
 - **Registro**: con `NODE_ENV=production` (o `LOG_FORMAT=json`) cada línea es un objeto JSON. Los
   errores sin tratar llevan el identificador de la petición, que también va en la cabecera
   `X-Request-Id` y en la respuesta 500, para poder buscarlos.
+- **Tareas programadas** (`back/src/jobs.js`): vigilancia de alertas, cotizaciones para las pestañas abiertas,
+  resumen periódico, limpieza de las carteras de ejemplo y copias. Cada una apunta cuándo corrió y cómo acabó;
+  `GET /api/status` (con sesión) lo devuelve junto con las fuentes de precios que estén en pausa. Cuando una
+  fuente está en pausa, el indicador de cotización de la app lo dice («En pausa»).
+- **Eliminar la cuenta** (menú de la cuenta, `DELETE /api/account`): borra todos los datos y el usuario. Las
+  copias automáticas de esa cuenta que ya existan en disco se van solas al caducar (hasta ocho semanas).
 - **Copias automáticas**: una vez al día el servidor guarda cada cuenta en
   `back/data/backups/AAAA-MM-DD/<usuario>.json.gz` (`BACKUP_DIR` la cambia; `back/src/autobackup.js`),
   con el mismo formato que «Descargar una copia»: se descomprime (`gunzip`) y se carga con

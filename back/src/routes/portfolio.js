@@ -59,7 +59,7 @@ export default function portfolioRoutes(api, { db, quotes, logos, stream, pf }) 
     if (!quotes) return res.status(503).json({ error: 'Las cotizaciones en vivo están desactivadas.' });
     const r = (await quoteUsers([req.userId])).get(req.userId);
     // Símbolos nuevos traen sector e industria: entonces sí se vuelve a leer la cartera.
-    if (r.resolved) return res.json({ ...(await portfolio(req.userId)), fired: r.fired, refresh: { at: r.at, updated: r.updated, failed: r.failed } });
+    if (r.resolved) return res.json({ ...(await portfolio(req.userId)), fired: r.fired, refresh: { at: r.at, updated: r.updated, failed: r.failed, paused: r.paused } });
     // La cartera ya leída, con los precios recién cotizados y las alertas que han saltado:
     // no hace falta volver a la base de datos.
     const fired = new Set(r.fired.map((al) => al.id));
@@ -67,7 +67,7 @@ export default function portfolioRoutes(api, { db, quotes, logos, stream, pf }) 
       ? { ...p, price: r.prices[p.isin].price, priceAt: r.at, priceSource: 'live', priceInfo: r.prices[p.isin].info }
       : p));
     const alerts = r.pf.alerts.map((al) => (fired.has(al.id) ? { ...al, triggered_at: r.at } : al));
-    res.json({ ...r.pf, positions, alerts, fired: r.fired, refresh: { at: r.at, updated: r.updated, failed: r.failed } });
+    res.json({ ...r.pf, positions, alerts, fired: r.fired, refresh: { at: r.at, updated: r.updated, failed: r.failed, paused: r.paused } });
   });
 
   // Valoraciones con fecha de lo que no cotiza.
