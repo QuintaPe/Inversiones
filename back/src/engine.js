@@ -107,6 +107,16 @@ export function isShareSplit(ratio) {
  * @param rows    filas guardadas del CSV y operaciones a mano
  * @param splits  por valor: { ISIN: [[fecha, ratio], …] }; ratio = acciones nuevas por cada acción antigua
  */
+/** Planes de pensiones españoles: se identifican por su código de la DGSFP («N5396»), no por ISIN. */
+const PLAN_ID = /^N\d{4}$/;
+/** Tipo de activo: el del CSV o el elegido a mano; un código de plan es siempre un plan de pensiones. */
+export const assetClass = (r) => (PLAN_ID.test(r.symbol) ? 'PENSION_PLAN' : r.asset_class);
+/**
+ * Grupo del filtro del resumen: Private Markets, externos (lo que está fuera de Trade Republic:
+ * planes de pensiones y otros activos anotados a mano como externos) o acciones y ETF.
+ */
+export const assetGroup = (cls) => (cls === 'PRIVATE_FUND' ? 'pm' : cls === 'PENSION_PLAN' || cls === 'EXTERNAL' ? 'ext' : 'ac');
+
 export function buildPortfolio(rows, splits = {}) {
   const sorted = [...rows].sort(byTime);
   const trades = sorted.filter((r) => r.category === 'TRADING' && (r.type === 'BUY' || r.type === 'SELL'));
@@ -134,9 +144,9 @@ export function buildPortfolio(rows, splits = {}) {
   const map = new Map();
   const get = (r) => {
     if (!map.has(r.symbol)) {
+      const cls = assetClass(r);
       map.set(r.symbol, {
-        isin: r.symbol, name: r.name, cls: r.asset_class,
-        grp: r.asset_class === 'PRIVATE_FUND' ? 'pm' : 'ac',
+        isin: r.symbol, name: r.name, cls, grp: assetGroup(cls),
         sh: 0, cost: 0, evs: [], lots: [],
       });
     }

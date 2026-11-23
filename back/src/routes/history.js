@@ -5,7 +5,7 @@ import { riskReport } from '../../../shared/risk.ts';
 
 const HISTORY_TTL = 10 * 60_000;
 // Sube al cambiar la forma del histórico (p. ej. series por tipo de activo): invalida lo guardado.
-const HISTORY_FORMAT = 3;
+const HISTORY_FORMAT = 4; // 4: grupo «Externos» y planes de pensiones con su valor liquidativo
 
 /** Devuelve { forget(userId) } para soltar lo que se guarda en memoria de una cuenta borrada. */
 export default function historyRoutes(api, { db, history, pf, historyWaitMs, log = console }) {

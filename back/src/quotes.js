@@ -13,9 +13,17 @@ const ONVISTA = 'https://api.onvista.de/api/v1';
 const NAV_TTL = 6 * 3600_000; // un valor liquidativo no cambia en horas
 const isNav = (symbol) => symbol.startsWith('NAV:');
 export const NAV_EXCHANGE = 'Valor liquidativo';
+// Planes de pensiones españoles: no tienen ISIN sino código de la DGSFP («N5396»). Su valor
+// liquidativo diario se lee de la ficha pública de Quefondos; el símbolo es «PLAN:<código>».
+// No es una API: si cambian la página, el precio deja de actualizarse (y se puede fijar a mano).
+const QUEFONDOS = 'https://www.quefondos.com/es/planes/ficha/index.html?isin=';
+const PLAN_RE = /^N\d{4}$/;
+export const isPlanSymbol = (symbol) => symbol.startsWith('PLAN:');
 const QUOTE_TTL = 60_000; // no se pide el mismo símbolo más de una vez por minuto
 const PAUSE = 120; // ms entre peticiones, en serie dentro de cada carril
 const ISIN_RE = /^[A-Z]{2}[A-Z0-9]{9}\d$/;
+/** Identificadores que se pueden cotizar: ISIN o código de plan de pensiones. */
+const quotable = (id) => ISIN_RE.test(id) || PLAN_RE.test(id);
 
 // Tipos de cambio de referencia del BCE (uno al día): respaldo si Yahoo no da la divisa.
 const ECB = 'https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml';
@@ -135,8 +143,37 @@ export function createQuotes({ fetchImpl = fetch, now = () => Date.now(), sleep 
     return { currency: j.isoCurrency || 'EUR', rows, divs: [], splits: [] };
   }
 
+  /**
+   * Ficha de un plan de pensiones en Quefondos → { price, d, name, months }. Se leen las etiquetas
+   * «Valor liquidativo:» y «Fecha:» del texto, sin depender de cómo esté maquetada la página, y la
+   * serie de su gráfica de evolución (`var fondo = [["MM/DD/AAAA", valor], …]`): el valor liquidativo
+   * de cada fin de mes. Si la gráfica no está, `months` queda vacío y vale con el del día.
+   */
+  async function planPage(code, lane) {
+    const html = await get(`${QUEFONDOS}${encodeURIComponent(code)}`, 'text', lane);
+    const text = html.replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ');
+    const px = text.match(/Valor liquidativo:\s*([\d.]+,\d+)\s*EUR/i);
+    const dt = text.match(/Fecha:\s*(\d{2})\/(\d{2})\/(\d{4})/);
+    const price = px ? Number(px[1].replace(/\./g, '').replace(',', '.')) : NaN;
+    if (!(price > 0) || !dt) throw new Error('sin valor liquidativo');
+    const name = html.match(/<title>\s*([^<(]+?)\s*\(/)?.[1] ?? null;
+    let months = [];
+    try {
+      const raw = JSON.parse(html.match(/var\s+fondo\s*=\s*(\[[\s\S]*?\]\s*\])\s*;/)?.[1] ?? '[]');
+      months = raw.map(([md, v]) => {
+        const [mm, dd, yy] = String(md).split('/');
+        return [`${yy}-${mm}-${dd}`, Number(v)];
+      }).filter(([d, v]) => /^\d{4}-\d{2}-\d{2}$/.test(d) && v > 0);
+    } catch { /* sin gráfica: solo el valor del día */ }
+    return { price, d: `${dt[3]}-${dt[2]}-${dt[1]}`, name, months };
+  }
+
   /** ISIN → { symbol, exchange, sector, industry } o null si ninguna fuente lo conoce. */
   async function resolve(isin) {
+    if (PLAN_RE.test(isin)) {
+      await planPage(isin); // solo si Quefondos lo conoce
+      return { symbol: `PLAN:${isin}`, exchange: NAV_EXCHANGE, sector: null, industry: null };
+    }
     const hit = (await search(isin))[0];
     if (hit) return card(hit);
     const ticker = await usTicker(isin).catch(() => null);
@@ -149,7 +186,16 @@ export function createQuotes({ fetchImpl = fetch, now = () => Date.now(), sleep 
   /** Último precio de un símbolo: { price, currency, time, exchange }. */
   async function quote(symbol) {
     const hit = cache.get(symbol);
-    if (hit && now() - hit.at < (isNav(symbol) ? NAV_TTL : QUOTE_TTL)) return hit.data;
+    if (hit && now() - hit.at < (isNav(symbol) || isPlanSymbol(symbol) ? NAV_TTL : QUOTE_TTL)) return hit.data;
+    if (isPlanSymbol(symbol)) {
+      const pg = await planPage(symbol.slice(5));
+      const data = {
+        price: pg.price, currency: 'EUR', dayPct: null, time: `${pg.d}T00:00:00.000Z`,
+        exchange: NAV_EXCHANGE, name: pg.name, nav: true, plan: true,
+      };
+      cache.set(symbol, { at: now(), data });
+      return data;
+    }
     if (isNav(symbol)) {
       const nav = await navQuote(symbol);
       cache.set(symbol, { at: now(), data: nav });
@@ -204,7 +250,7 @@ export function createQuotes({ fetchImpl = fetch, now = () => Date.now(), sleep 
   async function quoteIsins(isins, symbols = {}) {
     const out = {}, resolved = {}, failed = [];
     for (const isin of isins) {
-      if (!ISIN_RE.test(isin)) continue;
+      if (!quotable(isin)) continue;
       try {
         let sym = symbols[isin];
         if (sym === undefined) {
@@ -216,7 +262,7 @@ export function createQuotes({ fetchImpl = fetch, now = () => Date.now(), sleep 
         const rate = await eurRate(q.currency);
         out[isin] = {
           price: q.price * rate,
-          info: { symbol: sym.symbol, exchange: q.exchange || sym.exchange, currency: q.currency, raw: q.price, rate, time: q.time, dayPct: q.dayPct, ...(q.nav ? { nav: true, name: q.name } : {}) },
+          info: { symbol: sym.symbol, exchange: q.exchange || sym.exchange, currency: q.currency, raw: q.price, rate, time: q.time, dayPct: q.dayPct, ...(q.nav ? { nav: true, name: q.name } : {}), ...(q.plan ? { plan: true } : {}) },
         };
       } catch {
         failed.push(isin);
@@ -235,7 +281,7 @@ export function createQuotes({ fetchImpl = fetch, now = () => Date.now(), sleep 
   async function resolveIsins(isins, symbols = {}) {
     const resolved = {};
     for (const isin of isins) {
-      if (!ISIN_RE.test(isin) || symbols[isin] !== undefined) continue;
+      if (!quotable(isin) || symbols[isin] !== undefined) continue;
       try {
         resolved[isin] = await resolve(isin);
       } catch { /* se reintenta en la próxima llamada */ }
@@ -250,6 +296,15 @@ export function createQuotes({ fetchImpl = fetch, now = () => Date.now(), sleep 
    */
   async function history(symbol, from) {
     if (isNav(symbol)) return navHistory(symbol, from);
+    // Plan de pensiones: los fines de mes de la gráfica de Quefondos y el último valor publicado;
+    // cada descarga añade ese día, así que desde que se sigue el histórico va siendo diario.
+    if (isPlanSymbol(symbol)) {
+      const nav = await planPage(symbol.slice(5), 'bulk');
+      const rows = [...nav.months.filter(([d]) => d < nav.d), [nav.d, nav.price]];
+      // Desde un mes antes de `from`, para que la gráfica tenga el punto anterior a la compra.
+      const since = new Date(Date.parse(`${from}T00:00:00Z`) - 31 * 86_400_000).toISOString().slice(0, 10);
+      return { currency: 'EUR', rows: rows.filter(([d]) => d >= since), divs: [], splits: [] };
+    }
     const p1 = Math.floor(Date.parse(`${from}T00:00:00Z`) / 1000) - 86400;
     const p2 = Math.floor(now() / 1000) + 86400;
     const j = await get(`${CHART}/${encodeURIComponent(symbol)}?interval=1d&period1=${p1}&period2=${p2}&events=div%2Csplits`, 'json', 'bulk');

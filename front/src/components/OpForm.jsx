@@ -1,8 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Icon, Seg } from './ui.jsx';
 import { eur } from '../lib/format.js';
+import { classLabel } from '../lib/countries.js';
 
 const TYPES = [['BUY', 'Compra'], ['SELL', 'Venta'], ['DIVIDEND', 'Dividendo']];
+// Tipo de activo; los dos últimos van al grupo «Externos» (fuera de Trade Republic).
+const CLASSES = [['STOCK', 'Acciones'], ['FUND', 'ETF y fondos'], ['PENSION_PLAN', 'Plan de pensiones (externo)'], ['EXTERNAL', 'Otro activo externo']];
+const PLAN_ID = /^N\d{4}$/i; // código de la DGSFP de un plan de pensiones
 const today = () => new Date().toISOString().slice(0, 10);
 const txt = (n) => (n ? String(+Number(n).toFixed(6)) : '');
 
@@ -19,6 +23,8 @@ export default function OpForm({ initial = {}, positions, onSubmit, onClose }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
   const set = (k) => (ev) => setF((s) => ({ ...s, [k]: ev.target.value }));
+  // Un código de plan («N5396») es un plan de pensiones: se elige solo.
+  const setId = (ev) => { const isin = ev.target.value; setF((s) => ({ ...s, isin, ...(PLAN_ID.test(isin.trim()) ? { asset_class: 'PENSION_PLAN' } : {}) })); };
   const div = f.type === 'DIVIDEND';
   const locked = !!initial.isin; // desde la ficha de un activo, el activo ya está elegido
 
@@ -65,7 +71,14 @@ export default function OpForm({ initial = {}, positions, onSubmit, onClose }) {
             <input list="op-assets" value={f.name} onChange={pickName} placeholder="Nombre" required maxLength={80} disabled={locked} autoFocus={!locked} /></label>
           <datalist id="op-assets">{positions.map((p) => <option key={p.isin} value={p.name} />)}</datalist>
           <label><span>ISIN o identificador</span>
-            <input value={f.isin} onChange={set('isin')} placeholder="US0378331005" required maxLength={20} disabled={locked} /></label>
+            <input value={f.isin} onChange={setId} placeholder="US0378331005 o N5396" required maxLength={20} disabled={locked} /></label>
+          {!locked && (
+            <label><span>Tipo de activo</span>
+              <select value={f.asset_class} onChange={set('asset_class')}>
+                {CLASSES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                {!CLASSES.some(([k]) => k === f.asset_class) && <option value={f.asset_class}>{classLabel(f.asset_class)}</option>}
+              </select></label>
+          )}
           <label><span>Fecha</span>
             <input type="date" value={f.date} max={today()} onChange={set('date')} required /></label>
           {div ? (

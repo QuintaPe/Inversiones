@@ -17,6 +17,7 @@ export const country = (isin) => {
 export const CLASS_LABEL = {
   STOCK: 'Acciones', FUND: 'ETF y fondos', PRIVATE_FUND: 'Private Markets',
   CRYPTO: 'Cripto', DERIVATIVE: 'Derivados', BOND: 'Renta fija',
+  PENSION_PLAN: 'Plan de pensiones', EXTERNAL: 'Externo',
 };
 export const classLabel = (c) => CLASS_LABEL[c] ?? c ?? 'Otros';
 
@@ -41,5 +42,5 @@ const SECTOR = {
 const noSector = (p) => (p.cls === 'STOCK' ? 'Sin clasificar' : classLabel(p.cls));
 export const sector = (p) => (p.sector ? SECTOR[p.sector] ?? p.sector : noSector(p));
 export const industry = (p) => p.industry || noSector(p);
-export const currency = (p) => p.priceInfo?.currency ?? (p.grp === 'pm' || p.priceSource === 'manual' ? 'EUR' : 'Sin dato');
+export const currency = (p) => p.priceInfo?.currency ?? (p.grp === 'pm' || p.grp === 'ext' || p.priceSource === 'manual' ? 'EUR' : 'Sin dato');
 export const exchange = (p) => p.priceInfo?.exchange || (p.grp === 'pm' ? 'No cotiza' : 'Sin dato');

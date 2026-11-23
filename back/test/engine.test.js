@@ -115,3 +115,16 @@ test('buildIncome: intereses y premios por ejercicio con su retención', () => {
   close(inc['2025'].reward.t, 2.85);
   close(inc['2026'].interest.g, 1);
 });
+
+test('externos: un plan de pensiones (código de la DGSFP) y lo marcado como externo van aparte de acciones y ETF', () => {
+  const { rows } = parseCsv(csv(
+    // Anotado como fondo, pero su identificador es un código de plan: es un plan de pensiones.
+    row({ datetime: '2025-12-12T10:00:00Z', asset_class: 'FUND', name: 'MyInvestor Indexado Global, PP', symbol: 'N5396', shares: '87.368', price: '17.1687', amount: '-1500.00', transaction_id: 'e-1' }),
+    row({ datetime: '2025-12-13T10:00:00Z', asset_class: 'EXTERNAL', name: 'Fondo en otro banco', symbol: 'ES0000000001', shares: '10', price: '10', amount: '-100.00', transaction_id: 'e-2' }),
+    row({ datetime: '2025-12-14T10:00:00Z', name: 'Acme', symbol: 'XX0000000001', shares: '1', price: '50', amount: '-50.00', transaction_id: 'e-3' }),
+  ));
+  const by = Object.fromEntries(buildPortfolio(rows).positions.map((p) => [p.isin, p]));
+  assert.deepEqual([by.N5396.cls, by.N5396.grp], ['PENSION_PLAN', 'ext']);
+  assert.deepEqual([by.ES0000000001.cls, by.ES0000000001.grp], ['EXTERNAL', 'ext']);
+  assert.deepEqual([by.XX0000000001.cls, by.XX0000000001.grp], ['STOCK', 'ac']);
+});

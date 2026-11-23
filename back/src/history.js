@@ -2,6 +2,7 @@
 // los cierres históricos, y calcula el índice de rentabilidad (TWR).
 
 import { HISTORY_V } from './db.js';
+import { isPlanSymbol } from './quotes.js';
 
 import { BENCHMARKS } from '../../shared/benchmarks.ts';
 
@@ -109,7 +110,10 @@ export function createHistory({ db, quotes, now = () => Date.now() }) {
     const unpriced = [];
     const pricer = (p) => {
       const s = symbols[p.isin]?.symbol;
-      if (s && hist[s]?.length) {
+      // Plan de pensiones: los valores liquidativos guardados (uno por descarga) son puntos de la
+      // línea recta de abajo, no cierres diarios; si no, antes del primero se quedaría a coste.
+      const plan = s && isPlanSymbol(s) ? hist[s] ?? [] : null;
+      if (s && hist[s]?.length && !plan) {
         const close = reader(hist[s]);
         const cur = meta[s].currency;
         const rate = cur === 'EUR' ? () => 1 : reader(hist[`${cur}EUR=X`] ?? []);
@@ -128,10 +132,11 @@ export function createHistory({ db, quotes, now = () => Date.now() }) {
       const buys = p.evs.filter((e) => e.k === 'B'), sells = p.evs.filter((e) => e.k === 'S');
       const pts = [[buys[0].d, buys[0].net / buys[0].sh]];
       for (const v of valuations[p.isin] ?? []) pts.push([v.d, v.price]);
+      for (const [d, c] of plan ?? []) pts.push([d, c]);
       const cur = prices[p.isin];
       if (p.open && cur?.price && !(valuations[p.isin] ?? []).length) pts.push([cur.at.slice(0, 10), cur.price]);
       if (!p.open && sells.length) pts.push([sells.at(-1).d, sells.at(-1).px]);
-      if (p.open) unpriced.push(p.name);
+      if (p.open && !plan?.length) unpriced.push(p.name);
       return interpolator(pts);
     };
 

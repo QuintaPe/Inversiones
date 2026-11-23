@@ -403,6 +403,8 @@ export default function Asset({ x, totalVal, yearBase, onBack, onPrice, liveQuot
   const view = useMemo(() => {
     if (!hist) return null;
     let rows = hist.rows;
+    // Plan de pensiones sin histórico todavía (solo el valor del día): la línea parte de tu compra.
+    if (p.priceInfo?.plan && rows.length < 2 && x.B[0]?.px > 0) rows = [[x.B[0].d, x.B[0].px], ...rows.filter(([d]) => d > x.B[0].d)];
     if (p.open && p.price > 0 && rows.at(-1)[0] < today()) rows = [...rows, [today(), p.price]];
     let from = rows[0][0];
     if (range === 'ytd') from = `${new Date().getFullYear()}-01-01`;
@@ -414,7 +416,7 @@ export default function Asset({ x, totalVal, yearBase, onBack, onPrice, liveQuot
     const marks = x.ops.filter((o) => (o.k === 'B' || o.k === 'S') && o.d >= dates[0])
       .map((o) => ({ key: o.id + o.k, i: idx(o.d), cls: o.k === 'B' ? 'buy' : 'sell', o }));
     return { t: dates.map((d) => Date.parse(`${d}T00:00:00Z`)), dates, c: rows.map((r) => r[1]), marks };
-  }, [hist, range, p.open, p.price, x.ops]);
+  }, [hist, range, p.open, p.price, p.priceInfo?.plan, x.B, x.ops]);
 
   const chg = view ? (view.c.at(-1) / view.c[0] - 1) * 100 : null;
   // Comparación con tu dinero: lo que has ganado con el valor frente a lo que habrías ganado
@@ -440,7 +442,7 @@ export default function Asset({ x, totalVal, yearBase, onBack, onPrice, liveQuot
   // De dónde sale el precio, en una línea.
   const info = p.priceInfo;
   const priceText = p.priceSource === 'live' && info?.nav
-    ? ['Valor liquidativo', info.time && `del ${date(info.time)}`, info.name, 'lo publica la gestora, normalmente cada mes'].filter(Boolean).join(' · ')
+    ? ['Valor liquidativo', info.time && `del ${date(info.time)}`, info.name, info.plan ? 'plan de pensiones, se publica cada día hábil (Quefondos)' : 'lo publica la gestora, normalmente cada mes'].filter(Boolean).join(' · ')
     : p.priceSource === 'live' && info
       ? ['En vivo', info.symbol, info.exchange,
         info.currency && info.currency !== 'EUR' && `${num(info.raw)} ${info.currency} × ${isMasked() ? MASK : info.rate.toFixed(4)}`,

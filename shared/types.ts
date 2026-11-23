@@ -9,8 +9,8 @@ export type Isin = string;
 
 // ---------- posiciones y sus eventos (back/src/engine) ----------
 
-/** Grupo de activos: acciones y ETF, o Private Markets. */
-export type AssetGroup = 'ac' | 'pm';
+/** Grupo de activos: acciones y ETF, Private Markets o externos (fuera de Trade Republic). */
+export type AssetGroup = 'ac' | 'pm' | 'ext';
 /** Filtro de la vista: un grupo o todo. */
 export type GroupFilter = AssetGroup | 'all';
 

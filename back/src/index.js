@@ -10,6 +10,7 @@ import { createQuotes } from './quotes.js';
 import { createLogos } from './logos.js';
 import { createPush } from './push.js';
 import { createLog } from './log.js';
+import { createPlanNavs } from './plans.js';
 
 const log = createLog();
 
@@ -66,6 +67,13 @@ if (app.locals.stream && streamSec > 0) jobs.add('cotizaciones', streamSec * 100
 
 // Resumen semanal o mensual por aviso push para quien lo tenga activado.
 if (push) jobs.add('resumen', 60 * MIN, () => app.locals.digest.run());
+
+// Valor liquidativo de los planes de pensiones una vez al día, a las 6:00 (hora de España),
+// aunque nadie abra la app.
+if (quotes) {
+  const plans = createPlanNavs({ db, quotes, log });
+  jobs.daily('planes', { hour: Number(process.env.PLAN_NAV_HOUR ?? 6), tz: 'Europe/Madrid' }, () => plans.run());
+}
 
 // Las cuentas de la cartera de ejemplo se borran solas pasada una semana.
 jobs.add('ejemplo', 6 * 60 * MIN, async () => {

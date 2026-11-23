@@ -138,3 +138,53 @@ test('una descarga de histórico lenta no hace esperar a la cotización del mome
   release();
   await hist;
 });
+
+// Ficha de Quefondos de un plan de pensiones (lo esencial de su maquetación).
+const planHtml = (vl, fecha, serie = '') => `<html><head><title>MYINVESTOR INDEXADO GLOBAL (N5396) · MERCHBANC - Informe</title></head><body>
+  <span class="floatleft">Valor liquidativo: </span><span class="floatright">${vl} EUR</span>
+  <span class="floatleft">Fecha: </span><span class="floatright">${fecha}</span>
+  ${serie && `<script>\n\t\t\tvar fondo = ${serie};\n\t\t\tvar categoria = [["11/30/2016",1199.03]];\n</script>`}</body></html>`;
+
+test('plan de pensiones: código de la DGSFP → valor liquidativo y fecha de Quefondos, en euros', async () => {
+  const { q, calls } = setup((url) => {
+    if (url.includes('quefondos.com') && url.includes('isin=N5396')) return ok(planHtml('19,607890', '19/11/2026'));
+    throw new Error(`inesperado: ${url}`);
+  });
+  const r = await q.quoteIsins(['N5396'], {});
+  assert.deepEqual(r.failed, []);
+  assert.deepEqual(r.resolved.N5396, { symbol: 'PLAN:N5396', exchange: 'Valor liquidativo', sector: null, industry: null });
+  const x = r.quotes.N5396;
+  assert.equal(x.price, 19.60789);
+  assert.equal(x.info.time, '2026-11-19T00:00:00.000Z');
+  assert.equal(x.info.name, 'MYINVESTOR INDEXADO GLOBAL');
+  assert.equal(x.info.plan, true);
+  assert.ok(calls.every((u) => u.includes('quefondos.com')), 'ni Yahoo ni OpenFIGI');
+  // El histórico es el último valor publicado: un punto por descarga.
+  const h = await q.history('PLAN:N5396', '2025-12-12');
+  assert.deepEqual(h.rows, [['2026-11-19', 19.60789]]);
+});
+
+test('plan de pensiones: si la ficha cambia y no trae el valor, falla sin inventar un precio', async () => {
+  const { q } = setup(() => ok('<html><body>Página en mantenimiento</body></html>'));
+  const r = await q.quoteIsins(['N5396'], { N5396: { symbol: 'PLAN:N5396', exchange: 'Valor liquidativo' } });
+  assert.deepEqual(r.failed, ['N5396']);
+  assert.equal(r.quotes.N5396, undefined);
+});
+
+
+test('plan de pensiones: el histórico son los fines de mes de la gráfica de Quefondos más el último valor', async () => {
+  const serie = '[["10/31/2025",17.1],["11/30/2025",17.32],["12/31/2025",17.38],["01/31/2026",17.58],["11/19/2026",22.0]]';
+  const { q } = setup((url) => {
+    if (url.includes('quefondos.com')) return ok(planHtml('22,000000', '19/11/2026', serie));
+    throw new Error(`inesperado: ${url}`);
+  });
+  const h = await q.history('PLAN:N5396', '2025-12-12');
+  // Desde un mes antes de la compra (el 31/10/2025 queda fuera); el último, una sola vez.
+  assert.deepEqual(h.rows, [['2025-11-30', 17.32], ['2025-12-31', 17.38], ['2026-01-31', 17.58], ['2026-11-19', 22]]);
+});
+
+test('plan de pensiones: sin la gráfica en la ficha, el histórico es solo el valor del día', async () => {
+  const { q } = setup(() => ok(planHtml('22,000000', '19/11/2026')));
+  const h = await q.history('PLAN:N5396', '2025-12-12');
+  assert.deepEqual(h.rows, [['2026-11-19', 22]]);
+});

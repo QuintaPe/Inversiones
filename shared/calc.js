@@ -6,6 +6,7 @@ export const GROUPS = [
   ['all', 'Todo'],
   ['ac', 'Acciones y ETF'],
   ['pm', 'Private Markets'],
+  ['ext', 'Externos'],
 ];
 
 /**
