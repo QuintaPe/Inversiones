@@ -14,7 +14,7 @@ const NAV_TTL = 6 * 3600_000; // un valor liquidativo no cambia en horas
 const isNav = (symbol) => symbol.startsWith('NAV:');
 export const NAV_EXCHANGE = 'Valor liquidativo';
 const QUOTE_TTL = 60_000; // no se pide el mismo símbolo más de una vez por minuto
-const PAUSE = 120; // ms entre peticiones, en serie
+const PAUSE = 120; // ms entre peticiones, en serie dentro de cada carril
 const ISIN_RE = /^[A-Z]{2}[A-Z0-9]{9}\d$/;
 
 // Tipos de cambio de referencia del BCE (uno al día): respaldo si Yahoo no da la divisa.
@@ -37,7 +37,10 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
  */
 export function createQuotes({ fetchImpl = fetch, now = () => Date.now(), sleep = wait, log = console } = {}) {
   const cache = new Map(); // símbolo → { at, data }
-  let chain = Promise.resolve(); // cola: una petición cada vez
+  // Dos colas, una petición cada vez en cada una: «live» (precios del momento, búsquedas, divisas)
+  // y «bulk» (series históricas). Reconstruir el histórico de muchos valores no hace esperar al
+  // refresco de precios.
+  const lanes = { live: Promise.resolve(), bulk: Promise.resolve() };
   const breakers = new Map(); // servidor → { fails, until, cool }
 
   /** Una petición con reintentos y corte por proveedor. Devuelve el cuerpo (JSON o texto). */
@@ -71,12 +74,12 @@ export function createQuotes({ fetchImpl = fetch, now = () => Date.now(), sleep 
       }
     }
   }
-  const queued = (run) => {
-    const p = chain.then(run, run);
-    chain = p.then(() => sleep(PAUSE), () => sleep(PAUSE));
+  const queued = (run, lane = 'live') => {
+    const p = lanes[lane].then(run, run);
+    lanes[lane] = p.then(() => sleep(PAUSE), () => sleep(PAUSE));
     return p;
   };
-  const get = (url, as) => queued(() => request(url, { headers: { accept: as === 'text' ? '*/*' : 'application/json' } }, as));
+  const get = (url, as, lane) => queued(() => request(url, { headers: { accept: as === 'text' ? '*/*' : 'application/json' } }, as), lane);
 
   const card = (hit) => ({
     symbol: hit.symbol, exchange: hit.exchDisp || hit.exchange || '',
@@ -125,7 +128,7 @@ export function createQuotes({ fetchImpl = fetch, now = () => Date.now(), sleep 
   /** Histórico de valores liquidativos: mismo formato que `history`. */
   async function navHistory(symbol, from) {
     const [, fund, notation] = symbol.split(':');
-    const j = await get(`${ONVISTA}/instruments/FUND/${fund}/eod_history?idNotation=${notation}&range=Y5&startDate=${from}`);
+    const j = await get(`${ONVISTA}/instruments/FUND/${fund}/eod_history?idNotation=${notation}&range=Y5&startDate=${from}`, 'json', 'bulk');
     if (!j.datetimeLast?.length) throw new Error('sin histórico');
     const rows = j.datetimeLast.map((ts, i) => [new Date(ts * 1000).toISOString().slice(0, 10), j.last[i]])
       .filter(([, c]) => c > 0).sort((a, b) => a[0].localeCompare(b[0]));
@@ -249,7 +252,7 @@ export function createQuotes({ fetchImpl = fetch, now = () => Date.now(), sleep 
     if (isNav(symbol)) return navHistory(symbol, from);
     const p1 = Math.floor(Date.parse(`${from}T00:00:00Z`) / 1000) - 86400;
     const p2 = Math.floor(now() / 1000) + 86400;
-    const j = await get(`${CHART}/${encodeURIComponent(symbol)}?interval=1d&period1=${p1}&period2=${p2}&events=div%2Csplits`);
+    const j = await get(`${CHART}/${encodeURIComponent(symbol)}?interval=1d&period1=${p1}&period2=${p2}&events=div%2Csplits`, 'json', 'bulk');
     const r = j.chart?.result?.[0];
     if (!r?.timestamp) throw new Error('sin histórico');
     let currency = r.meta.currency, k = 1;

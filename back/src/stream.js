@@ -17,7 +17,13 @@ export function createStream({ refresh, log = console }) {
   /** Abre el canal para una petición ya autenticada. */
   function connect(req, res, userId) {
     const set = clients.get(userId) ?? new Set();
-    if (set.size >= MAX_PER_USER) return res.status(429).json({ error: 'Demasiadas pestañas abiertas.' });
+    // Lleno: se cierra el canal más antiguo, no el nuevo. Detrás de un proxy (Vercel) una pestaña
+    // cerrada puede dejar su conexión abierta un buen rato; la que llega es la que se está mirando.
+    while (set.size >= MAX_PER_USER) {
+      const oldest = set.values().next().value;
+      set.delete(oldest);
+      oldest.end();
+    }
     res.writeHead(200, {
       'Content-Type': 'text/event-stream; charset=utf-8',
       'Cache-Control': 'no-cache, no-transform',

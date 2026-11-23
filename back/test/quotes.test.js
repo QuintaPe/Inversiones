@@ -119,3 +119,22 @@ test('histórico: fechas en el día de su bolsa, peniques, dividendos y splits o
   assert.match(calls[0], /period1=\d+&period2=\d+&events=div%2Csplits/);
   await assert.rejects(setup(() => ok({ chart: { result: null } })).q.history('NADA', '2025-01-01'), /sin histórico/);
 });
+
+test('una descarga de histórico lenta no hace esperar a la cotización del momento', async () => {
+  let release;
+  const slow = new Promise((r) => { release = r; });
+  const { q, calls } = setup(async (url) => {
+    if (url.includes('period1=')) {
+      await slow; // el histórico se queda colgado hasta que se suelta
+      return chart({ currency: 'EUR' }, { timestamp: [1_800_000_000], indicators: { quote: [{ close: [10] }], adjclose: [{ adjclose: [10] }] } });
+    }
+    if (url.includes('/SAP.DE?')) return chart({ regularMarketPrice: 150, chartPreviousClose: 150, currency: 'EUR' });
+    throw new Error(`inesperado: ${url}`);
+  });
+  const hist = q.history('SAP.DE', '2020-01-01');
+  const r = await q.quoteIsins(['DE0000000001'], SYM); // no espera al histórico
+  assert.equal(r.quotes.DE0000000001.price, 150);
+  assert.equal(calls.filter((u) => u.includes('period1=')).length, 1);
+  release();
+  await hist;
+});
