@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { analyze, mergeFills, washBuys, savingsTax, simulateSale, rebalance, taxYears } from '../../shared/calc.js';
+import { sameMoney } from '../../shared/sameMoney.js';
 import { prepare, periodStats, xirr } from '../../shared/perf.ts';
 
 test('mergeFills junta ejecuciones del mismo día con una sola comisión', () => {
@@ -46,6 +47,21 @@ test('periodStats: resultado y rentabilidad de un periodo', () => {
   const last = periodStats(h, '2025-01-03');
   assert.equal(last.v0, 110);
   assert.equal(last.gain, 5);
+  // Sobre lo aportado: los 110 que ya había más los 100 que entraron → 5 / 210.
+  assert.equal(last.base, 210);
+  assert.ok(Math.abs(last.mwr - (5 / 210) * 100) < 1e-9, `${last.mwr}`);
+  assert.ok(Math.abs(all.mwr - (15 / 200) * 100) < 1e-9, `${all.mwr}`);
+});
+
+test('periodStats: lo que sacas vendiendo o cobrando dividendos deja de contar como aportado', () => {
+  // Compras 200, vendes por 100 el día 2, cobras 10 de dividendo el día 3 y lo que queda vale 120:
+  // has ganado 30 (20 de valor + 10 cobrados) sobre 200 − 100 − 10 = 90 netos.
+  const h = prepare({ d: ['2025-01-01', '2025-01-02', '2025-01-03'], buy: [200, 0, 0], sell: [0, 100, 0], div: [0, 0, 10],
+    v: [200, 100, 120], cost: [200, 100, 100], idx: [100, 100, 120], benchmarks: [] });
+  const st = periodStats(h, null);
+  assert.equal(st.gain, 30);
+  assert.equal(st.base, 90);
+  assert.ok(Math.abs(st.mwr - (30 / 90) * 100) < 1e-9, `${st.mwr}`);
 });
 
 test('rebalance: ajuste completo y reparto de una aportación', () => {
@@ -94,6 +110,44 @@ test('fiscalidad: las pérdidas pendientes se restan de ganancias posteriores y 
   assert.equal(by['2022'].carryOut, 70);
   assert.equal(by['2025'].carryIn, 0, 'en 2025 ya han pasado más de cuatro ejercicios');
   assert.equal(by['2025'].base, 500);
+});
+
+test('periodStats: la rentabilidad es sobre lo aportado, aunque antes de la primera compra haya días sin nada', () => {
+  // Diez días a cero (la serie de un tipo de activo empieza con la de toda la cartera),
+  // compra de 100 el día 10 y vale 110 el último día: +10 %, no más.
+  const n = 21;
+  const d = Array.from({ length: n }, (_, i) => `2025-01-${String(i + 1).padStart(2, '0')}`);
+  const buy = d.map((_, i) => (i === 10 ? 100 : 0));
+  const v = d.map((_, i) => (i < 10 ? 0 : i === n - 1 ? 110 : 100));
+  const h = prepare({ d, v, cost: v.map((x) => (x ? 100 : 0)), buy, sell: buy.map(() => 0), div: buy.map(() => 0),
+    idx: v.map((x, i) => (i === n - 1 ? 110 : 100)), benchmarks: [] });
+  const st = periodStats(h, null);
+  assert.equal(st.gain, 10);
+  assert.ok(Math.abs(st.mwr - 10) < 1e-9, `${st.mwr}`);
+});
+
+test('sameMoney: tus compras y ventas, con los mismos euros y los mismos días en el índice', () => {
+  const dates = ['2025-01-01', '2025-01-02', '2025-01-03', '2025-01-04'];
+  // Compras 10 a 10 € el día 1 y 10 más a 12 € el día 3; vendes 5 el día 4 a 15 €. El índice: 100, 110, 110, 121.
+  const evs = [
+    { d: '2025-01-01', k: 'B', net: 100, sa: 10 },
+    { d: '2025-01-03', k: 'B', net: 120, sa: 20 },
+    { d: '2025-01-04', k: 'S', net: 75, sa: 15 },
+  ];
+  const r = sameMoney(evs, dates, [10, 11, 12, 15], [100, 110, 110, 121]);
+  // Tú: el día 4 tienes 15 × 15 = 225 y has puesto 100 + 120 − 75 = 145 → +80 €.
+  assert.deepEqual(r.me.map((v) => Math.round(v * 100) / 100), [0, 10, 20, 80]);
+  // Índice: 1 ud. el día 1 (100 €); +1,0909 ud. el día 3 (120 € al cierre anterior, 110);
+  // el día 4 vale 2,0909 × 121 = 253 y se sacan 75 → 178 frente a 145 puestos: +33 €.
+  assert.deepEqual(r.ix.map((v) => Math.round(v * 100) / 100), [0, 10, 10, 33]);
+  assert.equal(r.cap, 145); // 100 + 120 comprados − 75 vendidos
+});
+
+test('sameMoney: un split no cambia lo que vale tu posición', () => {
+  // 10 acciones a 100 €; el día 2 hay un split de 2 por 1: los cierres ya vienen ajustados (50).
+  const evs = [{ d: '2025-01-01', k: 'B', net: 1000, sa: 10 }, { d: '2025-01-02', k: 'X', ratio: 2, sa: 20 }];
+  const r = sameMoney(evs, ['2025-01-01', '2025-01-02', '2025-01-03'], [50, 50, 55], [100, 100, 100]);
+  assert.deepEqual(r.me, [0, 0, 100]);
 });
 
 test('periodStats: el índice con las mismas aportaciones', () => {

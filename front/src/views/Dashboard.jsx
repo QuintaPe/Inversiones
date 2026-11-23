@@ -218,9 +218,9 @@ export default function Dashboard({ a, hist, histProgress, flt, cash, onOpen, go
       );
       legend = [['up', 'Valor', st.gain >= 0 ? 'up' : 'down'], ['muted', 'Capital invertido', 'muted'], ...(marks.length ? [['ap', 'Aportaciones', 'ap']] : [])];
     } else {
-      // Resultado acumulado sobre el capital medio del periodo, para ti y para cada índice con tus mismas
-      // aportaciones: el último punto de cada línea es la rentabilidad de la tarjeta de abajo.
-      const rel = (g) => (st.avg > 0 ? (g / st.avg) * 100 : 0);
+      // Resultado acumulado sobre lo aportado neto (lo que había al empezar + compras − ventas − dividendos), para ti y
+      // para cada índice con tu mismo dinero: el último punto de cada línea es la rentabilidad de la tarjeta.
+      const rel = (g) => (st.base > 0 ? (g / st.base) * 100 : 0);
       const mineG = x.map((_, i) => gainBetween(h, st.i0, i + from));
       const mine = mineG.map(rel);
       const bs = st.bench.filter((b) => b.g).slice(0, 2).map((b, k) => ({ key: b.key, name: b.name, cls: `b${k + 1}`, g: b.g, values: b.g.map(rel) }));
@@ -368,7 +368,7 @@ export default function Dashboard({ a, hist, histProgress, flt, cash, onOpen, go
             sub={`${start ? `Desde el ${date(start)}` : `Desde el ${date(h.d[0])}`} · ${per.B.length} compras, ${per.S.length} ventas, ${per.D.length} dividendos`}>
             <div className="perf">
               <div><span className="stat-l">Resultado</span><b className={`stat-v ${sign(st.gain)}`}>{eurS(st.gain)}</b></div>
-              <div><span className="stat-l">Rentabilidad</span><b className={`stat-v ${sign(st.gain)}`}>{st.mwr != null ? pctS(st.mwr) : '—'}</b></div>
+              <div title={`Resultado ÷ lo aportado neto: ${eur(st.v0)} al empezar + ${eur(st.bought)} en compras − ${eur(st.sold)} en ventas − ${eur(st.divs)} en dividendos`}><span className="stat-l">Rentabilidad</span><b className={`stat-v ${sign(st.gain)}`}>{st.mwr != null ? pctS(st.mwr) : '—'}</b><small className="mu">sobre lo aportado neto</small></div>
               {st.irr != null && <div><span className="stat-l">Anualizada (TIR)</span><b className={`stat-v ${sign(st.irr)}`}>{pctS(st.irr)}</b></div>}
               <div><span className="stat-l">Caída máxima</span><b className="stat-v">{pct(st.mdd)}</b></div>
             </div>
@@ -392,7 +392,7 @@ export default function Dashboard({ a, hist, histProgress, flt, cash, onOpen, go
                 <h3 className="kv-h">Frente a los índices</h3>
                 <table className="cmp">
                   <thead>
-                    <tr><th scope="col"><span className="sr">Cartera o índice</span></th><th scope="col">Con tus aportaciones</th><th scope="col">Por tiempo</th></tr>
+                    <tr><th scope="col"><span className="sr">Cartera o índice</span></th><th scope="col">Con tu mismo dinero</th><th scope="col">Por tiempo</th></tr>
                   </thead>
                   <tbody>
                     <tr className="cmp-me">

@@ -53,14 +53,15 @@ export function periodStats(h, start) {
   const divs = at(h.cumDiv, i1) - at(h.cumDiv, i0);
   const gain = gainBetween(h, i0, i1);
 
-  // Ponderada por dinero (Dietz modificado): resultado ÷ capital medio realmente expuesto.
-  const first = Math.max(i0, 0), T = i1 - first || 1;
-  let weighted = v0;
-  for (let i = i0 + 1; i <= i1; i++) {
-    const cf = h.buy[i] - h.sell[i] - h.div[i];
-    if (cf) weighted += cf * ((i1 - i) / T); // cuanto antes entra el dinero, más pesa
-  }
-  const mwr = weighted > 0 ? (gain / weighted) * 100 : null;
+  // Rentabilidad sobre lo aportado neto: resultado ÷ (lo que valía la cartera al empezar + compras
+  // − ventas − dividendos del periodo), el dinero que de verdad tienes metido: lo que ya has sacado,
+  // vendiendo o cobrando, deja de contar (el resultado sí lo incluye). Es la
+  // misma base para ti y para cada índice con tu mismo dinero, así que los porcentajes se comparan
+  // tal cual. (Sobre el capital medio salía inflada: al ir aportando poco a poco, la media es mucho
+  // menor que lo que acabas teniendo dentro.)
+  const first = Math.max(i0, 0);
+  const base = v0 + bought - sold - divs;
+  const mwr = base > 0 ? (gain / base) * 100 : null;
 
   // Anualizada (TIR): el interés anual equivalente, contando cuándo entró cada euro. Con menos
   // de tres meses, anualizar exagera cualquier racha: no se calcula.
@@ -126,7 +127,7 @@ export function periodStats(h, start) {
       last = c;
     }
     const bGain = g.at(-1);
-    return { key: b.key, name: b.name, r: (c1 / c0 - 1) * 100, gain: bGain, mwr: weighted > 0 ? (bGain / weighted) * 100 : null, from: j, g };
+    return { key: b.key, name: b.name, r: (c1 / c0 - 1) * 100, gain: bGain, mwr: base > 0 ? (bGain / base) * 100 : null, from: j, g };
   });
-  return { i0, i1, first, v0, v1, bought, sold, divs, contrib: bought - sold, gain, mwr, irr, twr, mdd: mdd * 100, vol, ratio, best, worst, bench, avg: weighted };
+  return { i0, i1, first, v0, v1, bought, sold, divs, contrib: bought - sold, gain, mwr, irr, twr, mdd: mdd * 100, vol, ratio, best, worst, bench, base };
 }

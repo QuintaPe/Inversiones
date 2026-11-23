@@ -313,22 +313,23 @@ export function Lines({ x, series, height = 280, tip, label, onHover, base, mark
     const yt = scale ? ticks(lo, top, 3).filter((v) => Y(v) > m.t + 12 && Y(v) < m.t + ih - 6 && v !== base) : [];
     // Las marcas pegadas a los bordes se cortarían: fuera.
     const xt = timeTicks(t0, t1, w).filter((k) => X(k.t) > 28 && X(k.t) < w - 28);
-    const move = (ev) => {
+    // El punto más cercano al cursor (no el último a su izquierda: el de hoy, pegado al borde, no se alcanzaría).
+    const nearest = (ev) => {
       const r = ev.currentTarget.getBoundingClientRect();
       const t = t0 + ((ev.clientX - r.left) / w) * (t1 - t0);
-      let lo2 = 0, hi2 = x.length - 1;
-      while (lo2 < hi2) { const mid = (lo2 + hi2 + 1) >> 1; if (x[mid] <= t) lo2 = mid; else hi2 = mid - 1; }
-      if (lo2 !== hi) { setHi(lo2); onHover?.(lo2); }
+      let a = 0, b = x.length - 1;
+      while (a < b) { const mid = (a + b + 1) >> 1; if (x[mid] <= t) a = mid; else b = mid - 1; }
+      return a < x.length - 1 && x[a + 1] - t < t - x[a] ? a + 1 : a;
+    };
+    const move = (ev) => {
+      const i = nearest(ev);
+      if (i !== hi) { setHi(i); onHover?.(i); }
     };
     const leave = () => { setHi(null); setAnchor(null); onHover?.(null); };
     const down = (ev) => {
       move(ev);
       if (!span || ev.pointerType !== 'mouse' || ev.button !== 0) return;
-      const r = ev.currentTarget.getBoundingClientRect();
-      const t = t0 + ((ev.clientX - r.left) / w) * (t1 - t0);
-      let a = 0, b = x.length - 1;
-      while (a < b) { const mid = (a + b + 1) >> 1; if (x[mid] <= t) a = mid; else b = mid - 1; }
-      setAnchor(a);
+      setAnchor(nearest(ev));
       ev.currentTarget.setPointerCapture?.(ev.pointerId);
     };
     const sel = anchor != null && hi != null && anchor !== hi ? [Math.min(anchor, hi), Math.max(anchor, hi)] : null;
