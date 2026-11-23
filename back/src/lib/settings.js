@@ -1,7 +1,7 @@
 // Ajustes que el usuario guarda en su cuenta (tabla user_settings): cada clave tiene su forma,
 // y nada entra en la base de datos sin pasar por aquí (peticiones y copias restauradas).
 import { isDate } from './validate.js';
-import { BENCHMARK_KEYS } from '../../../shared/benchmarks.js';
+import { BENCHMARK_KEYS } from '../../../shared/benchmarks.ts';
 
 const num = (v, min, max) => {
   if (v == null || v === '') return null;

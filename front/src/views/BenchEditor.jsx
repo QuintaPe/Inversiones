@@ -1,6 +1,6 @@
 // Índice de referencia propio: qué índices mezclar y con qué peso (Resumen → detalle de rentabilidad).
 import { useState } from 'react';
-import { BENCHMARKS } from '../../../shared/benchmarks.js';
+import { BENCHMARKS } from '../../../shared/benchmarks.ts';
 import { pct } from '../lib/format.js';
 
 const n = (v) => parseFloat(String(v).replace(',', '.')) || 0;

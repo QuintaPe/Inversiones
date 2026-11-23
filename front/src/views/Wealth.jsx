@@ -5,7 +5,7 @@ import * as api from '../api.js';
 import { Card, Empty, Icon } from '../components/ui.jsx';
 import { Kpi } from '../components/Kpi.jsx';
 import { Lines, RankBars } from '../charts.jsx';
-import { KINDS, KIND_LABEL, netWorth, netWorthSeries } from '../../../shared/wealth.js';
+import { KINDS, KIND_LABEL, netWorth, netWorthSeries } from '../../../shared/wealth.ts';
 import { eur, pct, date, dateLong, compact, isMasked } from '../lib/format.js';
 
 const today = () => new Date().toISOString().slice(0, 10);

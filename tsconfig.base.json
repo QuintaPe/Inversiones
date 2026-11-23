@@ -1,0 +1,19 @@
+{
+  // Opciones comunes de TypeScript. El back ejecuta los .ts tal cual (Node quita los tipos), así
+  // que solo se admite sintaxis «borrable»: sin enum, sin namespace, sin propiedades de constructor.
+  "compilerOptions": {
+    "target": "ES2024",
+    "lib": ["ES2024"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "noEmit": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    "allowImportingTsExtensions": true,
+    "allowJs": true,
+    "checkJs": false,
+    "skipLibCheck": true,
+    "types": ["node"]
+  }
+}

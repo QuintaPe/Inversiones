@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/app.js';
 import { openDb } from '../src/db.js';
-import { BENCHMARKS } from '../../shared/benchmarks.js';
+import { BENCHMARKS } from '../../shared/benchmarks.ts';
 
 const CSV = [
   '"datetime","date","category","type","asset_class","name","symbol","shares","price","amount","fee","tax","description","transaction_id"',

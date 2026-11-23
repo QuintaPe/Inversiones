@@ -3,7 +3,7 @@
 
 import { HISTORY_V } from './db.js';
 
-import { BENCHMARKS } from '../../shared/benchmarks.js';
+import { BENCHMARKS } from '../../shared/benchmarks.ts';
 
 const DAY = 86400000;
 const iso = (ms) => new Date(ms).toISOString().slice(0, 10);

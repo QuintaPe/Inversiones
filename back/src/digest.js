@@ -1,6 +1,6 @@
 // Resumen periódico por aviso push: una vez a la semana o al mes, cómo va la cartera (valor,
 // resultado del periodo, lo mejor y lo peor, y si algo se ha desviado de la cartera objetivo).
-import { prepare, baseIndex } from '../../shared/perf.js';
+import { prepare, baseIndex } from '../../shared/perf.ts';
 
 const DAY = 86400000;
 const iso = (t) => new Date(t).toISOString().slice(0, 10);

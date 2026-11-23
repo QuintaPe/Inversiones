@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { weeklyReturns, correlation, riskReport } from '../../shared/risk.js';
+import { weeklyReturns, correlation, riskReport } from '../../shared/risk.ts';
 
 const close = (a, b, eps = 1e-6) => assert.ok(Math.abs(a - b) < eps, `${a} ≠ ${b}`);
 const day = (n) => new Date(Date.UTC(2025, 0, 6) + n * 86400000).toISOString().slice(0, 10); // lunes 6 de enero de 2025
@@ -59,7 +59,7 @@ test('informe de riesgo: dos valores iguales no diversifican; uno opuesto sí; e
 });
 
 test('índice propio: una parte lo pone primero; una mezcla pondera desde el primer día en que todas cotizan', async () => {
-  const { withBlend, MINE } = await import('../../shared/benchmarks.js');
+  const { withBlend, MINE } = await import('../../shared/benchmarks.ts');
   const h = {
     d: ['d0', 'd1', 'd2', 'd3'],
     benchmarks: [

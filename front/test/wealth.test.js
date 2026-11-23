@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { balanceAt, netWorth, netWorthSeries } from '../../shared/wealth.js';
+import { balanceAt, netWorth, netWorthSeries } from '../../shared/wealth.ts';
 
 const piso = { id: 'p', name: 'Piso', kind: 'property', balances: [{ d: '2025-01-10', amount: 180000 }, { d: '2025-03-05', amount: 185000 }] };
 const hipoteca = { id: 'h', name: 'Hipoteca', kind: 'debt', balances: [{ d: '2025-02-01', amount: 90000 }, { d: '2025-04-01', amount: 88000 }] };
@@ -39,7 +39,7 @@ test('evolución del patrimonio: fin de cada mes y hoy, sumando cada parte desde
 });
 
 test('plan frente a realidad: lo que esperabas tener hoy y la diferencia', async () => {
-  const { planProgress, monthsBetween } = await import('../../shared/plan.js');
+  const { planProgress, monthsBetween } = await import('../../shared/plan.ts');
   const close = (a, b) => assert.ok(Math.abs(a - b) < 0.01, `${a} ≠ ${b}`);
   assert.equal(monthsBetween('2026-01-15', '2026-01-15'), 0);
   assert.equal(monthsBetween('2026-01-15', '2026-02-14'), 0);

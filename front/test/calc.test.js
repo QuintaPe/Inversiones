@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { analyze, mergeFills, washBuys, savingsTax, simulateSale, rebalance, taxYears } from '../../shared/calc.js';
-import { prepare, periodStats, xirr } from '../../shared/perf.js';
+import { prepare, periodStats, xirr } from '../../shared/perf.ts';
 
 test('mergeFills junta ejecuciones del mismo día con una sola comisión', () => {
   const evs = [

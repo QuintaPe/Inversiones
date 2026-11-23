@@ -1,7 +1,7 @@
 // Histórico diario de la cartera, previsión de dividendos, mini-gráficas e histórico de un valor.
 import crypto from 'node:crypto';
 import { isDate } from '../lib/validate.js';
-import { riskReport } from '../../../shared/risk.js';
+import { riskReport } from '../../../shared/risk.ts';
 
 const HISTORY_TTL = 10 * 60_000;
 // Sube al cambiar la forma del histórico (p. ej. series por tipo de activo): invalida lo guardado.
@@ -74,7 +74,7 @@ export default function historyRoutes(api, { db, history, pf, historyWaitMs, log
   });
 
   // Riesgo y diversificación de las posiciones abiertas con el último año de cierres guardados:
-  // volatilidad, correlaciones y qué parte del riesgo aporta cada valor (shared/risk.js).
+  // volatilidad, correlaciones y qué parte del riesgo aporta cada valor (shared/risk.ts).
   // { risk: null } si aún no hay histórico suficiente de al menos dos valores.
   api.get('/risk', async (req, res) => {
     if (!history) return res.json({ risk: null });

@@ -1,4 +1,4 @@
-// Posiciones → Análisis: riesgo y diversificación con el último año de cierres (shared/risk.js,
+// Posiciones → Análisis: riesgo y diversificación con el último año de cierres (shared/risk.ts,
 // calculado en el servidor): cuánto se mueve la cartera, quién aporta ese riesgo y qué valores
 // se mueven juntos.
 import { useEffect, useState } from 'react';
