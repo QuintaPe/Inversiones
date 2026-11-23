@@ -116,6 +116,13 @@ export const assetClass = (r) => (PLAN_ID.test(r.symbol) ? 'PENSION_PLAN' : r.as
  * planes de pensiones y otros activos anotados a mano como externos) o acciones y ETF.
  */
 export const assetGroup = (cls) => (cls === 'PRIVATE_FUND' ? 'pm' : cls === 'PENSION_PLAN' || cls === 'EXTERNAL' ? 'ext' : 'ac');
+/** Marca de una operación anotada a mano que no pasa por el efectivo de Trade Republic. */
+export const NO_CASH = 'EXTERNAL';
+/**
+ * ¿La operación mueve el efectivo de Trade Republic? No, si se marcó así al anotarla, ni si el
+ * activo es externo (un plan de pensiones o algo de otra entidad: su dinero sale de otra cuenta).
+ */
+export const movesCash = (r) => r.account_type !== NO_CASH && assetGroup(assetClass(r)) !== 'ext';
 
 export function buildPortfolio(rows, splits = {}) {
   const sorted = [...rows].sort(byTime);
@@ -182,6 +189,7 @@ export function buildPortfolio(rows, splits = {}) {
     }
     const p = get(r);
     const ev = { id: shortId(r.transaction_id), tid: r.transaction_id, d: r.date };
+    if (r.account_type === NO_CASH) ev.noCash = true; // anotada sin pasar por el efectivo
 
     if (r.type === 'DIVIDEND') {
       const g = abs(r.amount), tax = abs(r.tax);
@@ -309,6 +317,7 @@ export function buildCash(rows) {
   const moves = [];
   let balance = 0, has = false;
   for (const r of sorted) {
+    if (!movesCash(r)) continue; // pagado o cobrado fuera de Trade Republic
     // Importe, comisión e impuesto con su signo: es lo que suma el saldo real de la cuenta.
     const delta = num(r.amount) + num(r.fee) + num(r.tax);
     if (!delta) continue;
@@ -404,7 +413,7 @@ export function manualRow(op, id) {
     asset_class: op.asset_class || 'STOCK', name: op.name, symbol: op.isin,
     fee: fee ? (-fee).toFixed(2) : '', tax: tax ? (-tax).toFixed(2) : '',
     description: 'Operación manual', original_amount: '', original_currency: '', fx_rate: '',
-    account_type: '', currency: 'EUR',
+    account_type: op.cash === false ? NO_CASH : '', currency: 'EUR',
   };
   if (op.type === 'DIVIDEND') {
     return { ...base, category: 'CASH', type: 'DIVIDEND', shares: sh ? String(sh) : '', price: '', amount: Math.abs(op.amount).toFixed(2) };

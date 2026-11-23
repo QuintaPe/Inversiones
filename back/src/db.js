@@ -276,7 +276,7 @@ export async function openDb({
     client = createClient({ url });
   } else if (replica && !url.startsWith('file:') && url !== ':memory:') {
     const file = path.isAbsolute(replica) ? replica : path.join(dataDir(), replica);
-    client = createClient({ url: `file:${file}`, syncUrl: url, authToken, syncInterval: syncSeconds > 0 ? syncSeconds : undefined });
+    client = readsOneByOne(createClient({ url: `file:${file}`, syncUrl: url, authToken, syncInterval: syncSeconds > 0 ? syncSeconds : undefined }));
     await client.sync();
     label = `${url} (réplica local en ${file})`;
   } else {
@@ -285,6 +285,23 @@ export async function openDb({
   client = wrap(client);
   await migrate(client);
   return makeRepo(client, label, { cache });
+}
+
+/**
+ * En una réplica embebida, un lote abre una transacción que se resuelve contra Turso (~1,3 s
+ * medidos), mientras que cada consulta suelta se lee del fichero local (~1 ms). Los lotes de
+ * lectura se hacen, pues, consulta a consulta; los de escritura siguen siendo un lote (atómicos,
+ * y van a Turso igualmente).
+ */
+export function readsOneByOne(client) {
+  const batch = client.batch.bind(client);
+  client.batch = async (stmts, mode) => {
+    if (mode !== 'read') return batch(stmts, mode);
+    const out = [];
+    for (const st of stmts) out.push(await client.execute(st));
+    return out;
+  };
+  return client;
 }
 
 /** Caché con caducidad y tamaño máximo (los más antiguos salen primero). */

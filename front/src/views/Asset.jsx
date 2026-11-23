@@ -671,7 +671,7 @@ export default function Asset({ x, totalVal, yearBase, onBack, onPrice, liveQuot
           <OpsTimeline ops={x.ops} onRemove={onRemoveOp}
             onEdit={(o) => onAddOp({
               tid: o.tid, type: { B: 'BUY', S: 'SELL', D: 'DIVIDEND' }[o.k], isin: p.isin, name: p.name, asset_class: p.cls, date: o.d,
-              shares: o.sh, price: o.px, fee: o.fee, tax: o.tax, amount: o.g,
+              shares: o.sh, price: o.px, fee: o.fee, tax: o.tax, amount: o.g, cash: !o.noCash,
             })} />
         </Card>
       )}

@@ -7,6 +7,7 @@ const TYPES = [['BUY', 'Compra'], ['SELL', 'Venta'], ['DIVIDEND', 'Dividendo']];
 // Tipo de activo; los dos últimos van al grupo «Externos» (fuera de Trade Republic).
 const CLASSES = [['STOCK', 'Acciones'], ['FUND', 'ETF y fondos'], ['PENSION_PLAN', 'Plan de pensiones (externo)'], ['EXTERNAL', 'Otro activo externo']];
 const PLAN_ID = /^N\d{4}$/i; // código de la DGSFP de un plan de pensiones
+const EXTERNAL = new Set(['PENSION_PLAN', 'EXTERNAL']); // su dinero no pasa por Trade Republic
 const today = () => new Date().toISOString().slice(0, 10);
 const txt = (n) => (n ? String(+Number(n).toFixed(6)) : '');
 
@@ -15,16 +16,24 @@ const txt = (n) => (n ? String(+Number(n).toFixed(6)) : '');
  * initial: { tid?, type, isin, name, asset_class, date, shares, price, fee, tax, amount }
  */
 export default function OpForm({ initial = {}, positions, onSubmit, onClose }) {
+  const startsExternal = EXTERNAL.has(initial.asset_class) || PLAN_ID.test(initial.isin ?? '');
   const [f, setF] = useState({
     type: initial.type ?? 'BUY', name: initial.name ?? '', isin: initial.isin ?? '', asset_class: initial.asset_class ?? 'STOCK',
     date: initial.date ?? today(), shares: txt(initial.shares), price: txt(initial.price),
-    fee: initial.fee != null ? txt(initial.fee) || '0' : '1', tax: txt(initial.tax), amount: txt(initial.amount),
+    // Comisión por defecto: la de Trade Republic (1 €); fuera de Trade Republic, ninguna.
+    fee: initial.fee != null ? txt(initial.fee) || '0' : startsExternal ? '0' : '1', tax: txt(initial.tax), amount: txt(initial.amount),
+    cash: initial.cash ?? true,
   });
+  // Lo externo nunca mueve el efectivo de Trade Republic; el resto, según la casilla.
+  const external = EXTERNAL.has(f.asset_class) || PLAN_ID.test(f.isin.trim());
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
   const set = (k) => (ev) => setF((s) => ({ ...s, [k]: ev.target.value }));
   // Un código de plan («N5396») es un plan de pensiones: se elige solo.
-  const setId = (ev) => { const isin = ev.target.value; setF((s) => ({ ...s, isin, ...(PLAN_ID.test(isin.trim()) ? { asset_class: 'PENSION_PLAN' } : {}) })); };
+  const setId = (ev) => {
+    const isin = ev.target.value;
+    setF((s) => ({ ...s, isin, ...(PLAN_ID.test(isin.trim()) ? { asset_class: 'PENSION_PLAN', fee: s.fee === '1' ? '0' : s.fee } : {}) }));
+  };
   const div = f.type === 'DIVIDEND';
   const locked = !!initial.isin; // desde la ficha de un activo, el activo ya está elegido
 
@@ -49,7 +58,7 @@ export default function OpForm({ initial = {}, positions, onSubmit, onClose }) {
     setBusy(true);
     setErr(null);
     try {
-      await onSubmit({ ...f, shares: n(f.shares), price: n(f.price), fee: n(f.fee), tax: n(f.tax), amount: n(f.amount) }, initial.tid);
+      await onSubmit({ ...f, cash: f.cash && !external, shares: n(f.shares), price: n(f.price), fee: n(f.fee), tax: n(f.tax), amount: n(f.amount) }, initial.tid);
       onClose();
     } catch (e) {
       setErr(e.message);
@@ -96,6 +105,16 @@ export default function OpForm({ initial = {}, positions, onSubmit, onClose }) {
             </>
           )}
         </div>
+        {external ? (
+          <p className="note">Activo externo: no mueve el efectivo de Trade Republic.</p>
+        ) : (
+          <label className="check">
+            <input type="checkbox" checked={f.cash} onChange={(ev) => setF((s) => ({ ...s, cash: ev.target.checked }))} />
+            <span>{div ? 'Suma el dividendo al efectivo de Trade Republic'
+              : f.type === 'BUY' ? 'Descuenta la compra del efectivo de Trade Republic' : 'Suma la venta al efectivo de Trade Republic'}
+            <small className="mu"> · desmárcalo si se pagó desde otra cuenta</small></span>
+          </label>
+        )}
         <p className="sheet-t">
           {div ? 'Neto cobrado' : f.type === 'BUY' ? 'Coste total' : 'Cobro neto'}
           <b>{eur(total)}</b>

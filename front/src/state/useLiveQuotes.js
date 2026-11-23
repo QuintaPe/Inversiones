@@ -13,6 +13,7 @@ import { eur, pct, pctS } from '../lib/format.js';
 export function useLiveQuotes({ data, setData, apply, fail, notify, hidden }) {
   const [live, setLive] = useState({ at: null, failed: [], paused: [], busy: false, error: null });
   const liveBusy = useRef(false);
+  const fresh = useRef(0); // cuándo llegaron los últimos precios (refresco o canal)
   const liveOn = !!data?.meta?.liveQuotes && (data?.positions ?? []).some((p) => p.open);
 
   // Alertas de precio que acaban de saltar: aviso en la app y, si hay permiso, del sistema.
@@ -34,6 +35,7 @@ export function useLiveQuotes({ data, setData, apply, fail, notify, hidden }) {
     setLive((l) => ({ ...l, busy: true }));
     try {
       const res = await api.refreshQuotes();
+      fresh.current = Date.now();
       apply(res);
       setLive({ at: res.refresh.at, failed: res.refresh.failed, paused: res.refresh.paused ?? [], busy: false, error: null });
       announce(res.fired);
@@ -57,6 +59,7 @@ export function useLiveQuotes({ data, setData, apply, fail, notify, hidden }) {
       es = new EventSource('/api/stream');
       es.addEventListener('quotes', (ev) => {
         const q = JSON.parse(ev.data);
+        fresh.current = Date.now();
         setData((d) => d && ({
           ...d,
           alerts: q.alerts ?? d.alerts,
@@ -76,7 +79,9 @@ export function useLiveQuotes({ data, setData, apply, fail, notify, hidden }) {
     };
     const close = () => { es?.close(); es = null; clearInterval(poll); poll = null; };
     const onVis = () => {
-      if (document.visibilityState === 'visible') { refreshQuotes(); if (!es && !poll) open(); } else close();
+      // Al volver a la pestaña: precios nuevos solo si los últimos tienen más de un minuto
+      // (el servidor los tiene en caché ese tiempo; pedirlos antes solo carga la base de datos).
+      if (document.visibilityState === 'visible') { if (Date.now() - fresh.current > 60_000) refreshQuotes(); if (!es && !poll) open(); } else close();
     };
     if (document.visibilityState === 'visible') { refreshQuotes(); open(); }
     document.addEventListener('visibilitychange', onVis);

@@ -8,7 +8,7 @@ const posNum = (v) => { const n = typeof v === 'number' ? v : parseFloat(String(
 function readOp(body) {
   const op = {
     type: body?.type, isin: String(body?.isin ?? '').trim().toUpperCase(), name: String(body?.name ?? '').trim(),
-    date: body?.date, asset_class: body?.asset_class,
+    date: body?.date, asset_class: body?.asset_class, cash: body?.cash !== false,
     shares: posNum(body?.shares), price: posNum(body?.price), fee: posNum(body?.fee || 0), tax: posNum(body?.tax || 0), amount: posNum(body?.amount || 0),
   };
   if (!TYPES.has(op.type)) return 'Tipo de operación no válido.';

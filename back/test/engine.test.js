@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseCsv, buildPortfolio, buildIncome, isShareSplit, CsvError } from '../src/engine.js';
+import { parseCsv, buildPortfolio, buildIncome, isShareSplit, CsvError, buildCash, manualRow } from '../src/engine.js';
 
 const HEAD = '"datetime","date","account_type","category","type","asset_class","name","symbol","shares","price","amount","fee","tax","currency","original_amount","original_currency","fx_rate","description","transaction_id"';
 const row = (o) => {
@@ -127,4 +127,22 @@ test('externos: un plan de pensiones (código de la DGSFP) y lo marcado como ext
   assert.deepEqual([by.N5396.cls, by.N5396.grp], ['PENSION_PLAN', 'ext']);
   assert.deepEqual([by.ES0000000001.cls, by.ES0000000001.grp], ['EXTERNAL', 'ext']);
   assert.deepEqual([by.XX0000000001.cls, by.XX0000000001.grp], ['STOCK', 'ac']);
+});
+
+test('efectivo: lo anotado como externo (o marcado sin efectivo) no toca el saldo de Trade Republic', () => {
+  const { rows } = parseCsv(csv(
+    row({ datetime: '2025-01-01T10:00:00Z', category: 'CASH', type: 'CUSTOMER_INBOUND', asset_class: '', name: '', symbol: '', amount: '1000.00', transaction_id: 'k-1' }),
+  ));
+  const op = (o) => manualRow({ type: 'BUY', date: '2025-02-01', fee: 0, tax: 0, ...o }, `manual-${o.isin}`);
+  const plan = op({ isin: 'N5396', name: 'Plan', asset_class: 'PENSION_PLAN', shares: 87.368, price: 17.1687 });
+  const otherBroker = op({ isin: 'US0378331005', name: 'Apple', asset_class: 'STOCK', shares: 1, price: 200, cash: false });
+  const here = op({ isin: 'US5949181045', name: 'Microsoft', asset_class: 'STOCK', shares: 1, price: 300 });
+  assert.equal(otherBroker.account_type, 'EXTERNAL');
+  assert.equal(here.account_type, '');
+  assert.equal(buildCash([...rows, plan, otherBroker]).balance, 1000, 'ni el plan ni la compra en otro bróker');
+  assert.equal(buildCash([...rows, plan, otherBroker, here]).balance, 700, 'la compra normal sí descuenta');
+  // Al editar se sabe cómo se anotó.
+  const evs = Object.fromEntries(buildPortfolio([...rows, otherBroker, here]).positions.map((p) => [p.isin, p.evs[0]]));
+  assert.equal(evs.US0378331005.noCash, true);
+  assert.equal(evs.US5949181045.noCash, undefined);
 });
