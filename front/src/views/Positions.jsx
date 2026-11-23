@@ -35,7 +35,9 @@ export default function Positions({ a, onOpen, onPrice, targets, patch, fail, in
   const closed = useSort('real');
   const match = (x) => !q || `${x.p.name} ${x.p.isin}`.toLowerCase().includes(q.trim().toLowerCase());
   const rows = useMemo(() => open.apply(a.o.filter(match), (x, k) => GET[k](x)), [a.o, q, open.sort]); // eslint-disable-line react-hooks/exhaustive-deps -- match depende de q; open.apply, de open.sort
-  const crow = useMemo(() => closed.apply(a.c.filter(match), (x, k) => GET[k](x)), [a.c, q, closed.sort]); // eslint-disable-line react-hooks/exhaustive-deps -- igual que la anterior
+  // Cerradas y, además, las ventas parciales de lo que sigue en cartera (su realizado ya cuenta arriba).
+  const sold = useMemo(() => [...a.c, ...a.o.filter((x) => x.S.length > 0)], [a.c, a.o]);
+  const crow = useMemo(() => closed.apply(sold.filter(match), (x, k) => GET[k](x)), [sold, q, closed.sort]); // eslint-disable-line react-hooks/exhaustive-deps -- igual que la anterior
   const s = open, c = closed;
   const [groupBy, setGroupBy] = useStored('pos-group', 'none');
   // Mini-gráficas de 30 días: solo se piden al ver las tarjetas.
@@ -83,7 +85,7 @@ export default function Positions({ a, onOpen, onPrice, targets, patch, fail, in
         </>
       )}
 
-      <Sticky><Tabs label="Estado" value={tab} onChange={setTab} items={[['open', `Abiertas · ${a.o.length}`], ['closed', `Cerradas · ${a.c.length}`], ['target', 'Cartera objetivo'], ['risk', 'Análisis'], ['watch', 'Seguimiento']]} /></Sticky>
+      <Sticky><Tabs label="Estado" value={tab} onChange={setTab} items={[['open', `Abiertas · ${a.o.length}`], ['closed', `Cerradas y ventas · ${sold.length}`], ['target', 'Cartera objetivo'], ['risk', 'Análisis'], ['watch', 'Seguimiento']]} /></Sticky>
       {tab !== 'target' && tab !== 'watch' && tab !== 'risk' && (
         <div className="toolbar">
           <Search value={q} onChange={setQ} placeholder="Buscar por nombre o ISIN" label="Buscar posición" />
@@ -217,39 +219,43 @@ export default function Positions({ a, onOpen, onPrice, targets, patch, fail, in
               <tr>
                 <Th id="name" sort={c.sort} onSort={c.onSort} className="l">Activo</Th>
                 <Th id="last" sort={c.sort} onSort={c.onSort} className="hide-s">Última venta</Th>
-                <th className="hide-s">Invertido</th>
+                <th className="hide-s">Coste vendido</th>
                 <Th id="real" sort={c.sort} onSort={c.onSort}>Realizado</Th>
                 <Th id="div" sort={c.sort} onSort={c.onSort} className="hide-m">Dividendos</Th>
               </tr>
             </thead>
             <tbody>
-              {crow.map((x) => (
+              {crow.map((x) => {
+                // Cerrada: todo lo comprado. Venta parcial: solo el coste de las acciones vendidas.
+                const partial = x.p.open, base = partial ? x.soldCost : x.bought;
+                return (
                 <tr key={x.p.isin} onClick={() => onOpen(x.p.isin)} tabIndex={0}
                   onKeyDown={(ev) => ev.key === 'Enter' && onOpen(x.p.isin)}>
-                  <td className="l"><Asset p={x.p}>{x.B.length} {x.B.length === 1 ? 'compra' : 'compras'} · {x.S.length} {x.S.length === 1 ? 'venta' : 'ventas'}</Asset></td>
+                  <td className="l"><Asset p={x.p}>{partial ? <><span className="badge">Venta parcial</span> {x.S.length} {x.S.length === 1 ? 'venta' : 'ventas'} · sigue en cartera</> : <>{x.B.length} {x.B.length === 1 ? 'compra' : 'compras'} · {x.S.length} {x.S.length === 1 ? 'venta' : 'ventas'}</>}</Asset></td>
                   <td className="hide-s">{date(x.S.at(-1)?.d)}</td>
-                  <td className="hide-s">{eur(x.bought)}<small>cobrado {eur(sum(x.S, (k) => k.net))}</small></td>
+                  <td className="hide-s">{eur(base)}<small>cobrado {eur(sum(x.S, (k) => k.net))}</small></td>
                   <td>
                     <span className={sign(x.real)}>{eurS(x.real)}</span>
-                    <small className={x.bought ? sign(x.real) : 'mu'}>{x.bought ? pctS((x.real / x.bought) * 100) : '—'}</small>
+                    <small className={base ? sign(x.real) : 'mu'}>{base ? pctS((x.real / base) * 100) : '—'}</small>
                   </td>
                   <td className="hide-m">{x.div ? eur(x.div) : <span className="mu">—</span>}</td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
             {crow.length > 1 && (
               <tfoot>
                 <tr>
                   <td className="l">Total ({crow.length})</td>
                   <td className="hide-s" />
-                  <td className="hide-s">{eur(sum(crow, (x) => x.bought))}</td>
+                  <td className="hide-s">{eur(sum(crow, (x) => (x.p.open ? x.soldCost : x.bought)))}</td>
                   <td className={sign(sum(crow, (x) => x.real))}>{eurS(sum(crow, (x) => x.real))}</td>
                   <td className="hide-m">{eur(sum(crow, (x) => x.div))}</td>
                 </tr>
               </tfoot>
             )}
           </table>
-          {!crow.length && <Empty>No hay posiciones cerradas en esta vista.</Empty>}
+          {!crow.length && <Empty>No hay posiciones cerradas ni ventas en esta vista.</Empty>}
         </div>
       )}
     </div>
