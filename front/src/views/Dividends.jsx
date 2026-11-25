@@ -163,7 +163,7 @@ export default function Dividends({ a, onOpen }) {
           {(allRows ? rows : rows.slice(0, 10)).map((r) => (
             <li key={r.p.isin}>
               <button type="button" onClick={() => onOpen(r.p.isin)}>
-                <Asset p={r.p} size="sm">{r.n} {r.n === 1 ? 'cobro' : 'cobros'} · último {date(r.last)}{r.g ? ` · ret. ${pct((r.tax / r.g) * 100)}` : ''}{!r.p.open && ' · cerrada'}</Asset>
+                <Asset p={r.p} size="sm">{r.n} {r.n === 1 ? 'cobro' : 'cobros'}<span className="hide-s"> · último</span> · {date(r.last)}{r.g ? <span className="hide-s"> · ret. {pct((r.tax / r.g) * 100)}</span> : null}{!r.p.open && ' · cerrada'}</Asset>
                 <span className="rank-l-b" aria-hidden="true"><i style={{ width: `${(r.net / top) * 100}%` }} /></span>
                 <span className="row-r">
                   <span className="row-v">{eur(r.net)}</span>

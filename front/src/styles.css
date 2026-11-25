@@ -231,6 +231,8 @@ input.px::-webkit-outer-spin-button,input.px::-webkit-inner-spin-button{-webkit-
 .boundary-a{margin-top:16px!important}
 .badge.split{color:var(--tx-2)}
 .badge.div{color:var(--gain);background:color-mix(in srgb,var(--gain) 15%,transparent)}
+.kind{font-size:var(--fs-xs);font-weight:550;color:var(--tx-2);white-space:nowrap}
+.kind.sell{color:color-mix(in srgb,var(--loss) 85%,var(--mu))}.kind.div{color:color-mix(in srgb,var(--gain) 85%,var(--mu))}
 .sk{border-radius:var(--r);background:linear-gradient(100deg,var(--surface) 30%,var(--surface-2) 50%,var(--surface) 70%);background-size:300% 100%;animation:shimmer 1.4s infinite linear}
 @keyframes shimmer{from{background-position:100% 0}to{background-position:-100% 0}}
 .kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px}
@@ -407,6 +409,7 @@ button.kv:hover svg{transform:translateX(3px);color:var(--tx)}
 .ps-in{display:flex;align-items:center;gap:10px;color:var(--mu);font-size:var(--fs-sm)}
 .steps-in{margin-top:var(--sp-3)}
 .utabs button:focus-visible{outline-offset:-3px;border-radius:6px}
+.seg button:focus-visible{outline-offset:-2px;border-radius:999px}
 @media(max-width:640px){
   .facts{grid-template-columns:repeat(2,minmax(0,1fr));row-gap:var(--sp-4)}
   .facts>div{padding:0 0 0 var(--sp-4)}
@@ -472,9 +475,17 @@ button.kv:hover svg{transform:translateX(3px);color:var(--tx)}
    Mientras, ocupan lo que medirían según sus filas (--n), para que el scroll no salte. */
 .ops-m{content-visibility:auto;contain-intrinsic-size:auto calc(32px + var(--n,3) * 63.5px)}
 @media(max-width:640px){.ops-m{contain-intrinsic-size:auto calc(32px + var(--n,3) * 75px)}}
-.ops-mh{display:flex;justify-content:space-between;align-items:baseline;gap:var(--sp-3);margin-bottom:var(--sp-2)}
+.ops-mh{display:flex;justify-content:space-between;align-items:center;gap:var(--sp-3);margin-bottom:var(--sp-2)}
 .ops-mh h2{font-size:var(--fs-lg);font-weight:700;letter-spacing:-.02em}
 .ops-mh span{font-size:var(--fs-xs)}
+.ops-mh-r{display:flex;flex-direction:column;align-items:flex-end;gap:1px;text-align:right}
+.ops-mh-r b{font-size:var(--fs-md);font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+.ops-mh-r small{color:var(--mu);font-size:var(--fs-xs)}
+/* cada día del mes: una cabecera discreta y sus operaciones debajo */
+.ops-day+.ops-day{margin-top:var(--sp-2);padding-top:var(--sp-2);border-top:1px solid var(--line)}
+.ops-day h3{font-size:var(--fs-xs);font-weight:650;color:var(--mu);letter-spacing:.01em;margin:var(--sp-1) 0 2px}
+.asset small .kind{font-size:inherit;font-weight:650}
+.ops-re{font-size:var(--fs-xs);font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
 .ops-l{list-style:none;padding:0;margin:0 -10px}
 .ops-l button{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-3);width:100%;background:none;border:0;border-radius:14px;padding:9px 10px;text-align:left;transition:background var(--dur-1)}
 .ops-l button:hover{background:var(--surface-2)}
@@ -963,6 +974,21 @@ button.plain{background:none;border:0;padding:0;text-align:left;border-radius:12
 .sticky-sub.is-stuck::after{background-position:0 calc(-1 * (var(--bar-h,0px) + var(--ph-h,0px) + var(--sub-h,0px)))}
 :root:has(.sticky-sub.is-stuck) .page-h.sticky-h::after{display:none}
 
+/* En móvil el título grande se va con el scroll: solo se quedan pegadas las pestañas, bajo la barra.
+   La sección en la que estás ya la dice la barra de navegación de abajo, y se gana pantalla. En el
+   resumen la cabecera no es un título sino el periodo, que afecta a toda la página: ese sigue fijo. */
+@media(max-width:640px){
+  .page-h.sticky-h:has(>h1){position:relative;top:auto;z-index:auto}
+  .page-h.sticky-h:has(>h1)::before,.page-h.sticky-h:has(>h1)::after{display:none}
+  :root:has(.page-h.sticky-h>h1) .sticky-sub{top:var(--bar-h,0px)}
+  :root:has(.page-h.sticky-h>h1) .sticky-sub.is-stuck::before{background-position:0 calc(-1 * var(--bar-h,0px))}
+  :root:has(.page-h.sticky-h>h1) .sticky-sub.is-stuck::after{background-position:0 calc(-1 * (var(--bar-h,0px) + var(--sub-h,0px)))}
+}
+/* Pestañas que no caben: se desvanecen por el lado donde queda más, para que se vea que siguen. */
+.utabs.more-r{mask-image:linear-gradient(to right,#000 calc(100% - 48px),transparent)}
+.utabs.more-l{mask-image:linear-gradient(to left,#000 calc(100% - 48px),transparent)}
+.utabs.more-l.more-r{mask-image:linear-gradient(to right,transparent,#000 48px,#000 calc(100% - 48px),transparent)}
+
 /* ---------- efectivo: mes en curso y extracto ---------- */
 .mon{display:flex;flex-direction:column;gap:var(--sp-5)}
 .mon-g{display:flex;flex-direction:column;gap:var(--sp-2)}
@@ -986,7 +1012,12 @@ button.plain{background:none;border:0;padding:0;text-align:left;border-radius:12
 .st-c{color:var(--tx-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .st-c b{color:var(--tx);font-weight:600}
 .st-v{font-weight:650;font-variant-numeric:tabular-nums;white-space:nowrap}
-@media(max-width:640px){.st-m li{grid-template-columns:64px minmax(0,1fr) auto;gap:var(--sp-2)}.mon-kv dd{font-size:15px}}
+@media(max-width:640px){
+  /* extracto: concepto arriba y la fecha debajo, con el importe a la derecha */
+  .st-m li{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"c v" "d v";column-gap:var(--sp-3);row-gap:1px;align-items:center}
+  .st-c{grid-area:c}.st-d{grid-area:d;font-size:12px}.st-v{grid-area:v}
+  .mon-kv dd{font-size:15px}
+}
 
 /* ---------- gastos por categoría y comercio ---------- */
 /* color de cada categoría a partir de su tono (--h), legible en los dos temas: se calcula en el
@@ -1059,8 +1090,15 @@ button.plain{background:none;border:0;padding:0;text-align:left;border-radius:12
   .tbl td small.hide-s,.tbl td span.hide-s{display:none}
   /* subtítulos de los indicadores: hasta dos líneas en lugar de cortarse con «…» */
   .kpi-s{white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2}
-  /* barras de herramientas en una fila: la búsqueda cede espacio y los botones quedan en icono */
-  .toolbar .search{min-width:110px}
+  /* barras de herramientas: la búsqueda ocupa su propia fila y debajo van los selectores, que se
+     reparten el ancho, y los botones (en icono). Sin búsqueda, los botones con texto se reparten la fila. */
+  .toolbar{gap:8px}
+  .toolbar>.search{flex:1 1 100%;order:-1;min-width:0;max-width:none}
+  .toolbar>select{flex:1 1 0;min-width:0}
+  .toolbar>.seg{flex:1 1 100%}
+  .toolbar>.seg button{flex:1 1 auto}
+  .toolbar>.btn:not(.btn-ic-s){flex:1 1 auto;justify-content:center}
+  .toolbar>.view-t{margin-left:0}
   .btn-ic-s{width:40px;height:40px;padding:0;flex:none}
   .btn-ic-s .btn-l{display:none}
   /* pestañas más juntas para que quepan las cuatro de Fiscalidad */
@@ -1289,3 +1327,150 @@ button.plain{background:none;border:0;padding:0;text-align:left;border-radius:12
   .rw-more dl>div{grid-template-columns:minmax(0,1fr);gap:2px}
   .rw-index ul{grid-template-columns:minmax(0,1fr)}
 }
+
+/* ---------- móvil: escala compacta ----------
+   En el teléfono todo baja un punto: texto base de 14 px, cifras y títulos más contenidos, tarjetas
+   con menos relleno, avatares e iconos más pequeños y filas más juntas. Va al final para imponerse a
+   los tamaños de escritorio. Los campos de texto se quedan en 16 px en pantallas táctiles: por debajo,
+   iOS amplía la página al tocarlos. */
+@media(max-width:640px){
+  :root{--fs-xs:11px;--fs-sm:12px;--fs-md:14px;--fs-lg:15.5px;--fs-xl:18px;--fs-2xl:24px;--r:18px;--r-sm:12px}
+  body{font-size:14px}
+  .main{padding:12px 12px 108px}
+  .stack{gap:12px}
+  /* barra superior y navegación inferior */
+  .bar{padding:6px 10px 0}
+  .bar-in{padding:4px 4px 4px 14px;gap:8px}
+  .brand{font-size:18px}
+  .bar .icon-btn{width:34px;height:34px}
+  .bar .icon-btn svg{width:17px;height:17px}
+  .tabs{left:10px;right:10px;padding:4px}
+  .tabs a{height:42px;font-size:12.5px;gap:6px}
+  .tabs a svg{width:19px;height:19px}
+  /* títulos y cifras grandes */
+  .page-h{margin-bottom:12px;min-height:0;gap:10px}
+  .page-h h1{font-size:23px}
+  .hero{padding:4px 0 0}
+  .hero-v{font-size:34px;margin:0 0 8px}
+  .hero-v.sm{font-size:28px}
+  .hero .chg,.chg{font-size:13px}
+  .hero-x{font-size:12.5px}
+  /* tarjetas */
+  .card{padding:16px;border-radius:var(--r)}
+  .table-card{padding:4px 0}
+  .card-h{margin-bottom:10px;gap:8px}
+  .card-h h2{font-size:15.5px;letter-spacing:-.02em}
+  .card-h p{font-size:12px}
+  .note{font-size:11.5px;line-height:1.55}
+  .card .note{margin-top:10px}
+  .kpis,.kpis-row{gap:8px}
+  .kpi{padding:11px 12px 10px;border-radius:14px}
+  .kpi-l{font-size:11px}
+  .kpi-v{font-size:16.5px}
+  .kpi-v.name{font-size:14.5px}
+  .stat-v{font-size:16px}
+  .perf .stat-v{font-size:16px}
+  .perf>div:first-child .stat-v{font-size:22px}
+  .pos-card-v{font-size:16px}
+  /* avatares y filas */
+  .av{width:32px;height:32px;font-size:10.5px}
+  .av.sm{width:26px;height:26px;font-size:9px}
+  .av.lg{width:42px;height:42px;font-size:14px}
+  .tbl .av{width:30px;height:30px;font-size:10px}
+  .asset{gap:10px}
+  .asset small{font-size:11.5px}
+  .rows,.rank-l,.ops-l{margin:0 -8px}
+  .rows button,.rank-l button{padding:8px;gap:10px;border-radius:12px}
+  .ops-l button{padding:7px 8px;gap:10px;border-radius:12px}
+  .ops-mh h2{font-size:14.5px}
+  .tl-b{padding:8px 6px}
+  .tl-t{font-size:13px}
+  .st-m li{padding:8px 0;font-size:13px}
+  .tbl{font-size:13px}
+  .tbl th{font-size:11px}
+  .tbl th,.tbl td{padding:9px 6px}
+  .tbl th:first-child,.tbl td:first-child{padding-left:14px}
+  .tbl th:last-child,.tbl td:last-child{padding-right:14px}
+  .pill{font-size:11.5px;padding:2px 8px}
+  .badge{font-size:10.5px;padding:1px 7px}
+  /* controles */
+  .btn{padding:8px 14px;font-size:13px;gap:6px}
+  .btn-ic-s{width:36px;height:36px;padding:0}
+  .icon-btn{width:36px;height:36px}
+  .icon-btn.sm{width:32px;height:32px}
+  .seg{padding:2px}
+  .seg button{padding:5px 11px;font-size:12px}
+  .utabs{gap:var(--sp-4)}
+  .utabs button{font-size:13px;padding:8px 0 10px}
+  .search{padding:0 12px;gap:7px}
+  .search input{padding:8px 0;font-size:13.5px}
+  select{font-size:13px;padding:8px 12px}
+  .form input{padding:8px 11px;border-radius:10px}
+  .form label,.form .lbl{font-size:12px}
+  .rank-row{padding:6px 6px;gap:8px}
+  /* el periodo del resumen ocupa todo el ancho, con los botones repartidos */
+  .page-h>.seg{flex:1 1 100%}
+  .page-h>.seg button{flex:1 1 auto;padding-left:6px;padding-right:6px}
+  .legend{font-size:11.5px}
+  /* operaciones: el detalle en una sola línea, para que todas midan lo mismo */
+  .ops-l .asset small{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  /* ventanas de Renta Web */
+  .rw-h h3,.rw-index-h h2{font-size:15px}
+  .rw-intro,.rw-index-h p,.rw-more summary,.rw-more dl{font-size:12.5px}
+  .rw-t td::before{font-size:12.5px}
+  .rw-t td{min-height:34px}
+  .rw-v{min-height:34px;font-size:13.5px}
+  .rw-rec-l{font-size:13.5px}
+  .rw-index li button{padding:8px 10px}
+  .rw-index-t,.rw-index li b{font-size:13px}
+}
+/* Safari de iOS amplía la página al tocar un campo de menos de 16 px: solo ahí suben a 16. */
+@media(max-width:640px){
+  @supports (-webkit-touch-callout:none){
+    .search input,.form input,.val-f input,.sim-f input,input.px,input.tgt,.ssim-u input,textarea,select{font-size:16px}
+  }
+}
+
+/* ---------- cabeceras: variaciones en chips ---------- */
+.chip-row{display:flex;flex-wrap:wrap;gap:6px}
+.chip-chg{display:inline-flex;align-items:baseline;gap:6px;border-radius:999px;padding:4px 11px 4px 9px;font-size:13px;font-variant-numeric:tabular-nums;white-space:nowrap;
+  background:color-mix(in srgb,var(--mu) 12%,transparent);color:var(--tx-2)}
+.chip-chg b{font-weight:700}
+.chip-chg b span{font-size:.72em;vertical-align:.12em}
+.chip-chg>span{font-weight:550;opacity:.85}
+.chip-chg em{font-style:normal;font-weight:500;color:var(--mu)}
+.chip-chg.gain{background:color-mix(in srgb,var(--gain) 13%,transparent);color:var(--gain)}
+.chip-chg.loss{background:color-mix(in srgb,var(--loss) 13%,transparent);color:var(--loss)}
+.hero-x{display:inline-flex;align-items:center;gap:5px;margin-top:8px;color:var(--mu);font-size:13px;font-weight:500}
+.hero-x b{color:var(--tx);font-weight:650}
+.hero-x svg{color:var(--mu);transition:transform var(--dur-1) var(--ease)}
+.hero-x:hover svg{transform:translateX(2px);color:var(--tx)}
+@media(min-width:641px){.hero-split .chip-row{justify-content:flex-end}.hero-split .hero-x{margin-left:auto}}
+@media(max-width:640px){.chip-chg{font-size:12px;padding:3px 9px 3px 8px;gap:5px}.hero-x{font-size:12.5px;margin-top:6px}}
+
+/* ---------- ficha de un activo ---------- */
+/* Sin cotización pública: un aviso de una línea donde iría la gráfica. */
+.asset-nq{display:flex;align-items:center;gap:8px;margin:4px 0 0;padding:10px 14px;border-radius:var(--r-sm);
+  background:var(--surface);border:1px solid var(--edge);color:var(--tx-2);font-size:13px}
+.asset-nq svg{flex:none;color:var(--mu)}
+@media(max-width:640px){
+  /* cabecera en una fila: volver, logo, nombre con sus etiquetas y el botón de añadir */
+  .asset-h{flex-wrap:nowrap;gap:10px;margin-bottom:0}
+  .asset-ht{order:0;flex:1 1 auto;flex-basis:auto;min-width:0}
+  .asset-h h1{font-size:18px;line-height:1.2}
+  .asset-h .icon-btn{width:34px;height:34px;flex:none}
+  .asset-h .av.lg{width:38px;height:38px;font-size:12.5px}
+  .asset-h .chips{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin-top:4px;gap:4px;
+    mask-image:linear-gradient(to right,#000 calc(100% - 24px),transparent)}
+  .asset-h .chips::-webkit-scrollbar{display:none}
+  .asset-h .chips span{padding:2px 8px;font-size:10.5px}
+  .asset-add{width:36px;height:36px;padding:0;border-radius:50%;margin-left:0}
+  .asset-page.stack{gap:14px}
+  .asset-sum{gap:12px;padding-top:0}
+  .asset-nq{font-size:12.5px;padding:9px 12px}
+  /* operaciones del activo: dos líneas que no se parten, como en la lista general */
+  .tl-t{white-space:nowrap;font-size:13.5px}
+  .tl-b{padding:7px 6px}
+}
+.chip-chg.ph{visibility:hidden}
+.tl-t .kind{font-size:inherit}

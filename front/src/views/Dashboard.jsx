@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Asset, Avatar, Card, Empty, Flash, Icon, Seg } from '../components/ui.jsx';
+import { Asset, Avatar, Card, ChgChip, Empty, Flash, Icon, Seg } from '../components/ui.jsx';
 import { StepArea, Lines, RankBars, Treemap } from '../charts.jsx';
 import { investedSeries, allocation, monthlyDividends, sum } from '../../../shared/calc.js';
 import { prepare, periodStats, gainBetween } from '../../../shared/perf.ts';
@@ -59,11 +59,7 @@ const Line = ({ label, value, tone = '', hint, onClick }) => {
     </Tag>
   );
 };
-const Chg = ({ n, p, children }) => (
-  <span className={`chg ${sign(n)}`}>
-    <span aria-hidden="true">{n >= 0 ? '▲' : '▼'}</span> {eurS(n)}{p != null && <> · {pctS(p)}</>} <em>{children}</em>
-  </span>
-);
+const Chg = ChgChip;
 
 export default function Dashboard({ a, hist, histProgress, flt, cash, onOpen, go, settings, onSetting }) {
   const [by, setBy] = useState('pos');
@@ -236,7 +232,8 @@ export default function Dashboard({ a, hist, histProgress, flt, cash, onOpen, go
             </>
           )} />
       );
-      legend = [['me', 'Tu cartera', 'me'], ...bs.map((b) => [b.key, b.name, b.cls])];
+      // Sin clase propia: la muestra toma el color de la línea de la cartera (y «me» es el avatar).
+      legend = [['me', 'Tu cartera', ''], ...bs.map((b) => [b.key, b.name, b.cls])];
     }
   }
   const hv = h && hover != null ? { v: h.v[hover], d: h.d[hover], gain: gainBetween(h, st.i0, hover) } : null;
@@ -258,12 +255,14 @@ export default function Dashboard({ a, hist, histProgress, flt, cash, onOpen, go
                 <p className="mu">Faltan los precios actuales para calcular el valor y el resultado.</p>
               ) : (
                 <div className="hero-d">
-                  {st && <Chg n={st.gain} p={st.mwr}>{RANGE_NAME[range]}</Chg>}
-                  {hasDay && <Chg n={a.day} p={a.dayPct}>{dayLabel}</Chg>}
-                  {!st && <Chg n={a.pl} p={a.plp}>desde la compra</Chg>}
+                  <div className="chip-row">
+                    {st && <Chg n={st.gain} p={st.mwr}>{RANGE_NAME[range]}</Chg>}
+                    {hasDay && <Chg n={a.day} p={a.dayPct}>{dayLabel}</Chg>}
+                    {!st && <Chg n={a.pl} p={a.plp}>desde la compra</Chg>}
+                  </div>
                   {cash && flt === 'all' && (
                     <button type="button" className="hero-x" onClick={() => go('efectivo')}>
-                      Con el efectivo, {eur(a.val + cash.balance)}
+                      Con el efectivo <b>{eur(a.val + cash.balance)}</b><Icon name="chevron" size={14} />
                     </button>
                   )}
                 </div>
@@ -275,7 +274,7 @@ export default function Dashboard({ a, hist, histProgress, flt, cash, onOpen, go
                 </button>
               )}
             </div>
-            {hv && <div className="hero-d hero-over"><Chg n={hv.gain}>{RANGE_NAME[range]} hasta ese día</Chg></div>}
+            {hv && <div className="hero-d hero-over"><div className="chip-row"><Chg n={hv.gain}>{RANGE_NAME[range]} hasta ese día</Chg></div></div>}
           </div>
         </section>
 

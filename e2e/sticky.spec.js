@@ -1,5 +1,6 @@
 // Cabecera fija: en Posiciones, Operaciones, Dividendos, Fiscalidad y Efectivo el título (y sus
 // pestañas o filtros) se queda arriba sin moverse; en Resumen, el tipo de activo y el periodo.
+// En el móvil el título se va con el scroll y solo se quedan las pestañas, pegadas a la barra.
 import { test, expect } from '@playwright/test';
 import { settled } from './helpers.js';
 
@@ -12,8 +13,10 @@ const CASES = [
 ];
 const box = (page, sel) => page.locator(sel).first().evaluate((el) => { const r = el.getBoundingClientRect(); return { top: r.top, bottom: r.bottom }; });
 
+const isMobile = (testInfo) => testInfo.project.name.startsWith('movil');
+
 for (const [route, title, sub] of CASES) {
-  test(`${route}: título${sub ? ' y pestañas' : ''} fijos al bajar`, async ({ page }) => {
+  test(`${route}: título${sub ? ' y pestañas' : ''} fijos al bajar`, async ({ page }, testInfo) => {
     await page.goto(`/${route}`);
     await settled(page);
     // Las animaciones de entrada desplazan los bloques unos píxeles mientras duran.
@@ -22,6 +25,12 @@ for (const [route, title, sub] of CASES) {
     // Sin el aviso de la cartera de ejemplo las páginas cortas bajan algo menos: basta con pasar la cabecera.
     await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(250);
     const bar = await box(page, '.bar');
+    if (isMobile(testInfo)) {
+      // El título ya se ha ido; las pestañas (si las hay) quedan justo bajo la barra.
+      await expect(page.getByRole('heading', { level: 1, name: title })).not.toBeInViewport();
+      if (sub) expect(Math.abs((await box(page, '.sticky-sub')).top - bar.bottom)).toBeLessThan(1.5);
+      return;
+    }
     await expect(page.getByRole('heading', { level: 1, name: title })).toBeInViewport();
     const h = await box(page, '.page-h');
     expect(Math.abs(h.top - bar.bottom)).toBeLessThan(1.5);
@@ -32,7 +41,8 @@ for (const [route, title, sub] of CASES) {
   });
 }
 
-test('el título no se mueve al hacer scroll', async ({ page }) => {
+test('el título no se mueve al hacer scroll', async ({ page }, testInfo) => {
+  test.skip(isMobile(testInfo), 'en el móvil el título se va con el scroll');
   await page.goto('/posiciones');
   await settled(page);
   const top = () => page.getByRole('heading', { level: 1 }).evaluate((e) => e.getBoundingClientRect().top);

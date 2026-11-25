@@ -510,17 +510,18 @@ export default function Tax({ a, income, onOpen, settings }) {
         <div className="card table-card">
           <header className="card-h"><div><h2>Ventas de {y.year} por entidad emisora</h2><p>Una línea por valor, como las pide Renta Web</p></div></header>
           <table className="tbl">
-            <thead><tr><th className="l">Entidad</th><th className="l hide-s">ISIN</th><th className="hide-s">Ventas</th><th>Transmisión</th><th>Adquisición</th><th>Resultado</th></tr></thead>
+            <thead><tr><th className="l">Entidad</th><th className="l hide-s">ISIN</th><th className="hide-s">Ventas</th><th className="hide-s">Transmisión</th><th className="hide-s">Adquisición</th><th>Resultado</th></tr></thead>
             <tbody>
               {y.issuers.map((e) => (
                 <tr key={e.p.isin} onClick={() => onOpen(e.p.isin)} tabIndex={0} onKeyDown={(ev) => ev.key === 'Enter' && onOpen(e.p.isin)}>
-                  <td className="l"><b>{e.p.name}</b>{e.grp !== 'stock' && <small className="mu"> · {GROUP_LABEL[e.grp]}</small>}</td>
+                  <td className="l"><b>{e.p.name}</b>{e.grp !== 'stock' && <small className="mu"> · {GROUP_LABEL[e.grp]}</small>}
+                    <small className="only-s">{eur(e.proceeds)} − {eur(e.cost)}</small></td>
                   <td className="l hide-s mono">{e.p.isin}</td><td className="hide-s">{e.n}</td>
-                  <td>{eur(e.proceeds)}</td><td>{eur(e.cost)}</td><td className={sign(e.gain)}>{eurS(e.gain)}</td>
+                  <td className="hide-s">{eur(e.proceeds)}</td><td className="hide-s">{eur(e.cost)}</td><td className={sign(e.gain)}>{eurS(e.gain)}</td>
                 </tr>
               ))}
             </tbody>
-            <tfoot><tr><td className="l">Total</td><td className="hide-s" /><td className="hide-s">{y.sales.length}</td><td>{eur(y.proceeds)}</td><td>{eur(y.costF)}</td><td className={sign(y.gainF)}>{eurS(y.gainF)}</td></tr></tfoot>
+            <tfoot><tr><td className="l">Total<small className="only-s">{eur(y.proceeds)} − {eur(y.costF)}</small></td><td className="hide-s" /><td className="hide-s">{y.sales.length}</td><td className="hide-s">{eur(y.proceeds)}</td><td className="hide-s">{eur(y.costF)}</td><td className={sign(y.gainF)}>{eurS(y.gainF)}</td></tr></tfoot>
           </table>
         </div>
       )}
@@ -539,17 +540,17 @@ export default function Tax({ a, income, onOpen, settings }) {
         <div className="card table-card">
           <header className="card-h"><div><h2>Dividendos de {y.year} por país</h2><p>Doble imposición internacional: qué se retuvo en origen y cuánto se puede deducir</p></div></header>
           <table className="tbl">
-            <thead><tr><th className="l">País</th><th className="hide-s">Cobros</th><th>Bruto</th><th className="hide-s">Ret. española</th><th>Ret. en origen</th><th className="hide-s">% origen</th><th>Deducible</th></tr></thead>
+            <thead><tr><th className="l">País</th><th className="hide-s">Cobros</th><th>Bruto</th><th className="hide-s">Ret. española</th><th className="hide-s">Ret. en origen</th><th className="hide-s">% origen</th><th>Deducible</th></tr></thead>
             <tbody>
               {byCountry.map((r) => (
                 <tr key={r.code} className="static">
-                  <td className="l"><b>{r.c}</b></td><td className="hide-s">{r.n}</td><td>{eur(r.g)}</td><td className="hide-s">{eur(r.es)}</td>
-                  <td>{eur(r.foreign)}</td><td className="hide-s">{r.g ? pct((r.foreign / r.g) * 100) : '—'}</td><td>{eur(r.ded)}</td>
+                  <td className="l"><b>{r.c}</b><small className="only-s">retenido fuera {eur(r.foreign)}</small></td><td className="hide-s">{r.n}</td><td>{eur(r.g)}</td><td className="hide-s">{eur(r.es)}</td>
+                  <td className="hide-s">{eur(r.foreign)}</td><td className="hide-s">{r.g ? pct((r.foreign / r.g) * 100) : '—'}</td><td>{eur(r.ded)}</td>
                 </tr>
               ))}
             </tbody>
-            <tfoot><tr><td className="l">Total</td><td className="hide-s">{y.divs.length}</td><td>{eur(y.divG)}</td><td className="hide-s">{eur(y.divEs)}</td>
-              <td>{eur(y.divFor)}</td><td className="hide-s">{y.divG ? pct((y.divFor / y.divG) * 100) : '—'}</td><td>{eur(y.forDed)}</td></tr></tfoot>
+            <tfoot><tr><td className="l">Total<small className="only-s">retenido fuera {eur(y.divFor)}</small></td><td className="hide-s">{y.divs.length}</td><td>{eur(y.divG)}</td><td className="hide-s">{eur(y.divEs)}</td>
+              <td className="hide-s">{eur(y.divFor)}</td><td className="hide-s">{y.divG ? pct((y.divFor / y.divG) * 100) : '—'}</td><td>{eur(y.forDed)}</td></tr></tfoot>
           </table>
           <p className="note pad">
             Deducible = lo retenido en origen, hasta el {TREATY_RATE * 100} % del bruto (el tipo de la mayoría de convenios). Con

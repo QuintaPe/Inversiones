@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { eurS, pctS, sign, isMasked, MASK } from '../lib/format.js';
 import { useStuck } from '../hooks.js';
 
@@ -20,6 +20,7 @@ const PATHS = {
   check: <path d="M5 12.5l4.5 4.5L19 7.5" />,
   copy: <><rect x="8" y="8" width="12" height="12" rx="2.5" /><path d="M16 8V6.5A2.5 2.5 0 0 0 13.5 4h-7A2.5 2.5 0 0 0 4 6.5v7A2.5 2.5 0 0 0 6.5 16H8" /></>,
   alert: <path d="M12 4l9 16H3zM12 10v4M12 17v.5" />,
+  info: <path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 11v5M12 8v.5" />,
   chevron: <path d="M9 6l6 6-6 6" />,
   efectivo: <><path d="M3 7h16a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM3 7V6a2 2 0 0 1 2-2h11" /><circle cx="16.5" cy="13" r="1.2" /></>,
   plus: <path d="M12 5v14M5 12h14" />,
@@ -128,7 +129,23 @@ export const Seg = ({ options, value, onChange, label }) => (
 );
 
 const KIND = { B: ['Compra', 'buy'], S: ['Venta', 'sell'], D: ['Dividendo', 'div'], X: ['Split', 'split'] };
-export const Kind = ({ k }) => <span className={`badge ${KIND[k][1]}`}>{KIND[k][0]}</span>;
+/**
+ * Variación en chip para las cabeceras: porcentaje destacado, importe al lado y el periodo en gris,
+ * sobre un fondo suave del color de la variación. Sin porcentaje, el importe va destacado.
+ */
+export const ChgChip = ({ n, p, children }) => {
+  const v = n ?? p; // sin importe (solo porcentaje), el signo lo da el porcentaje
+  return (
+    <span className={`chip-chg ${sign(v)}`}>
+      <b><span aria-hidden="true">{v >= 0 ? '▲' : '▼'}</span> {p != null ? pctS(p) : eurS(n)}</b>
+      {p != null && n != null && <span>{eurS(n)}</span>}
+      {children && <em>{children}</em>}
+    </span>
+  );
+};
+
+/** Tipo de operación: texto pequeño bajo el importe, sin pastilla; el color dice si entra o sale dinero. */
+export const Kind = ({ k }) => <span className={`kind ${KIND[k][1]}`}>{KIND[k][0]}</span>;
 
 export const Empty = ({ children }) => <div className="empty">{children}</div>;
 
@@ -296,15 +313,32 @@ export function Tabs({ items, value, onChange, label }) {
   // En pantallas estrechas las pestañas se deslizan: la elegida siempre queda a la vista
   // (moviendo solo la fila, no la página).
   const row = useRef(null);
+  // Si no caben, se desvanecen por el lado en el que quedan más pestañas.
+  const [more, setMore] = useState('');
+  const edges = useCallback(() => {
+    const box = row.current;
+    if (!box) return;
+    const l = box.scrollLeft > 2, r = box.scrollLeft + box.clientWidth < box.scrollWidth - 2;
+    setMore(`${l ? ' more-l' : ''}${r ? ' more-r' : ''}`);
+  }, []);
   useEffect(() => {
     const box = row.current, el = refs.current[items.findIndex(([k]) => k === value)];
-    if (!box || !el || box.scrollWidth <= box.clientWidth) return;
-    const left = el.getBoundingClientRect().left - box.getBoundingClientRect().left + box.scrollLeft;
-    if (left < box.scrollLeft) box.scrollLeft = Math.max(0, left - 24);
-    else if (left + el.offsetWidth > box.scrollLeft + box.clientWidth) box.scrollLeft = left + el.offsetWidth - box.clientWidth + 24;
-  }, [value, items]);
+    if (box && el && box.scrollWidth > box.clientWidth) {
+      const left = el.getBoundingClientRect().left - box.getBoundingClientRect().left + box.scrollLeft;
+      if (left < box.scrollLeft) box.scrollLeft = Math.max(0, left - 24);
+      else if (left + el.offsetWidth > box.scrollLeft + box.clientWidth) box.scrollLeft = left + el.offsetWidth - box.clientWidth + 24;
+    }
+    edges();
+  }, [value, items, edges]);
+  useEffect(() => {
+    const box = row.current;
+    if (!box) return undefined;
+    const ro = new ResizeObserver(edges);
+    ro.observe(box);
+    return () => ro.disconnect();
+  }, [edges]);
   return (
-    <div className="utabs" role="tablist" aria-label={label} ref={row}>
+    <div className={`utabs${more}`} role="tablist" aria-label={label} ref={row} onScroll={edges}>
       {items.map(([k, l], i) => (
         <button key={k} ref={(el) => { refs.current[i] = el; }} type="button" role="tab" aria-selected={value === k}
           tabIndex={value === k ? 0 : -1} className={value === k ? 'on' : ''} onClick={() => onChange(k)} onKeyDown={(ev) => key(ev, i)}>{l}</button>

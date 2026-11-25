@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as api from '../api.js';
-import { Asset, Empty, Icon, Kind, Search, Seg, Sticky } from '../components/ui.jsx';
+import { Asset, Empty, Icon, Search, Seg, Sticky } from '../components/ui.jsx';
 import { Kpi } from '../components/Kpi.jsx';
 import { useParam } from '../router.js';
 import { sum } from '../../../shared/calc.js';
@@ -10,6 +10,14 @@ const MONTHS = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 
 const monthLong = (ym) => { const m = MONTHS[+ym.slice(5, 7) - 1]; return `${m[0].toUpperCase()}${m.slice(1)} de ${ym.slice(0, 4)}`; };
 
 const KINDS = [['all', 'Todas'], ['B', 'Compras'], ['S', 'Ventas'], ['D', 'Dividendos']];
+const KIND = { B: ['Compra', 'buy'], S: ['Venta', 'sell'], D: ['Dividendo', 'div'] };
+/** «Jue 20 nov»: cabecera de cada día dentro del mes. */
+const dayLabel = (d) => {
+  const s = new Date(`${d}T12:00:00Z`).toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }).replace(/\.|,/g, '');
+  return s[0].toUpperCase() + s.slice(1);
+};
+/** Lo que entra (+) o sale (−) de la cuenta con cada operación. */
+const flow = (x) => (x.k === 'B' ? -x.net : x.net);
 const PAGE = 100;
 
 function download(rows) {
@@ -51,13 +59,16 @@ export default function Ledger({ a, meta, onOpen, onAddOp, onRestoreOp }) {
     return () => io.disconnect();
   }, [hasMore, limit]);
   const B = rows.filter((x) => x.k === 'B'), S = rows.filter((x) => x.k === 'S'), D = rows.filter((x) => x.k === 'D');
-  // Por meses, como en el extracto del banco.
+  // Por meses y, dentro de cada mes, por días, como en el extracto del banco.
   const groups = useMemo(() => {
     const out = [];
     for (const x of rows.slice(0, limit)) {
       const m = x.d.slice(0, 7);
-      if (out.at(-1)?.m !== m) out.push({ m, items: [] });
-      out.at(-1).items.push(x);
+      if (out.at(-1)?.m !== m) out.push({ m, n: 0, net: 0, days: [] });
+      const g = out.at(-1);
+      if (g.days.at(-1)?.d !== x.d) g.days.push({ d: x.d, items: [] });
+      g.days.at(-1).items.push(x);
+      g.n++; g.net += flow(x);
     }
     return out;
   }, [rows, limit]);
@@ -86,31 +97,37 @@ export default function Ledger({ a, meta, onOpen, onAddOp, onRestoreOp }) {
 
       {!rows.length && <div className="card"><Empty>Ninguna operación coincide con los filtros.</Empty></div>}
       {groups.map((gr) => (
-        <section key={gr.m} className="card ops-m" style={{ '--n': gr.items.length }}>
+        <section key={gr.m} className="card ops-m" style={{ '--n': gr.n + gr.days.length / 2 }}>
           <header className="ops-mh">
             <h2>{monthLong(gr.m)}</h2>
-            <span className="mu">{gr.items.length} {gr.items.length === 1 ? 'operación' : 'operaciones'}</span>
+            <span className="ops-mh-r">
+              <b className={gr.net > 0 ? 'gain' : ''}>{eurS(gr.net)}</b>
+              <small>{gr.n} {gr.n === 1 ? 'operación' : 'operaciones'}</small>
+            </span>
           </header>
-          <ul className="ops-l">
-            {gr.items.map((x) => (
-              <li key={x.id + x.k}>
-                <button type="button" onClick={() => onOpen(x.p.isin)} title={`ID ${(x.ids ?? [x.id]).join(', ')}`}>
-                  <Asset p={x.p} size="sm">
-                    {date(x.d)} · {x.k === 'D' ? `${qty(x.sh)} uds.` : `${qty(x.sh)} × ${eur(x.px)}`}
-                    {x.fee ? ` · comisión ${eur(x.fee)}` : ''}{x.tax ? ` · ${x.k === 'D' ? 'retención' : 'impuesto'} ${eur(x.tax)}` : ''}
-                    {x.parts ? ` · ${x.parts.length} ejecuciones` : ''}
-                  </Asset>
-                  <span className="row-r">
-                    <span className={`row-v ${x.k === 'B' ? '' : 'gain'}`}>{x.k === 'B' ? `−${eur(x.net)}` : eurS(x.net)}</span>
-                    <span className="ops-k">
-                      {x.k === 'S' && <small className={sign(x.re)}>{eurS(x.re)}</small>}
-                      <Kind k={x.k} />
-                    </span>
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
+          {gr.days.map((dy) => (
+            <div key={dy.d} className="ops-day">
+              <h3>{dayLabel(dy.d)}</h3>
+              <ul className="ops-l">
+                {dy.items.map((x) => (
+                  <li key={x.id + x.k}>
+                    <button type="button" onClick={() => onOpen(x.p.isin)} title={`ID ${(x.ids ?? [x.id]).join(', ')}`}>
+                      <Asset p={x.p} size="sm">
+                        <span className={`kind ${KIND[x.k][1]}`}>{KIND[x.k][0]}</span>
+                        {' · '}{x.k === 'D' ? `${qty(x.sh)} uds.` : `${qty(x.sh)} × ${eur(x.px)}`}
+                        {x.fee ? ` · comisión ${eur(x.fee)}` : ''}{x.tax ? ` · ${x.k === 'D' ? 'retención' : 'impuesto'} ${eur(x.tax)}` : ''}
+                        {x.parts ? ` · ${x.parts.length} ejecuciones` : ''}
+                      </Asset>
+                      <span className="row-r">
+                        <span className={`row-v ${x.k === 'B' ? '' : 'gain'}`}>{eurS(flow(x))}</span>
+                        {x.k === 'S' && <small className={`ops-re ${sign(x.re)}`}>{eurS(x.re)} de resultado</small>}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
         </section>
       ))}
       {hasMore && (

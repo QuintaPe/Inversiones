@@ -10,6 +10,10 @@ import { timeTicks } from './lib/ticks.js';
  * (el más reciente). `set(i | null)` mueve el mismo cursor que el ratón.
  * Devuelve las props del contenedor y el punto activo con teclado (para anunciarlo).
  */
+/** En el móvil las gráficas son más bajas: la misma forma en menos pantalla. */
+const narrow = typeof window !== 'undefined' && window.matchMedia ? window.matchMedia('(max-width: 640px)') : null;
+const fit = (h) => (narrow?.matches ? Math.round(h * 0.7) : h);
+
 export function useChartKeys(n, hi, set, label) {
   const [kbd, setKbd] = useState(false);
   const hint = useId();
@@ -66,7 +70,8 @@ function Tip({ x, y, w, children }) {
  * Serie temporal escalonada (una sola serie) con área suave y cursor.
  * points: [{ t: ms, v }] ordenados. tip: (punto) => contenido.
  */
-export function StepArea({ points, height = 220, tip, label, bare = false }) {
+export function StepArea({ points, height: full = 220, tip, label, bare = false }) {
+  const height = fit(full);
   const [ref, w] = useWidth();
   const [hi, setHi] = useState(null);
   const keys = useChartKeys(points.length, hi?.i ?? null, (i) => setHi(i == null ? null : { i, t: points[i].t }), label);
@@ -137,7 +142,8 @@ export function StepArea({ points, height = 220, tip, label, bare = false }) {
  * Columnas (una serie; admite valores negativos, que se pintan como pérdida).
  * data: [{ key, label, v }]. tip: (dato) => contenido.
  */
-export function Columns({ data, height = 200, tip, label, signed = false }) {
+export function Columns({ data, height: full = 200, tip, label, signed = false }) {
+  const height = fit(full);
   const [ref, w] = useWidth();
   const [hi, setHi] = useState(null);
   const keys = useChartKeys(data.length, hi, setHi, label);
@@ -199,7 +205,8 @@ export function Columns({ data, height = 200, tip, label, signed = false }) {
  * Columnas enfrentadas: lo que entra hacia arriba y lo que sale hacia abajo, por periodo.
  * data: [{ key, label, up, down }] (los dos en positivo). tip: (dato) => contenido.
  */
-export function Diverge({ data, height = 220, tip, label }) {
+export function Diverge({ data, height: full = 220, tip, label }) {
+  const height = fit(full);
   const [ref, w] = useWidth();
   const [hi, setHi] = useState(null);
   const keys = useChartKeys(data.length, hi, setHi, label);
@@ -281,7 +288,8 @@ export function RankBars({ rows }) {
  * se lee con el cursor, que además avisa por onHover(índice | null).
  * x: ms[]; series: [{ key, values[], cls, step, area }]; tip: (índice) => contenido.
  */
-export function Lines({ x, series, height = 280, tip, label, onHover, base, marks = [], scale, span }) {
+export function Lines({ x, series, height: full = 280, tip, label, onHover, base, marks = [], scale, span }) {
+  const height = fit(full);
   const [ref, w] = useWidth();
   const [hi, setHi] = useState(null);
   // Con `span`, arrastrar con el ratón marca un tramo y se enseña lo que pasó entre sus dos extremos.
@@ -415,7 +423,8 @@ function squarify(items, x, y, w, h) {
  * Mapa de bloques: el área es el peso y el color, la rentabilidad (verde/rojo, gris en cero).
  * items: [{ key, label, v, w, plp, onClick }]
  */
-export function Treemap({ items, height = 320, cap = 30 }) {
+export function Treemap({ items, height: full = 320, cap = 30 }) {
+  const height = fit(full);
   const [ref, w] = useWidth();
   const [hi, setHi] = useState(null);
   const tiles = w > 0 ? squarify(items.filter((i) => i.v > 0), 0, 0, w, height) : [];

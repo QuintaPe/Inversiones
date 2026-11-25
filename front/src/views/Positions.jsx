@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import * as api from '../api.js';
-import { Asset, Avatar, Empty, Flash, Icon, PriceInput, Search, Sticky, Tabs, Th, useSort } from '../components/ui.jsx';
+import { Asset, Avatar, ChgChip, Empty, Flash, Icon, PriceInput, Search, Sticky, Tabs, Th, useSort } from '../components/ui.jsx';
 import { Kpi, Spark } from '../components/Kpi.jsx';
 import { useStored } from '../hooks.js';
 import { useParam } from '../router.js';
@@ -71,8 +71,10 @@ export default function Positions({ a, onOpen, onPrice, targets, patch, fail, in
             <span className="eyebrow">Valor de tus posiciones</span>
             <Flash value={a.val} as="div" className="hero-v">{eur(a.val)}</Flash>
             <div className="hero-d">
-              <span className={`chg ${sign(a.pl)}`}><span aria-hidden="true">{a.pl >= 0 ? '▲' : '▼'}</span> {eurS(a.pl)} · {pctS(a.plp)} <em>desde la compra</em></span>
-              {a.day != null && <span className={`chg ${sign(a.day)}`}><span aria-hidden="true">{a.day >= 0 ? '▲' : '▼'}</span> {eurS(a.day)} · {pctS(a.dayPct)} <em>hoy</em></span>}
+              <div className="chip-row">
+                <ChgChip n={a.pl} p={a.plp}>desde la compra</ChgChip>
+                {a.day != null && <ChgChip n={a.day} p={a.dayPct}>hoy</ChgChip>}
+              </div>
             </div>
           </section>
 
@@ -164,7 +166,7 @@ export default function Positions({ a, onOpen, onPrice, targets, patch, fail, in
                 <tr key={x.p.isin} onClick={() => onOpen(x.p.isin)} tabIndex={0}
                   onKeyDown={(ev) => ev.key === 'Enter' && ev.target === ev.currentTarget && onOpen(x.p.isin)}>
                   <td className="l">
-                    <Asset p={x.p}>{qty(x.p.sh)} uds. a {eur(x.avg)}</Asset>
+                    <Asset p={x.p}>{qty(x.p.sh)} uds.<span className="hide-s"> a {eur(x.avg)}</span></Asset>
                   </td>
                   <td className="hide-s">
                     {x.p.priceSource === 'live'

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as api from '../api.js';
-import { Avatar, Card, Empty, Icon, PriceInput, Seg, Tabs } from '../components/ui.jsx';
+import { Avatar, Card, ChgChip, Empty, Icon, PriceInput, Seg, Sticky, Tabs } from '../components/ui.jsx';
 import { Kpi } from '../components/Kpi.jsx';
 import { Lines } from '../charts.jsx';
 import { useParam } from '../router.js';
@@ -71,21 +71,22 @@ function OpDetail({ x, onEdit, onRemove }) {
 }
 
 const KIND_NAME = { B: 'Compra', S: 'Venta', D: 'Dividendo', X: 'Split' };
+const KIND_CLS = { B: 'buy', S: 'sell', D: 'div', X: 'split' };
 /** Una operación en una línea; al pulsarla se despliega su cuenta paso a paso. */
 function OpRow({ x, open, onToggle, onEdit, onRemove }) {
   const amount = x.k === 'X' ? `× ${num(x.ratio)}` : x.k === 'B' ? `−${eur(x.net)}` : eurS(x.net);
-  const what = x.k === 'D' ? `${qty(x.sh)} uds. · retención ${eur(x.tax)}`
-    : x.k === 'X' ? `${qty(x.from)} → ${qty(x.sh)} uds.`
-    : `${qty(x.sh)} × ${eur(x.px)}${x.fee ? ` · comisión ${eur(x.fee)}` : ''}`;
+  const what = x.k === 'D' ? `${qty(x.sh)} uds.` : x.k === 'X' ? `${qty(x.from)} → ${qty(x.sh)} uds.` : `${qty(x.sh)} × ${eur(x.px)}`;
+  const cost = x.k === 'D' ? (x.tax ? `retención ${eur(x.tax)}` : '') : x.fee ? `comisión ${eur(x.fee)}` : '';
   return (
     <li className={`tl-i k-${x.k} ${open ? 'open' : ''}`}>
       <button type="button" className="tl-b" aria-expanded={open} onClick={onToggle}>
         <span className="tl-dot" aria-hidden="true" />
         <span className="tl-main">
-          <span className="tl-t"><b>{KIND_NAME[x.k]}</b> {what}</span>
+          <span className="tl-t"><span className={`kind ${KIND_CLS[x.k]}`}>{KIND_NAME[x.k]}</span> · {what}</span>
           <small>
             {date(x.d)}
-            {x.sa != null && x.k !== 'D' && ` · después ${qty(x.sa)} uds.${x.av ? ` a ${eur(x.av)}` : ''}`}
+            {cost && ` · ${cost}`}
+            {x.sa != null && x.k !== 'D' && <span className="hide-s">{` · después ${qty(x.sa)} uds.${x.av ? ` a ${eur(x.av)}` : ''}`}</span>}
             {x.parts && ` · ${x.parts.length} ejecuciones`}
           </small>
         </span>
@@ -300,7 +301,7 @@ function Alerts({ p, alerts, patch, fail }) {
 }
 
 /** Valoraciones con fecha de un activo que no cotiza. */
-function Valuations({ p, onPrice, onChange }) {
+function Valuations({ p, source, onPrice, onChange }) {
   const [rows, setRows] = useState(null);
   const [d, setD] = useState(today());
   const [price, setPrice] = useState('');
@@ -325,7 +326,7 @@ function Valuations({ p, onPrice, onChange }) {
     try { setRows((await api.deleteValuation(p.isin, day)).valuations[p.isin] ?? []); onChange(); } catch (e) { setErr(e.message); }
   };
   return (
-    <Card title="Valoraciones" sub="Anota el valor por unidad en una fecha; el histórico las une en línea recta">
+    <Card title="Precio y valoraciones" sub={`${source ? `${source}. ` : ''}Anota el valor por unidad en una fecha: la más reciente es el precio actual.`}>
       {err && <p className="note loss">{err}</p>}
       <form className="val-f" onSubmit={add}>
         <input type="date" value={d} max={today()} onChange={(ev) => setD(ev.target.value)} aria-label="Fecha de la valoración" required />
@@ -341,7 +342,7 @@ function Valuations({ p, onPrice, onChange }) {
             </li>
           ))}
         </ul>
-      ) : rows && <Empty>Todavía no hay valoraciones anotadas.</Empty>}
+      ) : rows && <p className="note">Todavía no hay valoraciones anotadas.</p>}
     </Card>
   );
 }
@@ -488,23 +489,27 @@ export default function Asset({ x, totalVal, yearBase, onBack, onPrice, liveQuot
           {/* Misma altura con y sin cursor sobre la gráfica (ver el resumen). */}
           <div className={`hero-sw ${hv ? 'hovering' : ''}`}>
             <div className="hero-d hero-base">
-              {vs ? (
-                <>
-                  <span className={`chg ${sign(vs.end.me)}`}><span aria-hidden="true">{vs.end.me >= 0 ? '▲' : '▼'}</span> {pctS(vs.end.mePct)} <em>tu resultado ({eurS(vs.end.me)})</em></span>
-                  <span className={`chg ${sign(vs.end.ix)}`}>{pctS(vs.end.ixPct)} <em>con el {vs.name}</em></span>
-                </>
-              ) : chg != null && <span className={`chg ${sign(chg)}`}><span aria-hidden="true">{chg >= 0 ? '▲' : '▼'}</span> {pctS(chg)} <em>el precio en el periodo</em></span>}
-              {!vs && x.dayPct != null && <span className={`chg ${sign(x.dayPct)}`}><span aria-hidden="true">{x.dayPct >= 0 ? '▲' : '▼'}</span> {pctS(x.dayPct)} <em>última sesión</em></span>}
-              {chg == null && x.dayPct == null && <span className="chg">&nbsp;</span>}
+              <div className="chip-row">
+                {vs ? (
+                  <>
+                    <ChgChip n={vs.end.me} p={vs.end.mePct}>tú</ChgChip>
+                    <ChgChip n={vs.end.ix} p={vs.end.ixPct}>con el {vs.name}</ChgChip>
+                  </>
+                ) : chg != null && <ChgChip p={chg}>en el periodo</ChgChip>}
+                {!vs && x.dayPct != null && <ChgChip p={x.dayPct}>última sesión</ChgChip>}
+                {chg == null && x.dayPct == null && <span className="chip-chg ph" aria-hidden="true">&nbsp;</span>}
+              </div>
             </div>
             {hv && (
               <div className="hero-d hero-over">
-                {vs && vs.me[hover] != null ? (
-                  <>
-                    <span className={`chg ${sign(vs.me[hover])}`}>{eurS(vs.me[hover])} <em>tu resultado ese día</em></span>
-                    {vs.ix[hover] != null && <span className={`chg ${sign(vs.ix[hover])}`}>{eurS(vs.ix[hover])} <em>con el {vs.name}</em></span>}
-                  </>
-                ) : <span className={`chg ${sign(hv.chg)}`}>{pctS(hv.chg)} <em>el precio en el periodo hasta ese día</em></span>}
+                <div className="chip-row">
+                  {vs && vs.me[hover] != null ? (
+                    <>
+                      <ChgChip n={vs.me[hover]}>tú ese día</ChgChip>
+                      {vs.ix[hover] != null && <ChgChip n={vs.ix[hover]}>con el {vs.name}</ChgChip>}
+                    </>
+                  ) : <ChgChip p={hv.chg}>en el periodo hasta ese día</ChgChip>}
+                </div>
               </div>
             )}
           </div>
@@ -539,7 +544,8 @@ export default function Asset({ x, totalVal, yearBase, onBack, onPrice, liveQuot
                 );
               }} />
           ) : hist === undefined ? <div className="sk" style={{ height: 300 }} />
-            : <Empty>{hist ? 'No hay datos en este periodo.' : 'Este activo no tiene cotización pública: su valor se sigue con las valoraciones que anotes.'}</Empty>}
+            : hist ? <Empty>No hay datos en este periodo.</Empty>
+              : <p className="asset-nq"><Icon name="info" size={15} />Sin cotización pública: su valor se sigue con las valoraciones que anotes.</p>}
           {hist && (
             <>
               <div className="chart-f">
@@ -588,7 +594,7 @@ export default function Asset({ x, totalVal, yearBase, onBack, onPrice, liveQuot
         </div>
       )}
 
-      <Tabs label="Apartado" value={cur} onChange={setTab} items={tabs} />
+      <Sticky><Tabs label="Apartado" value={cur} onChange={setTab} items={tabs} /></Sticky>
 
       {cur === 'resumen' && (
         <div className="asset-sum">
@@ -607,7 +613,7 @@ export default function Asset({ x, totalVal, yearBase, onBack, onPrice, liveQuot
             </dl>
           )}
 
-          {p.open && (
+          {p.open && hist !== null && (
             <section className="price-strip">
               <p className="ps-src">
                 {p.priceSource === 'live' && <span className="live-dot" aria-hidden="true" />}
@@ -624,7 +630,7 @@ export default function Asset({ x, totalVal, yearBase, onBack, onPrice, liveQuot
             </section>
           )}
 
-          {p.open && hist === null && (isMasked() ? <Hidden title="Valoraciones" /> : <Valuations p={p} onPrice={onPrice} onChange={onHistoryChange} />)}
+          {p.open && hist === null && (isMasked() ? <Hidden title="Valoraciones" /> : <Valuations p={p} source={priceText} onPrice={onPrice} onChange={onHistoryChange} />)}
 
           <NoteCard key={p.isin} p={p} onNote={onNote} />
           <Card title={p.open ? 'Cómo se calcula' : 'Resultado'}
