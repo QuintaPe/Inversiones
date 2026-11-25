@@ -1237,3 +1237,24 @@ button.plain{background:none;border:0;padding:0;text-align:left;border-radius:12
 .bench-a{display:flex;align-items:center;justify-content:flex-end;gap:var(--sp-3);flex-wrap:wrap;font-size:var(--fs-sm)}
 .bench-a span{margin-right:auto}
 .bench-a .btn{padding:8px 14px;font-size:var(--fs-sm)}
+
+/* Renta Web: cada bloque reproduce una ventana del programa, con sus campos. */
+.rw{display:flex;flex-direction:column;gap:var(--sp-3)}
+.rw-h{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-3);flex-wrap:wrap}
+.rw-h h3{margin:0;font-size:16px}
+.rw-rec{border:1px solid var(--line);border-radius:12px;padding:var(--sp-3)}
+.rw-rec-h{margin:0 0 var(--sp-3);font-size:14px;color:var(--tx-2)}
+.rw-rec-h small{display:block;color:var(--mu);margin-top:2px}
+.rw-fields{display:grid;grid-template-columns:repeat(var(--rw-n,3),minmax(0,1fr));gap:var(--sp-3)}
+.rw-f{display:flex;flex-direction:column;align-items:flex-start;gap:6px;min-width:0}
+.rw-f>span{font-size:var(--fs-sm);color:var(--mu)}
+.rw-total{margin:0;font-size:14px;color:var(--tx-2);display:flex;flex-wrap:wrap;gap:var(--sp-2) var(--sp-4)}
+.rw-help{margin:0;display:grid;gap:var(--sp-2);font-size:14px}
+.rw-help>div{display:grid;grid-template-columns:minmax(140px,220px) minmax(0,1fr);gap:var(--sp-3)}
+.rw-help dt{font-weight:650}
+.rw-help dd{margin:0;color:var(--tx-2)}
+@media(max-width:640px){
+  .rw-fields{grid-template-columns:minmax(0,1fr)}
+  .rw-help>div{grid-template-columns:minmax(0,1fr);gap:2px}
+}
+.box-w{display:block;margin-top:2px;color:var(--mu);font-size:var(--fs-sm)}

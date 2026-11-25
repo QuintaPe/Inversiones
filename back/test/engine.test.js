@@ -116,6 +116,37 @@ test('buildIncome: intereses y premios por ejercicio con su retención', () => {
   close(inc['2026'].interest.g, 1);
 });
 
+test('buildIncome: intereses del 31 de diciembre y retención del bonus de Private Markets', () => {
+  const r = (o) => ({ category: 'CASH', asset_class: '', name: '', symbol: '', amount: '', fee: '', tax: '', shares: '', description: '', ...o });
+  const inc = buildIncome([
+    // Los intereses de diciembre llegan el 1 de enero: cuentan en el año anterior.
+    r({ transaction_id: 'a', type: 'INTEREST_PAYMENT', date: '2026-01-01', amount: '14.65', tax: '-2.78' }),
+    r({ transaction_id: 'b', type: 'BONUS', date: '2025-09-19', amount: '100.000000' }),
+    r({ transaction_id: 'c', type: 'BUY', category: 'TRADING', asset_class: 'PRIVATE_FUND', symbol: 'LU3170240538', date: '2025-10-22', shares: '100' }),
+    // El ajuste del bonus llega con +19, pero es la retención del 19 % sobre él.
+    r({ transaction_id: 'd', type: 'MANUAL', date: '2025-10-22', amount: '0.000000', tax: '19.00', description: 'Capital Gains Tax' }),
+  ]);
+  close(inc['2025'].interest.g, 14.65);
+  close(inc['2025'].interest.t, 2.78);
+  close(inc['2025'].reward.g, 100);
+  close(inc['2025'].reward.t, 19);
+  assert.equal(inc['2026'], undefined);
+});
+
+test('buildIncome: lo cobrado antes de la primera retención española va aparte', () => {
+  const r = (o) => ({ category: 'CASH', asset_class: '', name: '', symbol: '', amount: '', fee: '', tax: '', shares: '', description: '', ...o });
+  const inc = buildIncome([
+    r({ transaction_id: 'a', type: 'INTEREST_PAYMENT', date: '2025-05-01', amount: '2.23' }), // sucursal alemana
+    r({ transaction_id: 'b', type: 'BENEFITS_SAVEBACK', date: '2025-06-02', amount: '1.23' }),
+    r({ transaction_id: 'c', type: 'INTEREST_PAYMENT', date: '2025-07-01', amount: '2.24', tax: '-0.43' }), // ya en España
+    r({ transaction_id: 'd', type: 'INTEREST_PAYMENT', date: '2025-08-01', amount: '1.30', tax: '-0.25' }),
+  ])['2025'];
+  assert.equal(inc.since, '2025-06-30');
+  close(inc.pre.g, 3.46);
+  assert.equal(inc.pre.n, 2);
+  close(inc.interest.g + inc.reward.g - inc.pre.g, 3.54);
+});
+
 test('externos: un plan de pensiones (código de la DGSFP) y lo marcado como externo van aparte de acciones y ETF', () => {
   const { rows } = parseCsv(csv(
     // Anotado como fondo, pero su identificador es un código de plan: es un plan de pensiones.

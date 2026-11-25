@@ -30,6 +30,7 @@ const num = (v) => {
 const abs = (v) => Math.abs(num(v));
 const shortId = (id) => String(id).slice(-8);
 const fmtDate = (d) => d.split('-').reverse().join('/');
+const dayBefore = (d) => new Date(Date.parse(`${d}T00:00:00Z`) - 86400000).toISOString().slice(0, 10);
 const fmtEur = (n) =>
   n.toLocaleString('es-ES', { maximumFractionDigits: 2, useGrouping: 'always' });
 
@@ -380,25 +381,41 @@ export function pendingRoundUps(rows) {
 
 /**
  * Rendimientos que no son dividendos, por ejercicio: intereses de la cuenta y premios
- * (saveback y bonus), con su retención. { año: { interest: { g, t, n }, reward: { g, t, n } } }
+ * (saveback y bonus), con su retención.
+ * { año: { interest: { g, t, n }, reward: { g, t, n }, pre: { g, t, n }, since } }
+ * pre: lo cobrado antes de `since`, el primer rendimiento con retención española; es lo que
+ * no está en los datos fiscales de Hacienda y hay que declarar a mano.
  */
 export function buildIncome(rows) {
   const out = {};
-  const slot = (r, k) => ((out[r.date.slice(0, 4)] ??= { interest: { g: 0, t: 0, n: 0 }, reward: { g: 0, t: 0, n: 0 } })[k]);
+  const year = (d) => (out[d.slice(0, 4)] ??= { interest: { g: 0, t: 0, n: 0 }, reward: { g: 0, t: 0, n: 0 }, pre: { g: 0, t: 0, n: 0 } });
   const savebacks = rows.filter((r) => r.type === 'BENEFITS_SAVEBACK' && r.symbol);
+  const isSavebackBuy = (r) => r.type === 'BUY' && abs(r.tax) > 0 && r.amount !== ''
+    && savebacks.some((s) => s.symbol === r.symbol && s.date === r.date && Math.abs(abs(s.amount) - abs(r.amount)) < 0.005);
+  // Fechas con compra de Private Markets: el ajuste de impuestos de ese día es la retención de su bonus.
+  const pmBuys = new Set(rows.filter((r) => r.type === 'BUY' && r.asset_class === 'PRIVATE_FUND').map((r) => r.date));
+  // Los intereses se abonan el día siguiente al cierre del mes: los del 31 de diciembre
+  // llegan el 1 de enero, pero el informe fiscal los imputa al ejercicio en que se devengan.
+  const accrued = (r) => (r.type === 'INTEREST_PAYMENT' ? dayBefore(r.date) : r.date);
+  // Primer rendimiento con retención española: desde ahí informa a Hacienda la sucursal española
+  // de Trade Republic. Lo anterior (sucursal alemana) no está en los datos fiscales.
+  const since = rows
+    .filter((r) => (r.type === 'INTEREST_PAYMENT' && num(r.tax) < 0) || isSavebackBuy(r))
+    .map(accrued).sort()[0] ?? null;
   for (const r of rows) {
-    if (r.type === 'INTEREST_PAYMENT') {
-      const s = slot(r, 'interest');
+    const d = accrued(r);
+    if (r.type === 'INTEREST_PAYMENT' || r.type === 'BENEFITS_SAVEBACK' || r.type === 'BONUS') {
+      const y = year(d), s = y[r.type === 'INTEREST_PAYMENT' ? 'interest' : 'reward'];
       s.g += num(r.amount); s.t += abs(r.tax); s.n++;
-    } else if (r.type === 'BENEFITS_SAVEBACK' || r.type === 'BONUS') {
-      const s = slot(r, 'reward');
-      s.g += num(r.amount); s.t += abs(r.tax); s.n++;
-    } else if (r.type === 'MANUAL' && num(r.tax) < 0) {
-      // Cargo de impuestos suelto (p. ej. por el bonus). Los positivos son abonos, no retenciones.
-      slot(r, 'reward').t += abs(r.tax);
-    } else if (r.type === 'BUY' && abs(r.tax) > 0 && r.amount !== ''
-      && savebacks.some((s) => s.symbol === r.symbol && s.date === r.date && Math.abs(abs(s.amount) - abs(r.amount)) < 0.005)) {
-      slot(r, 'reward').t += abs(r.tax); // la retención del saveback viene en la compra que financia
+      if (since && d < since) { y.pre.g += num(r.amount); y.pre.t += abs(r.tax); y.pre.n++; }
+      y.since = since;
+    } else if (r.type === 'MANUAL' && abs(r.tax) > 0 && (num(r.tax) < 0 || pmBuys.has(r.date))) {
+      // Cargo de impuestos suelto. El del bonus de Private Markets llega con signo positivo en el
+      // CSV, pero el informe fiscal lo da como retención del 19 % sobre el bonus. Fuera de ese
+      // caso, un importe positivo es un abono, no una retención.
+      year(d).reward.t += abs(r.tax);
+    } else if (isSavebackBuy(r)) {
+      year(d).reward.t += abs(r.tax); // la retención del saveback viene en la compra que financia
     }
   }
   return out;

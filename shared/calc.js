@@ -257,6 +257,73 @@ export function splitWithholding(gross, tax, isin = '') {
   return { es: tax - foreign, foreign };
 }
 
+// Emisores extranjeros con CUSIP internacional (CINS): US + letra del país. USN… es neerlandés (ASML).
+const CINS = { C: 'CA', D: 'DE', F: 'FR', G: 'GB', H: 'CH', J: 'JP', L: 'LU', N: 'NL' };
+/** País del emisor (código de dos letras) a partir del ISIN, o '??'. */
+export function issuerCode(isin = '') {
+  if (!/^[A-Z]{2}/.test(isin)) return '??';
+  if (isin.startsWith('US') && CINS[isin[2]]) return CINS[isin[2]];
+  return isin.slice(0, 2);
+}
+
+/**
+ * Retención en origen sobre dividendos de no residentes, por país del emisor. Sirve para
+ * reconstruir el bruto cuando el CSV trae el dividendo ya neto de ella (ver divFiscal).
+ */
+export const ORIGIN_RATE = {
+  US: 0.15, NL: 0.15, IE: 0.25, CA: 0.25, DK: 0.27, CH: 0.35, DE: 0.26375, AT: 0.275,
+  BE: 0.30, IT: 0.26, FI: 0.35, NO: 0.25, SE: 0.30,
+};
+/**
+ * Lo que se puede deducir por doble imposición, como fracción del bruto. Lo habitual en los
+ * convenios es el 15 %. Con Dinamarca no hay convenio desde 2009, y Trade Republic declara esa
+ * retención como no acreditable.
+ */
+export const TREATY_CAP = { DK: 0 };
+const treatyCap = (code) => TREATY_CAP[code] ?? TREATY_RATE;
+
+/**
+ * Cifras fiscales de un dividendo: { g: bruto, tax, es, foreign, grossed }.
+ * Hay dividendos extranjeros que llegan en el CSV ya netos de la retención en origen: la
+ * columna de impuestos solo trae el 19 % español sobre lo cobrado. El informe fiscal de
+ * Trade Republic los declara por el bruto, con la retención en origen aparte (Novo Nordisk,
+ * Accenture, CGI, ASML…). En ese caso se reconstruye el bruto con la retención del país
+ * (grossed = true). Por debajo de 1 € el redondeo no deja distinguir un caso del otro.
+ */
+export function divFiscal(x) {
+  const isin = x.p?.isin ?? '';
+  // Empresa española con la retención vacía: el CSV trae el neto, y el 19 % se retuvo igualmente (IAG).
+  if (isin.startsWith('ES') && x.g >= 1 && !(x.tax > 0.005)) {
+    const g = x.g / (1 - ES_RATE);
+    return { g, tax: g - x.g, es: g - x.g, foreign: 0, grossed: true };
+  }
+  const rate = ORIGIN_RATE[issuerCode(isin)];
+  // Lo retenido es justo el tipo del país (p. ej. 26,375 % en Alemania): solo hubo retención en origen.
+  if (rate && x.g >= 1 && Math.abs(x.tax - x.g * rate) <= 0.011) {
+    return { g: x.g, tax: x.tax, es: 0, foreign: x.tax, grossed: false };
+  }
+  const w = splitWithholding(x.g, x.tax, isin);
+  if (rate && x.g >= 1 && w.foreign === 0 && w.es > 0 && Math.abs(x.tax - x.g * ES_RATE) <= 0.011) {
+    const g = x.g / (1 - rate);
+    return { g, tax: x.tax + (g - x.g), es: w.es, foreign: g - x.g, grossed: true };
+  }
+  return { g: x.g, tax: x.tax, es: w.es, foreign: w.foreign, grossed: false };
+}
+
+/**
+ * Apartado de la declaración en el que va la venta de un valor:
+ *  stock: acciones negociadas · iic: fondos y ETF · other: otros elementos patrimoniales
+ *  (warrants, derivados, ETC, renta fija) · crypto: monedas virtuales · pm: Private Markets.
+ * Un ETC (oro físico…) no es una IIC aunque cotice como un ETF: es un título de deuda.
+ */
+export function saleGroup(p) {
+  if (p.grp === 'pm' || p.cls === 'PRIVATE_FUND') return 'pm';
+  if (p.cls === 'CRYPTO') return 'crypto';
+  if (p.cls === 'DERIVATIVE' || p.cls === 'BOND') return 'other';
+  if (p.cls === 'FUND') return /\bphysical\b|\betc\b/i.test(p.name ?? '') ? 'other' : 'iic';
+  return 'stock';
+}
+
 const CARRY_YEARS = 4; // las pérdidas pendientes se compensan en los cuatro ejercicios siguientes
 
 /**
@@ -274,6 +341,7 @@ export function taxYears(sl, dv, income = {}) {
   const y = (k) => (by[k] ??= {
     year: k, sales: [], divs: [], proceeds: 0, costF: 0, gainF: 0, gainAvg: 0, wins: 0, losses: 0, divG: 0, divT: 0,
     wash: [], washLoss: 0, deferred: 0, released: 0, divEs: 0, divFor: 0, forDed: 0, forGross: 0, countries: {},
+    divPre: { g: 0, t: 0, n: 0 }, divSince: null, forRcm: 0, forGains: 0,
   });
   // Pérdidas diferidas por valor: [{ d: fecha del lote recomprado, sh: acciones, per: pérdida por acción }]
   const pending = {};
@@ -308,19 +376,31 @@ export function taxYears(sl, dv, income = {}) {
     }
   }
   for (const r of Object.values(by)) r.sales.reverse(); // las más recientes primero, como el resto de listas
+  // Primer dividendo con retención española clara: desde ahí paga la sucursal española de Trade
+  // Republic. Antes (sucursal alemana) no se retiene nada en España: lo retenido es todo de origen,
+  // y esos cobros no están en los datos fiscales de Hacienda.
+  const divSince = [...dv].sort((a, b) => a.d.localeCompare(b.d))
+    .find((x) => x.g >= 1 && !x.p?.isin?.startsWith('ES') && divFiscal(x).es > 0)?.d ?? null;
   for (const x of dv) {
     const r = y(x.d.slice(0, 4));
     r.divs.push(x);
-    r.divG += x.g; r.divT += x.tax;
     // Retención española (a cuenta del IRPF) y de origen (deducible por doble imposición
     // solo hasta el tipo del convenio; el exceso se reclama al país de origen).
-    const w = splitWithholding(x.g, x.tax, x.p?.isin);
-    const ded = Math.min(w.foreign, x.g * TREATY_RATE);
-    r.divEs += w.es; r.divFor += w.foreign; r.forDed += ded;
-    if (w.foreign > 0) r.forGross += x.g;
-    const code = /^[A-Z]{2}/.test(x.p?.isin ?? '') ? x.p.isin.slice(0, 2) : '??';
-    const c = (r.countries[code] ??= { code, isin: x.p?.isin ?? '', n: 0, g: 0, t: 0, es: 0, foreign: 0, ded: 0 });
-    c.n++; c.g += x.g; c.t += x.tax; c.es += w.es; c.foreign += w.foreign; c.ded += ded;
+    const code = issuerCode(x.p?.isin);
+    // Antes del cambio, o después pero sin retención española (aún lo pagó la sucursal alemana):
+    // la española retiene el 19 % de todo, así que un dividendo extranjero sin ella no es suyo.
+    let f = divFiscal(x);
+    const pre = divSince != null && code !== 'ES' && (x.d < divSince || (x.g >= 1 && f.es < 0.005));
+    if (pre) f = { g: x.g, tax: x.tax, es: 0, foreign: x.tax, grossed: false };
+    r.divG += f.g; r.divT += f.tax;
+    if (pre) { r.divPre.g += f.g; r.divPre.t += f.es; r.divPre.n++; }
+    if (code !== 'ES') r.forRcm += f.g; // rendimientos obtenidos en el extranjero
+    if (f.grossed) { r.grossedN = (r.grossedN ?? 0) + 1; r.grossedUp = (r.grossedUp ?? 0) + f.foreign; }
+    const ded = Math.min(f.foreign, f.g * treatyCap(code));
+    r.divEs += f.es; r.divFor += f.foreign; r.forDed += ded;
+    if (ded > 0) r.forGross += f.g;
+    const c = (r.countries[code] ??= { code, isin: x.p?.isin ?? '', n: 0, g: 0, t: 0, es: 0, foreign: 0, ded: 0, cap: treatyCap(code) });
+    c.n++; c.g += f.g; c.t += f.tax; c.es += f.es; c.foreign += f.foreign; c.ded += ded;
   }
   for (const k of Object.keys(income)) y(k);
 
@@ -330,6 +410,8 @@ export function taxYears(sl, dv, income = {}) {
     const inc = income[r.year] ?? {};
     r.intG = inc.interest?.g ?? 0; r.intT = inc.interest?.t ?? 0; r.intN = inc.interest?.n ?? 0;
     r.rewG = inc.reward?.g ?? 0; r.rewT = inc.reward?.t ?? 0; r.rewN = inc.reward?.n ?? 0;
+    r.incPre = { g: inc.pre?.g ?? 0, t: inc.pre?.t ?? 0, n: inc.pre?.n ?? 0 }; r.incSince = inc.since ?? null;
+    r.divSince = divSince;
     r.rcm = r.divG + r.intG + r.rewG; // rendimientos del capital mobiliario
     r.withheld = r.divEs + r.intT + r.rewT; // solo lo retenido en España va a cuenta de la cuota
     r.gainTax = r.gainF - r.deferred + r.released; // resultado que cuenta este año
@@ -361,12 +443,17 @@ export function taxYears(sl, dv, income = {}) {
     r.dii = Math.min(r.forDed, r.avgRate * r.forGross);
     r.forExcess = r.divFor - r.forDed; // retenido en origen por encima del convenio
     r.due = r.quota - r.dii - r.withheld;
-    // Ventas agrupadas por entidad emisora, como las pide Renta Web.
+    // Ventas agrupadas por entidad emisora, como las pide Renta Web, y por apartado de la declaración.
     const by = {};
+    r.groups = {};
     for (const x of r.sales) {
-      const e = (by[x.p.isin] ??= { p: x.p, n: 0, proceeds: 0, cost: 0, gain: 0 });
+      const e = (by[x.p.isin] ??= { p: x.p, n: 0, proceeds: 0, cost: 0, gain: 0, grp: saleGroup(x.p) });
       e.n++; e.proceeds += x.net; e.cost += x.csF; e.gain += x.reF;
+      const g = (r.groups[e.grp] ??= { n: 0, proceeds: 0, cost: 0, gain: 0 });
+      g.n++; g.proceeds += x.net; g.cost += x.csF; g.gain += x.reF;
+      if (issuerCode(x.p.isin) !== 'ES') r.forGains += x.reF; // ganancias obtenidas en el extranjero
     }
+    r.forGains = Math.max(0, r.forGains);
     r.issuers = Object.values(by).sort((a, b) => a.p.name.localeCompare(b.p.name));
   }
   return Object.values(by).sort((a, b) => b.year.localeCompare(a.year));

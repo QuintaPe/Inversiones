@@ -411,3 +411,55 @@ test('proyección: interés compuesto con aportaciones, meta y aportación habit
   ];
   close(monthlyContribution(all, '2026-11-14'), 100);
 });
+
+test('divFiscal: reconstruye el bruto de los dividendos que llegan netos de la retención en origen', async () => {
+  const { divFiscal, issuerCode } = await import('../../shared/calc.js');
+  const near = (a, b) => assert.ok(Math.abs(a - b) < 0.006, `${a} ≈ ${b}`);
+  const d = (isin, g, tax) => divFiscal({ p: { isin }, g, tax });
+  // Cifras del informe fiscal de Trade Republic de 2025.
+  let f = d('DK0062498333', 33.01, 6.27); // Novo Nordisk: 27 % en Dinamarca
+  near(f.g, 45.22); near(f.foreign, 12.21); near(f.es, 6.27); assert.ok(f.grossed);
+  f = d('USN070592100', 2.72, 0.52); // ASML: emisor neerlandés con CUSIP de EE. UU.
+  near(f.g, 3.20); near(f.foreign, 0.48);
+  f = d('IE00B4BNMY34', 4.21, 0.80); near(f.g, 5.61); near(f.foreign, 1.40);
+  f = d('ES0177542018', 6.56, 0); near(f.g, 8.10); near(f.es, 1.54); near(f.foreign, 0); // IAG, retención vacía
+  // Un dividendo de EE. UU. que ya trae las dos retenciones no se toca.
+  f = d('US91324P1021', 16.88, 5.26); near(f.g, 16.88); near(f.foreign, 2.53); assert.equal(f.grossed, false);
+  // Sin retención en origen (Reino Unido, Hong Kong) ni por debajo de 1 €.
+  assert.equal(d('GB0005405286', 7.74, 1.47).grossed, false);
+  assert.equal(d('CA12532H1047', 0.63, 0.12).grossed, false);
+  assert.deepEqual(['USN070592100', 'US0378331005', 'DK0062498333', ''].map(issuerCode), ['NL', 'US', 'DK', '??']);
+});
+
+test('taxYears: ventas por apartado de la declaración y Dinamarca sin deducción', async () => {
+  const { saleGroup } = await import('../../shared/calc.js');
+  assert.deepEqual([
+    { cls: 'STOCK' }, { cls: 'FUND', name: 'S&P 500 Information Tech USD (Acc)' }, { cls: 'FUND', name: 'Physical Gold USD (Acc)' },
+    { cls: 'DERIVATIVE' }, { cls: 'CRYPTO' }, { cls: 'PRIVATE_FUND', grp: 'pm' },
+  ].map(saleGroup), ['stock', 'iic', 'other', 'other', 'crypto', 'pm']);
+  const st = { isin: 'US0378331005', name: 'Apple', cls: 'STOCK' }, wt = { isin: 'DE000SV113E7', name: 'Warrant', cls: 'DERIVATIVE' };
+  const dk = { isin: 'DK0062498333', name: 'Novo', cls: 'STOCK' };
+  const sale = (p, net, csF) => ({ p, k: 'S', d: '2025-07-01', sh: 1, net, csF, cs: csF, re: net - csF, reF: net - csF, lotsUsed: [], sa: 0 });
+  const [y] = taxYears([sale(st, 300, 100), sale(wt, 540, 467)], [{ p: dk, k: 'D', d: '2025-08-19', g: 33.01, tax: 6.27 }]);
+  assert.deepEqual(Object.keys(y.groups).sort(), ['other', 'stock']);
+  assert.equal(y.groups.other.gain, 73);
+  assert.ok(Math.abs(y.divFor - 12.21) < 0.01);
+  assert.equal(y.forDed, 0);
+  assert.equal(y.dii, 0);
+});
+
+test('taxYears: los dividendos sin retención española son de antes del cambio de sucursal', () => {
+  const div = (isin, d, g, tax) => ({ p: { isin, name: isin }, k: 'D', d, g, tax });
+  const [y] = taxYears([], [
+    div('DE000A1EWWW0', '2025-05-20', 10, 2.63), // Alemania: solo su 26,375 %
+    div('US5949181045', '2025-06-12', 1.45, 0.22), // EE. UU.: solo su 15 %
+    div('US30303M1027', '2025-06-26', 1.81, 0.56), // primero con retención española
+    div('JP3756600007', '2025-06-30', 6.81, 0), // después, pero sin retención española
+    div('US91324P1021', '2025-09-23', 16.88, 5.26),
+  ]);
+  assert.equal(y.divSince, '2025-06-26');
+  assert.equal(y.divPre.n, 3);
+  assert.ok(Math.abs(y.divPre.g - 18.26) < 1e-9);
+  assert.equal(y.divPre.t, 0);
+  assert.ok(Math.abs(y.divFor - (2.63 + 0.22 + 0.27 + 2.53)) < 0.02);
+});
