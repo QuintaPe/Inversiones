@@ -65,7 +65,10 @@ export function parseCsv(text) {
       } else row.mcc_code = '';
       return row;
     });
-  return { total: records.length, rows, invest: rows.filter(isInvestRow).length, unknown: unknownTypes(rows) };
+  // Día en que la cuenta pasó de la sucursal alemana a la española: los traspasos (MIGRATION) no
+  // cambian la cartera, pero marcan desde cuándo informa a Hacienda la sucursal española.
+  const migrated = records.filter((r) => r.type === 'MIGRATION' && r.date).map((r) => r.date).sort()[0] ?? null;
+  return { total: records.length, rows, invest: rows.filter(isInvestRow).length, unknown: unknownTypes(rows), migrated };
 }
 
 /**

@@ -900,22 +900,11 @@ button.plain{background:none;border:0;padding:0;text-align:left;border-radius:12
 .utabs button.on{color:var(--tx);box-shadow:inset 0 -2px 0 var(--acc-tx)}
 .card .note.warn-t{display:block;background:color-mix(in srgb,var(--warn) 11%,transparent);color:var(--tx-2);padding:var(--sp-3) 14px;border-radius:var(--r-sm)}
 .card .note.warn-t svg{color:var(--warn);margin-right:4px}
-.boxes-l{list-style:none;padding:0;margin:0}
-.boxes-l li{display:grid;grid-template-columns:64px minmax(0,1fr) auto;align-items:center;gap:var(--sp-3);padding:var(--sp-3) 0;border-bottom:1px solid var(--line)}
-.boxes-l li:last-child{border-bottom:0}
-.box-n{justify-self:start;background:var(--surface-2);border-radius:8px;padding:2px 9px;font-variant-numeric:tabular-nums;font-weight:650;font-size:var(--fs-sm);color:var(--tx-2)}
-.box-t{color:var(--tx-2);font-size:14px}
-.box-v{display:inline-flex;align-items:center;gap:var(--sp-2);background:var(--surface-2);border:0;border-radius:10px;padding:7px 10px 7px 12px;font-weight:650;font-variant-numeric:tabular-nums;white-space:nowrap;transition:background var(--dur-1)}
-.box-v svg{color:var(--mu)}
-.box-v:hover{background:var(--surface-3)}.box-v:hover svg{color:var(--tx)}
-.box-v:disabled{cursor:default}
 @media(max-width:960px){.tax-viz{grid-template-columns:minmax(0,1fr);gap:var(--sp-4)}}
 @media(max-width:640px){
   .tax-stats{grid-template-columns:repeat(3,minmax(0,1fr));width:100%;gap:var(--sp-3)}
   .tax-stats dd{font-size:16px}
-  .boxes-l li{grid-template-columns:48px minmax(0,1fr);row-gap:var(--sp-2)}
-  .box-v{grid-column:2;justify-self:start}
-}
+    }
 
 /* ---------- fiscalidad: casillas e informe imprimible ---------- */
 .box{display:inline-block;background:var(--surface-3);border-radius:8px;padding:2px 9px;font-variant-numeric:tabular-nums;letter-spacing:.02em}
@@ -938,7 +927,7 @@ button.plain{background:none;border:0;padding:0;text-align:left;border-radius:12
   .print-h{display:block;margin-bottom:6px}
   .tax-pane.off{display:flex!important}
   .tax-steps.folded{display:block!important}
-  .tax-tabs,.fold,.box-v svg,.no-print{display:none!important}
+  .tax-tabs,.fold,.rw-v svg,.no-print{display:none!important}
   .print-h h1{font-size:22px;letter-spacing:-.03em}
   .print-h p{color:var(--mu)}
   .stack{gap:14px}
@@ -1238,23 +1227,65 @@ button.plain{background:none;border:0;padding:0;text-align:left;border-radius:12
 .bench-a span{margin-right:auto}
 .bench-a .btn{padding:8px 14px;font-size:var(--fs-sm)}
 
-/* Renta Web: cada bloque reproduce una ventana del programa, con sus campos. */
-.rw{display:flex;flex-direction:column;gap:var(--sp-3)}
-.rw-h{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-3);flex-wrap:wrap}
-.rw-h h3{margin:0;font-size:16px}
-.rw-rec{border:1px solid var(--line);border-radius:12px;padding:var(--sp-3)}
-.rw-rec-h{margin:0 0 var(--sp-3);font-size:14px;color:var(--tx-2)}
-.rw-rec-h small{display:block;color:var(--mu);margin-top:2px}
-.rw-fields{display:grid;grid-template-columns:repeat(var(--rw-n,3),minmax(0,1fr));gap:var(--sp-3)}
-.rw-f{display:flex;flex-direction:column;align-items:flex-start;gap:6px;min-width:0}
-.rw-f>span{font-size:var(--fs-sm);color:var(--mu)}
-.rw-total{margin:0;font-size:14px;color:var(--tx-2);display:flex;flex-wrap:wrap;gap:var(--sp-2) var(--sp-4)}
-.rw-help{margin:0;display:grid;gap:var(--sp-2);font-size:14px}
-.rw-help>div{display:grid;grid-template-columns:minmax(140px,220px) minmax(0,1fr);gap:var(--sp-3)}
-.rw-help dt{font-weight:650}
-.rw-help dd{margin:0;color:var(--tx-2)}
+/* Renta Web: cada bloque es una ventana del programa; en escritorio una tabla con un registro por
+   fila, en móvil cada registro se apila como lista de campo → importe. */
+.rw{display:flex;flex-direction:column;gap:var(--sp-3);scroll-margin-top:120px}
+.rw-h{display:flex;align-items:center;gap:var(--sp-3);flex-wrap:wrap}
+.rw-h h3{margin:0;font-size:var(--fs-lg);line-height:1.25;flex:1;min-width:12ch}
+.rw-box{display:inline-block;background:var(--surface-3);color:var(--tx-2);border-radius:8px;padding:2px 8px;font-size:var(--fs-xs);font-weight:650;font-variant-numeric:tabular-nums;white-space:nowrap}
+.rw-intro{margin:0;color:var(--tx-2);font-size:14px}
+.rw-t{width:100%;border-collapse:collapse;table-layout:fixed}
+.rw-t th,.rw-t td{padding:var(--sp-3) var(--sp-2);border-top:1px solid var(--line);text-align:right;vertical-align:middle}
+.rw-t thead th{border-top:0;padding-top:0;font-size:var(--fs-xs);font-weight:550;color:var(--mu);text-transform:none}
+.rw-t th:first-child{text-align:left;padding-left:0;width:34%}
+.rw-t td:last-child{padding-right:0}
+.rw-rec{font-weight:400}
+.rw-rec-l{display:block;font-weight:650;color:var(--tx)}
+.rw-rec small{display:block;margin-top:2px;color:var(--mu);font-size:var(--fs-xs);font-weight:400;overflow-wrap:anywhere}
+.rw-t tbody tr.is-manual th{box-shadow:inset 3px 0 0 var(--acc);padding-left:var(--sp-3)}
+.rw-t tfoot th,.rw-t tfoot td{font-weight:650;color:var(--tx-2);font-size:14px}
+.rw-t tfoot b{color:var(--tx);font-variant-numeric:tabular-nums}
+.rw-v{display:inline-flex;align-items:center;gap:6px;min-height:32px;max-width:100%;background:transparent;border:0;border-radius:8px;padding:4px 8px;margin-right:-8px;font:inherit;font-weight:650;font-variant-numeric:tabular-nums;color:var(--tx);cursor:pointer;transition:background var(--dur-1)}
+.rw-v span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rw-v svg{flex:none;color:var(--mu)}
+.rw-v:hover{background:var(--surface-2)}.rw-v:hover svg{color:var(--tx)}
+.rw-v:disabled{cursor:default}
+.rw-tag{display:inline-flex;align-items:center;gap:4px;margin-top:4px;border-radius:999px;padding:2px 8px;font-size:var(--fs-xs);font-weight:650;white-space:nowrap;background:var(--surface-3);color:var(--tx-2)}
+.rw-tag.manual{background:color-mix(in srgb,var(--acc) 18%,transparent);color:var(--acc-tx)}
+.rw-more{border-top:1px solid var(--line);padding-top:var(--sp-2)}
+.rw-more summary{cursor:pointer;color:var(--tx-2);font-size:14px;font-weight:600;padding:var(--sp-1) 0;list-style-position:inside}
+.rw-more summary:hover{color:var(--tx)}
+.rw-more dl{margin:var(--sp-2) 0 0;display:grid;gap:var(--sp-2);font-size:14px}
+.rw-more dl>div{display:grid;grid-template-columns:minmax(120px,200px) minmax(0,1fr);gap:var(--sp-3)}
+.rw-more dt{font-weight:650}
+.rw-more dd{margin:0;color:var(--tx-2)}
+/* Índice de casillas */
+.rw-index{display:flex;flex-direction:column;gap:var(--sp-3)}
+.rw-index-h{display:flex;align-items:flex-start;justify-content:space-between;gap:var(--sp-3);flex-wrap:wrap}
+.rw-index-h h2{margin:0;font-size:var(--fs-lg)}
+.rw-index-h p{margin:2px 0 0;color:var(--mu);font-size:14px}
+.rw-index-h .rw-tag{margin-top:0}
+.rw-index ul{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:var(--sp-2)}
+.rw-index li button{width:100%;display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:var(--sp-2);text-align:left;background:var(--surface-2);border:0;border-radius:12px;padding:10px 12px;font:inherit;color:var(--tx);cursor:pointer;position:relative;transition:background var(--dur-1)}
+.rw-index li button:hover{background:var(--surface-3)}
+.rw-index-t{font-size:14px;color:var(--tx-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rw-index li b{font-variant-numeric:tabular-nums;font-size:14px}
+.rw-dot{position:absolute;top:6px;right:6px;width:7px;height:7px;border-radius:50%;background:var(--acc)}
 @media(max-width:640px){
-  .rw-fields{grid-template-columns:minmax(0,1fr)}
-  .rw-help>div{grid-template-columns:minmax(0,1fr);gap:2px}
+  .rw{gap:var(--sp-2)}
+  .rw-t,.rw-t tbody,.rw-t tfoot,.rw-t tr,.rw-t th,.rw-t td{display:block;width:auto}
+  .rw-t thead{display:none}
+  .rw-t tr{border-top:1px solid var(--line);padding:var(--sp-3) 0}
+  .rw-t th,.rw-t td{border:0;padding:0}
+  .rw-t th:first-child{width:auto;margin-bottom:var(--sp-2)}
+  .rw-t td{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-3);min-height:40px}
+  .rw-t td::before{content:attr(data-label);color:var(--mu);font-size:14px;text-align:left}
+  .rw-t td:empty{display:none}
+  .rw-t tbody tr.is-manual{box-shadow:inset 3px 0 0 var(--acc);padding-left:var(--sp-3)}
+  .rw-t tbody tr.is-manual th{box-shadow:none;padding-left:0}
+  .rw-t tfoot tr{background:var(--surface-2);border:0;border-radius:12px;padding:var(--sp-2) var(--sp-3);margin-top:var(--sp-1)}
+  .rw-t tfoot td{min-height:32px}
+  .rw-v{min-height:40px}
+  .rw-more dl>div{grid-template-columns:minmax(0,1fr);gap:2px}
+  .rw-index ul{grid-template-columns:minmax(0,1fr)}
 }
-.box-w{display:block;margin-top:2px;color:var(--mu);font-size:var(--fs-sm)}

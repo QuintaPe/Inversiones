@@ -29,7 +29,7 @@ export default function portfolioRoutes(api, { db, quotes, logos, stream, pf }) 
   // (subir dos veces el mismo archivo no duplica nada); ?replace=1 sustituye todo.
   api.post('/upload', upload.single('file'), async (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'No se ha recibido ningún archivo.' });
-    const { rows, total, invest, unknown } = parseCsv(req.file.buffer.toString('utf8'));
+    const { rows, total, invest, unknown, migrated } = parseCsv(req.file.buffer.toString('utf8'));
     const name = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
     // ?preview=1: cuenta qué cambiaría, sin guardar nada.
     if (req.query.preview === '1') {
@@ -37,6 +37,11 @@ export default function portfolioRoutes(api, { db, quotes, logos, stream, pf }) 
       return res.json({
         preview: { name, total, relevant: invest, unknown, from: dates[0] ?? null, to: dates.at(-1) ?? null, ...(await db.previewUpload(req.userId, rows)) },
       });
+    }
+    if (migrated) {
+      // Se queda el primero: un CSV parcial más reciente no lo mueve.
+      const prev = (await db.getUserSettings(req.userId)).migrated;
+      if (!prev || migrated < prev) await db.setUserSetting(req.userId, 'migrated', migrated);
     }
     const info = await db.saveUpload(req.userId, {
       name, total, rows, relevant: invest, replace: req.query.replace === '1',

@@ -32,6 +32,11 @@ const SHAPES = {
     if (Math.abs(parts.reduce((t, p) => t + p.w, 0) - 100) > 0.05) return undefined;
     return { parts };
   },
+  // Día del traspaso de la cuenta a la sucursal española (sale del CSV): separa en la declaración
+  // lo que ya informó a Hacienda de lo que hay que añadir a mano.
+  migrated(v) {
+    return typeof v === 'string' && isDate(v) ? v : undefined;
+  },
   // Resumen periódico por aviso push: cada semana o cada mes.
   digest(v) {
     return v && typeof v === 'object' && ['week', 'month'].includes(v.every) ? { every: v.every } : undefined;

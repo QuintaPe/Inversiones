@@ -177,3 +177,15 @@ test('efectivo: lo anotado como externo (o marcado sin efectivo) no toca el sald
   assert.equal(evs.US0378331005.noCash, true);
   assert.equal(evs.US5949181045.noCash, undefined);
 });
+
+test('parseCsv: el día del traspaso a la sucursal española sale de las filas MIGRATION', () => {
+  const mig = (id, dt) => row({ datetime: dt, category: 'DELIVERY', type: 'MIGRATION', amount: '', transaction_id: id });
+  const r = parseCsv(csv(
+    row({ datetime: '2025-03-01T10:00:00Z', transaction_id: 'b-1' }),
+    mig('m-2', '2025-06-11T00:13:07Z'),
+    mig('m-1', '2025-06-10T00:13:07Z'),
+  ));
+  assert.equal(r.migrated, '2025-06-10');
+  assert.ok(r.rows.every((x) => x.type !== 'MIGRATION')); // no entran en la cartera
+  assert.equal(parseCsv(csv(row({ datetime: '2025-03-01T10:00:00Z', transaction_id: 'b-1' }))).migrated, null);
+});
