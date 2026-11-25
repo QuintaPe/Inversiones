@@ -7,7 +7,7 @@ import { cashHealth, spendOf, incomeOf, investOf } from '../../../shared/cash.ts
 import Spending from './Spending.jsx';
 import Wealth from './Wealth.jsx';
 import { prettyName, categoryOf, isSpend, CAT } from '../lib/categories.js';
-import { eur, eurS, pct, sign, date, dateLong, month, compact } from '../lib/format.js';
+import { eur, eurS, pct, sign, date, dateLong, month, compact, dayShort } from '../lib/format.js';
 
 const MONTHS = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 const monthLong = (ym) => { const m = MONTHS[+ym.slice(5, 7) - 1]; return `${m[0].toUpperCase()}${m.slice(1)} de ${ym.slice(0, 4)}`; };
@@ -106,7 +106,7 @@ function ThisMonth({ h }) {
 }
 
 /** Extracto de movimientos de efectivo, por meses y filtrable por tipo. */
-function Statement({ moves, labels, year, years, setYear }) {
+function Statement({ moves, labels, cats = {}, year, years, setYear }) {
   const [kind, setKind] = useParam('mov', 'all', Object.fromEntries(KINDS.map(([k]) => [k, k === 'all' ? 'todo' : k])));
   const [q, setQ] = useParam('q', '');
   const [limit, setLimit] = useState(PAGE);
@@ -116,12 +116,19 @@ function Statement({ moves, labels, year, years, setYear }) {
     return moves.filter((m) => (year === 'all' || m[0].startsWith(year)) && (!ks || ks.includes(m[1]))
       && (!s || (m[3] ?? '').toLowerCase().includes(s) || (labels[m[1]] ?? '').toLowerCase().includes(s))).reverse();
   }, [moves, kind, year, q, labels]);
+  // Por meses (con lo que entra y sale en cada uno) y, dentro, por días: como la lista de operaciones.
   const groups = [];
   for (const m of rows.slice(0, limit)) {
     const ym = m[0].slice(0, 7);
-    if (groups.at(-1)?.ym !== ym) groups.push({ ym, items: [] });
-    groups.at(-1).items.push(m);
+    if (groups.at(-1)?.ym !== ym) groups.push({ ym, net: 0, days: [] });
+    const g = groups.at(-1);
+    if (g.days.at(-1)?.d !== m[0]) g.days.push({ d: m[0], net: 0, items: [] });
+    g.days.at(-1).items.push(m);
+    g.days.at(-1).net += m[2]; g.net += m[2];
   }
+  // Qué es cada movimiento, en palabras; y su icono, del color de su categoría si es un gasto.
+  const what = (m) => (m[1] === 'dividend' ? 'Dividendo' : m[1] === 'invest' ? (m[2] < 0 ? 'Compra' : 'Venta') : labels[m[1]] ?? m[1]);
+  const hue = (m) => (isSpend(m) ? { '--h': CAT[categoryOf(m, cats)]?.hue ?? 230 } : undefined);
   const present = new Set(moves.map((m) => m[1]));
   const kinds = KINDS.filter(([k]) => k === 'all' || (IN_KIND[k] ?? [k]).some((x) => present.has(x)));
   return (
@@ -140,18 +147,21 @@ function Statement({ moves, labels, year, years, setYear }) {
       {!rows.length && <Empty>No hay movimientos de este tipo en el periodo.</Empty>}
       {groups.map((g) => (
         <div key={g.ym} className="st-m">
-          <h3>{monthLong(g.ym)}</h3>
-          <ul>
-            {g.items.map((m, i) => (
-              <li key={`${m[0]}-${i}`}>
-                <span className="st-d">{date(m[0])}</span>
-                <span className="st-c">{m[3]
-                  ? <><b>{prettyName(m[3])}</b> · {m[1] === 'dividend' ? 'Dividendo' : m[1] === 'invest' ? (m[2] < 0 ? 'Compra' : 'Venta') : labels[m[1]] ?? m[1]}</>
-                  : labels[m[1]] ?? m[1]}</span>
-                <b className={`st-v ${m[2] > 0 ? 'gain' : ''}`}>{eurS(m[2])}</b>
-              </li>
-            ))}
-          </ul>
+          <h3 className="lst-mh"><span>{monthLong(g.ym)}</span><b className={g.net > 0 ? 'gain' : ''}>{eurS(g.net)}</b></h3>
+          {g.days.map((dy) => (
+            <div key={dy.d} className="pay-d">
+              <h3><span>{dayShort(dy.d)}</span>{dy.items.length > 1 && g.days.length > 1 && <span>{eurS(dy.net)}</span>}</h3>
+              <ul>
+                {dy.items.map((m, i) => (
+                  <li key={`${m[0]}-${i}`}>
+                    <span className="top-i" style={hue(m)} aria-hidden="true">{(prettyName(m[3]) || what(m))[0].toUpperCase()}</span>
+                    <span className="pay-n"><b>{prettyName(m[3]) || what(m)}</b><small>{m[3] ? what(m) : date(m[0])}</small></span>
+                    <b className={`pay-v ${m[2] > 0 ? 'gain' : ''}`}>{eurS(m[2])}</b>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
         </div>
       ))}
       {rows.length > limit && (
@@ -166,9 +176,18 @@ export default function Cash({ cash, labels, cats = {}, onCats, budgets = {}, on
   const [table, setTable] = useState(false);
   const health = useMemo(() => (cash ? cashHealth(cash) : null), [cash]);
   const [tab, setTab] = useParam('ver', 'resumen', TABS);
+  // El saldo al cierre de cada semana: día a día, las entradas y salidas lo convierten en dientes de
+  // sierra que tapan la tendencia. El último día con movimientos va siempre, para acabar en el saldo real.
   const series = useMemo(() => {
     if (!cash) return null;
-    return { t: cash.days.map(([d]) => Date.parse(`${d}T00:00:00Z`)), v: cash.days.map(([, v]) => v) };
+    const WEEK = 7 * 86400000, t = [], v = [];
+    let wk = null;
+    for (const [d, bal] of cash.days) {
+      const ms = Date.parse(`${d}T00:00:00Z`);
+      const w = Math.floor((ms + 3 * 86400000) / WEEK); // semanas de lunes a domingo
+      if (w === wk) { t[t.length - 1] = ms; v[v.length - 1] = bal; } else { t.push(ms); v.push(bal); wk = w; }
+    }
+    return { t, v };
   }, [cash]);
   if (cash === undefined) return <div className="sk" style={{ height: 320 }} />;
   if (!cash) {
@@ -221,8 +240,8 @@ export default function Cash({ cash, labels, cats = {}, onCats, budgets = {}, on
       {tab === 'resumen' && (
         <>
         <section className="chart-block">
-          <Lines x={series.t} height={220} label="Saldo de efectivo" base={0} scale={compact}
-            series={[{ key: 'v', values: series.v, cls: '', step: true, area: true }]}
+          <Lines x={series.t} height={220} label="Saldo de efectivo al cierre de cada semana" base={0} scale={compact}
+            series={[{ key: 'v', values: series.v, cls: '', area: true }]}
             span={(i0, i1) => (
               <>
                 <small>{dateLong(series.t[i0])} → {dateLong(series.t[i1])}</small>
@@ -267,7 +286,7 @@ export default function Cash({ cash, labels, cats = {}, onCats, budgets = {}, on
         ? <Spending moves={cash.moves} cats={cats} onCats={onCats} budgets={budgets} onBudgets={onBudgets} fail={fail} />
         : <div className="card"><Empty>Tu CSV no tiene pagos con tarjeta ni transferencias salientes.</Empty></div>)}
 
-      {tab === 'movimientos' && cash.moves && <Statement moves={cash.moves} labels={labels} year={year} years={years} setYear={setYear} />}
+      {tab === 'movimientos' && cash.moves && <Statement moves={cash.moves} labels={labels} cats={cats} year={year} years={years} setYear={setYear} />}
 
       {tab === 'patrimonio' && <Wealth portfolioValue={portfolioValue} cash={cash} hist={hist} fail={fail} />}
 

@@ -6,9 +6,9 @@ import path from 'node:path';
 import zlib from 'node:zlib';
 
 const BUDGET_KB = {
-  initial: 97, // JS que pide la página al abrir (React y react-dom ya son ~60 KB); subió de 95 con el buscador con acciones y las pestañas deslizantes
-  js: 191, // todo el JavaScript, con las secciones que se cargan bajo demanda (las funciones nuevas van ahí; subió con Patrimonio, con la ficha frente al índice con tu dinero, con los externos y con las ventanas de Renta Web)
-  css: 18, // con el rediseño (redesign.css), las ventanas de Renta Web y la escala compacta del móvil
+  initial: 97.5, // JS que pide la página al abrir (React y react-dom ya son ~60 KB); subió de 95 con el buscador con acciones y las pestañas deslizantes
+  js: 192, // todo el JavaScript, con las secciones que se cargan bajo demanda (las funciones nuevas van ahí; subió con Patrimonio, con la ficha frente al índice con tu dinero, con los externos y con las ventanas de Renta Web)
+  css: 18.5, // con el rediseño (redesign.css), las ventanas de Renta Web, la escala compacta del móvil y la ficha del activo
   fonts: 140, // woff2 ya comprimido: se cuenta tal cual
 };
 

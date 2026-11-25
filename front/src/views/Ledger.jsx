@@ -4,18 +4,13 @@ import { Asset, Empty, Icon, Search, Seg, Sticky } from '../components/ui.jsx';
 import { Kpi } from '../components/Kpi.jsx';
 import { useParam } from '../router.js';
 import { sum } from '../../../shared/calc.js';
-import { eur, eurS, qty, sign, date } from '../lib/format.js';
+import { eur, eurS, qty, sign, date, dayShort } from '../lib/format.js';
 
 const MONTHS = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 const monthLong = (ym) => { const m = MONTHS[+ym.slice(5, 7) - 1]; return `${m[0].toUpperCase()}${m.slice(1)} de ${ym.slice(0, 4)}`; };
 
 const KINDS = [['all', 'Todas'], ['B', 'Compras'], ['S', 'Ventas'], ['D', 'Dividendos']];
 const KIND = { B: ['Compra', 'buy'], S: ['Venta', 'sell'], D: ['Dividendo', 'div'] };
-/** «Jue 20 nov»: cabecera de cada día dentro del mes. */
-const dayLabel = (d) => {
-  const s = new Date(`${d}T12:00:00Z`).toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }).replace(/\.|,/g, '');
-  return s[0].toUpperCase() + s.slice(1);
-};
 /** Lo que entra (+) o sale (−) de la cuenta con cada operación. */
 const flow = (x) => (x.k === 'B' ? -x.net : x.net);
 const PAGE = 100;
@@ -66,8 +61,9 @@ export default function Ledger({ a, meta, onOpen, onAddOp, onRestoreOp }) {
       const m = x.d.slice(0, 7);
       if (out.at(-1)?.m !== m) out.push({ m, n: 0, net: 0, days: [] });
       const g = out.at(-1);
-      if (g.days.at(-1)?.d !== x.d) g.days.push({ d: x.d, items: [] });
+      if (g.days.at(-1)?.d !== x.d) g.days.push({ d: x.d, net: 0, items: [] });
       g.days.at(-1).items.push(x);
+      g.days.at(-1).net += flow(x);
       g.n++; g.net += flow(x);
     }
     return out;
@@ -107,7 +103,7 @@ export default function Ledger({ a, meta, onOpen, onAddOp, onRestoreOp }) {
           </header>
           {gr.days.map((dy) => (
             <div key={dy.d} className="ops-day">
-              <h3>{dayLabel(dy.d)}</h3>
+              <h3><span>{dayShort(dy.d)}</span>{dy.items.length > 1 && gr.days.length > 1 && <span>{eurS(dy.net)}</span>}</h3>
               <ul className="ops-l">
                 {dy.items.map((x) => (
                   <li key={x.id + x.k}>

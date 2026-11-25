@@ -4,9 +4,25 @@ import { Asset, Avatar, Card, Empty } from '../components/ui.jsx';
 import { Kpi, Spark } from '../components/Kpi.jsx';
 import { Columns } from '../charts.jsx';
 import { monthlyDividends, sum } from '../../../shared/calc.js';
-import { eur, pct, month, date, qty, num } from '../lib/format.js';
+import { eur, eurS, pct, month, date, qty, num, dayShort } from '../lib/format.js';
 
 const ym = (d) => d.slice(0, 7);
+const MONTHS = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+const monthLong = (m) => `${MONTHS[+m.slice(5, 7) - 1]} de ${m.slice(0, 4)}`;
+const cap = (s) => s[0].toUpperCase() + s.slice(1);
+/** Cobros por meses y, dentro, por días, del más reciente al más antiguo (como la lista de operaciones). */
+function byMonth(dv) {
+  const out = [];
+  for (const x of [...dv].sort((p, q) => q.d.localeCompare(p.d))) {
+    const m = ym(x.d);
+    if (out.at(-1)?.m !== m) out.push({ m, net: 0, days: [] });
+    const g = out.at(-1);
+    if (g.days.at(-1)?.d !== x.d) g.days.push({ d: x.d, net: 0, items: [] });
+    g.days.at(-1).items.push(x);
+    g.days.at(-1).net += x.net; g.net += x.net;
+  }
+  return out;
+}
 
 export default function Dividends({ a, onOpen }) {
   const months = useMemo(() => monthlyDividends(a.dv), [a.dv]);
@@ -186,16 +202,28 @@ export default function Dividends({ a, onOpen }) {
           {all ? 'Ocultar la lista' : 'Ver todos los cobros'}
         </button>
         {all && (
-          <ul className="feed">
-            {a.dv.map((x) => (
-              <li key={x.id}>
-                <button type="button" onClick={() => onOpen(x.p.isin)}>
-                  <Asset p={x.p} size="sm">{date(x.d)} · {qty(x.sh)} uds. · bruto {num(x.g)} − retención {num(x.tax)}{x.orig && ` · ${x.orig}`}</Asset>
-                  <span className="feed-a">{eur(x.net)}</span>
-                </button>
-              </li>
+          <div className="feed">
+            {byMonth(a.dv).map((g) => (
+              <div key={g.m}>
+                <h3 className="lst-mh"><span>{cap(monthLong(g.m))}</span><b className="gain">{eurS(g.net)}</b></h3>
+                {g.days.map((dy) => (
+                  <div key={dy.d} className="ops-day">
+                    <h3><span>{dayShort(dy.d)}</span>{dy.items.length > 1 && g.days.length > 1 && <span>{eurS(dy.net)}</span>}</h3>
+                    <ul className="ops-l">
+                      {dy.items.map((x) => (
+                        <li key={x.id}>
+                          <button type="button" onClick={() => onOpen(x.p.isin)} title={`Bruto ${num(x.g)} − retención ${num(x.tax)}${x.orig ? ` · ${x.orig}` : ''}`}>
+                            <Asset p={x.p} size="sm">{qty(x.sh)} uds. · retención {eur(x.tax)}</Asset>
+                            <span className="row-r"><span className="row-v gain">{eurS(x.net)}</span></span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
             ))}
-          </ul>
+          </div>
         )}
       </section>
       <p className="note">

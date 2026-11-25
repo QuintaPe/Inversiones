@@ -598,13 +598,14 @@ export default function Tax({ a, income, onOpen, settings }) {
         Las casillas cambian de número entre campañas: si no encuentras una, búscala por su nombre en Renta Web.
       </p>
       </div>
-      <p className="note">
-        <b>Orientativo, no es asesoramiento fiscal.</b> Hacienda exige FIFO por valor homogéneo, que es lo que se calcula
+      <details className="note legal">
+        <summary><b>Orientativo, no es asesoramiento fiscal.</b> Cómo se calcula</summary>
+        Hacienda exige FIFO por valor homogéneo, que es lo que se calcula
         aquí a partir de tu CSV. La regla de los dos meses y la compensación de pérdidas se aplican de forma
         aproximada (por fecha de compra, sin distinguir lotes del mismo día); el CSV trae una sola cifra de retención por
         dividendo, y el reparto entre España y el país de origen se deduce de ella. Intereses, saveback y bonus se tratan como rendimientos
         del capital mobiliario. Contrasta siempre con el informe fiscal de tu bróker.
-      </p>
+      </details>
     </div>
   );
 }

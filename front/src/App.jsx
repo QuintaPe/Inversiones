@@ -156,6 +156,7 @@ export default function App() {
 
   const { live, liveOn, refreshQuotes } = useLiveQuotes({ data, setData, apply, fail, notify, hidden });
   const bakInput = useRef(null);
+  const upInput = useRef(null); // selector del CSV de la barra: el menú de la cuenta lo usa en el móvil
   const csvInput = useRef(null);
   const { busy, imp, upload, runImport, cancelImport, bak, pickBackup, runRestore, cancelRestore } = useImports({
     apply, fail, notify,
@@ -279,6 +280,7 @@ export default function App() {
               {digestOn && <button type="button" role="menuitem" onClick={() => { close(); tryDigest(); }}><Icon name="bell" size={17} />Enviar un resumen ahora</button>}
             </>
           )}
+          <button type="button" role="menuitem" className="menu-up" disabled={busy} onClick={() => { close(); upInput.current?.click(); }}><Icon name="upload" size={17} />Subir un CSV</button>
           <a role="menuitem" href={api.EXPORT_URL} download onClick={close}><Icon name="download" size={17} />Descargar una copia</a>
           <button type="button" role="menuitem" onClick={() => { close(); bakInput.current?.click(); }}><Icon name="undo" size={17} />Restaurar una copia</button>
           <button type="button" role="menuitem" onClick={() => { close(); wipe(); }} className="danger"><Icon name="trash" size={17} />Borrar mis datos</button>
@@ -325,7 +327,8 @@ export default function App() {
               aria-label={hidden ? 'Mostrar importes' : 'Ocultar importes'} title={hidden ? 'Mostrar importes' : 'Ocultar importes'}>
               <Icon name={hidden ? 'eyeOff' : 'eye'} />
             </button>
-            <UploadButton onFile={upload} busy={busy} className="icon-btn" label="Subir CSV"><Icon name="upload" /></UploadButton>
+            {/* En el móvil este botón se oculta y se sube desde el menú de la cuenta, con el mismo selector. */}
+            <UploadButton onFile={upload} busy={busy} className="icon-btn bar-up" label="Subir CSV" inputRef={upInput}><Icon name="upload" /></UploadButton>
             {account}
           </div>
         </div>

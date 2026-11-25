@@ -7,13 +7,11 @@ import * as api from '../api.js';
 import { Card, Empty, Icon, Search } from '../components/ui.jsx';
 import { useParam } from '../router.js';
 import { CATS, CAT, categoryOf, prettyName, recurring } from '../lib/categories.js';
-import { eur, eurS, pct } from '../lib/format.js';
+import { eur, eurS, pct, dayShort } from '../lib/format.js';
 
 const MONTHS = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
-const DAYS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
 const monthName = (ym) => `${MONTHS[+ym.slice(5, 7) - 1]} de ${ym.slice(0, 4)}`;
 const cap = (s) => s[0].toUpperCase() + s.slice(1);
-const dayName = (d) => { const t = new Date(`${d}T00:00:00Z`); return cap(`${DAYS[t.getUTCDay()]}, ${t.getUTCDate()} de ${MONTHS[t.getUTCMonth()]}`); };
 const isPay = (m) => m[1] === 'card' || m[1] === 'withdrawal';
 const swatch = (k) => ({ '--h': CAT[k]?.hue ?? 230 });
 
@@ -220,7 +218,7 @@ export default function Spending({ moves, cats, onCats, budgets = {}, onBudgets,
         {!days.length && <Empty>No hay pagos que coincidan.</Empty>}
         {days.map((d) => (
           <div key={d.d} className="pay-d">
-            <h3><span>{dayName(d.d)}</span><span>{eurS(d.total)}</span></h3>
+            <h3><span>{dayShort(d.d)}</span><span>{eurS(d.total)}</span></h3>
             <ul>
               {d.items.map((m, j) => {
                 const k = categoryOf(m, cats);

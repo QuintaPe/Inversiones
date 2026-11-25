@@ -44,6 +44,14 @@ const MONTHS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', '
 /** 2025-03 → mar 25 */
 export const month = (ym) => `${MONTHS[+ym.slice(5, 7) - 1]} ${ym.slice(2, 4)}`;
 /** Hora local de un instante ISO: 21:43 */
+const WD = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
+const MS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sept', 'oct', 'nov', 'dic'];
+/** «Vie 20 nov»: la cabecera de cada día en las listas (operaciones, extracto, pagos, cobros). */
+export const dayShort = (d) => {
+  const t = new Date(`${d.slice(0, 10)}T00:00:00Z`);
+  const s = `${WD[t.getUTCDay()]} ${t.getUTCDate()} ${MS[t.getUTCMonth()]}`;
+  return s[0].toUpperCase() + s.slice(1);
+};
 export const time = (iso) => new Date(iso).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
 export const dateLong = (ms) => {
   const d = new Date(ms);

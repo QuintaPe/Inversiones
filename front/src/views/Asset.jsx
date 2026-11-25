@@ -543,7 +543,7 @@ export default function Asset({ x, totalVal, yearBase, onBack, onPrice, liveQuot
                   </>
                 );
               }} />
-          ) : hist === undefined ? <div className="sk" style={{ height: 300 }} />
+          ) : hist === undefined ? <div className="sk sk-chart" style={{ "--skh": "300px" }} />
             : hist ? <Empty>No hay datos en este periodo.</Empty>
               : <p className="asset-nq"><Icon name="info" size={15} />Sin cotización pública: su valor se sigue con las valoraciones que anotes.</p>}
           {hist && (

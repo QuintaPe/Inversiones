@@ -280,7 +280,7 @@ export default function Dashboard({ a, hist, histProgress, flt, cash, onOpen, go
 
         <section className="chart-block">
           {chart ?? (loading
-            ? <div className="sk" style={{ height: 280 }} aria-label="Reconstruyendo el histórico de la cartera" />
+            ? <div className="sk sk-chart" style={{ "--skh": "280px" }} aria-label="Reconstruyendo el histórico de la cartera" />
             : series.length > 1
               ? <StepArea bare points={series} height={260} label="Evolución del capital invertido"
                   tip={(p) => <><small>{dateLong(p.t)}</small><b>{eur(p.v)}</b></>} />

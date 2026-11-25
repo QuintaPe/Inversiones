@@ -228,14 +228,14 @@ export function useSort(key, dir = -1) {
 }
 
 /** Botón que abre el selector de archivo. */
-export function UploadButton({ onFile, busy, className = 'btn', children, label }) {
+export function UploadButton({ onFile, busy, className = 'btn', children, label, inputRef }) {
   const ref = useRef(null);
   return (
     <>
       <button type="button" className={className} disabled={busy} aria-label={label} title={label} onClick={() => ref.current.click()}>
         {children}
       </button>
-      <input ref={ref} type="file" accept=".csv,text/csv" hidden
+      <input ref={(el) => { ref.current = el; if (inputRef) inputRef.current = el; }} type="file" accept=".csv,text/csv" hidden
         onChange={(ev) => { const f = ev.target.files[0]; ev.target.value = ''; if (f) onFile(f); }} />
     </>
   );
