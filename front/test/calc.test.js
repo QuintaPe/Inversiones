@@ -428,7 +428,7 @@ test('divFiscal: reconstruye el bruto de los dividendos que llegan netos de la r
   // Sin retención en origen (Reino Unido, Hong Kong) ni por debajo de 1 €.
   assert.equal(d('GB0005405286', 7.74, 1.47).grossed, false);
   assert.equal(d('CA12532H1047', 0.63, 0.12).grossed, false);
-  assert.deepEqual(['USN070592100', 'US0378331005', 'DK0062498333', ''].map(issuerCode), ['NL', 'US', 'DK', '??']);
+  assert.deepEqual(['USN070592100', 'US0378331005', 'DK0062498333', '', 'SOL'].map(issuerCode), ['NL', 'US', 'DK', '??', '??']);
 });
 
 test('taxYears: ventas por apartado de la declaración y Dinamarca sin deducción', async () => {

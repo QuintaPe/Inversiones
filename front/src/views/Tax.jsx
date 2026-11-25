@@ -178,12 +178,13 @@ export default function Tax({ a, income, onOpen, settings }) {
     },
     y.forRcm + y.forGains >= 0.005 && {
       id: 'ddi', box: '0588', short: 'Doble imposición', title: 'Deducción por doble imposición internacional',
+      lead: y.dii, // la casilla 0588 es la deducción, no los datos con los que se calcula
       fields: ['Rendimientos del extranjero', 'Ganancias del extranjero', 'Impuesto pagado fuera'],
-      intro: <>Renta Web calcula la deducción con estos tres datos: con tus cifras, {eur(y.dii)}.</>,
+      intro: <>Renta Web calcula la deducción con estos tres datos: lo menor entre lo pagado fuera y lo que pagarías aquí por esas rentas. Con tus cifras, {eur(y.dii)}.</>,
       records: [{ label: 'Valores extranjeros', values: [y.forRcm, y.forGains, y.forDed] }],
       help: [
         ['Rendimientos del extranjero', 'Rendimientos netos reducidos del capital mobiliario obtenidos en el extranjero: los dividendos brutos de empresas no españolas.'],
-        ['Ganancias del extranjero', 'Ganancias patrimoniales obtenidas en el extranjero: el resultado neto de vender valores no españoles (0 si es negativo).'],
+        ['Ganancias del extranjero', 'Ganancias patrimoniales obtenidas en el extranjero: el resultado neto de vender valores de emisores no españoles (0 si es negativo). Las criptomonedas no cuentan: no tienen país.'],
         ['Impuesto pagado fuera', <>Impuesto satisfecho en el extranjero que se puede deducir: hasta el {TREATY_RATE * 100} % del bruto en los países con
           convenio, y nada en Dinamarca, que no tiene convenio con España.
           {y.forExcess >= 0.5 && <> Los {eur(y.forExcess)} retenidos por encima de ese límite no se deducen; en los países con convenio se pueden reclamar a su hacienda.</>}</>],
@@ -279,8 +280,9 @@ export default function Tax({ a, income, onOpen, settings }) {
   ].filter(Boolean);
   const allForms = [...forms, ...saleForms];
   const manualN = allForms.reduce((n, f) => n + f.records.filter((r) => r.status === 'manual').length, 0);
-  // Índice: el primer importe de cada ventana, para localizarla de un vistazo.
+  // Índice: la cifra de la casilla (o, si no se indica, el primer importe de la ventana).
   const headline = (f) => {
+    if (f.lead != null) return f.lead;
     const i = f.fields.findIndex((_, k) => f.records.every((r) => typeof r.values[k] === 'number'));
     return i < 0 ? null : f.records.reduce((t, r) => t + r.values[i], 0);
   };

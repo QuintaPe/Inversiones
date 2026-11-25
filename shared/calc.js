@@ -261,7 +261,8 @@ export function splitWithholding(gross, tax, isin = '') {
 const CINS = { C: 'CA', D: 'DE', F: 'FR', G: 'GB', H: 'CH', J: 'JP', L: 'LU', N: 'NL' };
 /** País del emisor (código de dos letras) a partir del ISIN, o '??'. */
 export function issuerCode(isin = '') {
-  if (!/^[A-Z]{2}/.test(isin)) return '??';
+  // Solo un ISIN de verdad dice el país: las criptomonedas (SOL, BTC…) no tienen emisor ni país.
+  if (!/^[A-Z]{2}[A-Z0-9]{9}\d$/.test(isin)) return '??';
   if (isin.startsWith('US') && CINS[isin[2]]) return CINS[isin[2]];
   return isin.slice(0, 2);
 }
@@ -394,7 +395,7 @@ export function taxYears(sl, dv, income = {}) {
     if (pre) f = { g: x.g, tax: x.tax, es: 0, foreign: x.tax, grossed: false };
     r.divG += f.g; r.divT += f.tax;
     if (pre) { r.divPre.g += f.g; r.divPre.t += f.es; r.divPre.n++; }
-    if (code !== 'ES') r.forRcm += f.g; // rendimientos obtenidos en el extranjero
+    if (code !== 'ES' && code !== '??') r.forRcm += f.g; // rendimientos obtenidos en el extranjero
     if (f.grossed) { r.grossedN = (r.grossedN ?? 0) + 1; r.grossedUp = (r.grossedUp ?? 0) + f.foreign; }
     const ded = Math.min(f.foreign, f.g * treatyCap(code));
     r.divEs += f.es; r.divFor += f.foreign; r.forDed += ded;
@@ -451,7 +452,7 @@ export function taxYears(sl, dv, income = {}) {
       e.n++; e.proceeds += x.net; e.cost += x.csF; e.gain += x.reF;
       const g = (r.groups[e.grp] ??= { n: 0, proceeds: 0, cost: 0, gain: 0 });
       g.n++; g.proceeds += x.net; g.cost += x.csF; g.gain += x.reF;
-      if (issuerCode(x.p.isin) !== 'ES') r.forGains += x.reF; // ganancias obtenidas en el extranjero
+      if (!['ES', '??'].includes(issuerCode(x.p.isin))) r.forGains += x.reF; // ganancias obtenidas en el extranjero
     }
     r.forGains = Math.max(0, r.forGains);
     r.issuers = Object.values(by).sort((a, b) => a.p.name.localeCompare(b.p.name));
